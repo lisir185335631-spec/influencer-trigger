@@ -22,8 +22,9 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.models.email import Email, EmailStatus
 from app.models.email_event import EmailEvent, EventType
-from app.models.influencer import Influencer, InfluencerStatus
+from app.models.influencer import Influencer, InfluencerPriority, InfluencerStatus, ReplyIntent
 from app.models.mailbox import Mailbox, MailboxStatus
+from app.models.notification import Notification, NotificationLevel
 from app.services.mailbox_service import decrypt_password
 from app.websocket.manager import manager
 
@@ -377,6 +378,103 @@ async def _handle_reply(
         })
         logger.info(
             "Reply recorded: email_id=%d from=%s", email_record.id, from_email
+        )
+
+        # Trigger Classifier Agent as a non-blocking background task
+        asyncio.create_task(
+            _classify_and_notify(email_record.id, email_record.influencer_id, body)
+        )
+
+
+# ---------------------------------------------------------------------------
+# Classifier integration
+# ---------------------------------------------------------------------------
+
+# Notification level per intent (auto_reply is excluded — no notification created)
+_INTENT_LEVEL: dict[str, NotificationLevel] = {
+    "interested": NotificationLevel.urgent,
+    "pricing": NotificationLevel.urgent,
+    "declined": NotificationLevel.warning,
+    "irrelevant": NotificationLevel.info,
+}
+
+# Priority update rules: interested/pricing → high, declined/irrelevant → low
+_INTENT_PRIORITY: dict[str, InfluencerPriority] = {
+    "interested": InfluencerPriority.high,
+    "pricing": InfluencerPriority.high,
+    "declined": InfluencerPriority.low,
+    "irrelevant": InfluencerPriority.low,
+}
+
+
+async def _classify_and_notify(
+    email_id: int,
+    influencer_id: int,
+    reply_content: str,
+) -> None:
+    """
+    Run Classifier Agent on a reply, then:
+      - Write reply_intent to influencers table
+      - Update influencer priority (interested/pricing → high, declined/irrelevant → low)
+      - Create a Notification record (skipped for auto_reply)
+      - Broadcast classification result via WebSocket
+    """
+    from app.agents.classifier import classify_reply  # local import avoids circular
+
+    try:
+        result = await classify_reply(reply_content)
+    except Exception as exc:
+        logger.error(
+            "Classifier failed for email_id=%d influencer_id=%d: %s",
+            email_id, influencer_id, exc,
+        )
+        return
+
+    try:
+        async with AsyncSessionLocal() as db:
+            influencer = await db.get(Influencer, influencer_id)
+            if not influencer:
+                return
+
+            # Update intent
+            try:
+                influencer.reply_intent = ReplyIntent(result.intent)
+            except ValueError:
+                influencer.reply_intent = ReplyIntent.irrelevant
+
+            # Update priority (auto_reply leaves priority unchanged)
+            if result.intent in _INTENT_PRIORITY:
+                influencer.priority = _INTENT_PRIORITY[result.intent]
+
+            # Create notification for all intents except auto_reply
+            if result.intent != "auto_reply":
+                display_name = influencer.nickname or influencer.email
+                notification = Notification(
+                    influencer_id=influencer_id,
+                    email_id=email_id,
+                    title=f"Reply from {display_name}",
+                    content=result.summary,
+                    level=_INTENT_LEVEL.get(result.intent, NotificationLevel.info),
+                    intent=result.intent,
+                )
+                db.add(notification)
+
+            await db.commit()
+
+        await manager.broadcast("influencer:intent_classified", {
+            "influencer_id": influencer_id,
+            "email_id": email_id,
+            "intent": result.intent,
+            "confidence": result.confidence,
+            "summary": result.summary,
+        })
+        logger.info(
+            "Classified email_id=%d influencer_id=%d intent=%s confidence=%.2f",
+            email_id, influencer_id, result.intent, result.confidence,
+        )
+    except Exception as exc:
+        logger.error(
+            "Failed to persist classification for email_id=%d: %s", email_id, exc
         )
 
 
