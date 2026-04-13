@@ -1,25 +1,52 @@
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import { AuthProvider } from './stores/AuthContext'
+import { WebSocketProvider } from './stores/WebSocketContext'
 import ProtectedRoute from './components/ProtectedRoute'
+import MainLayout from './components/layout/MainLayout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
+import ScrapePage from './pages/ScrapePage'
+import EmailsPage from './pages/EmailsPage'
+import CRMPage from './pages/CRMPage'
+import TemplatesPage from './pages/TemplatesPage'
+import MailboxesPage from './pages/MailboxesPage'
+import FollowUpPage from './pages/FollowUpPage'
+import TeamPage from './pages/TeamPage'
+import SettingsPage from './pages/SettingsPage'
+
+const PROTECTED_ROUTES = [
+  { path: '/dashboard', element: <DashboardPage /> },
+  { path: '/scrape', element: <ScrapePage /> },
+  { path: '/emails', element: <EmailsPage /> },
+  { path: '/crm', element: <CRMPage /> },
+  { path: '/templates', element: <TemplatesPage /> },
+  { path: '/mailboxes', element: <MailboxesPage /> },
+  { path: '/followup', element: <FollowUpPage /> },
+  { path: '/team', element: <TeamPage /> },
+  { path: '/settings', element: <SettingsPage /> },
+]
 
 function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <Routes>
-          <Route path="/login" element={<LoginPage />} />
-          <Route
-            path="/dashboard"
-            element={
-              <ProtectedRoute>
-                <DashboardPage />
-              </ProtectedRoute>
-            }
-          />
-          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-        </Routes>
+        <WebSocketProvider>
+          <Routes>
+            <Route path="/login" element={<LoginPage />} />
+            {PROTECTED_ROUTES.map(({ path, element }) => (
+              <Route
+                key={path}
+                path={path}
+                element={
+                  <ProtectedRoute>
+                    <MainLayout>{element}</MainLayout>
+                  </ProtectedRoute>
+                }
+              />
+            ))}
+            <Route path="*" element={<Navigate to="/dashboard" replace />} />
+          </Routes>
+        </WebSocketProvider>
       </AuthProvider>
     </BrowserRouter>
   )
