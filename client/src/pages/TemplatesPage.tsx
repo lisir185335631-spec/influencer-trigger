@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import DOMPurify from 'dompurify'
 import {
   Plus,
   Pencil,
@@ -47,7 +48,8 @@ const SAMPLE_VARS: Record<string, string> = {
 }
 
 function renderPreview(html: string): string {
-  return html.replace(/\{\{(\w+)\}\}/g, (_, key: string) => SAMPLE_VARS[key] ?? `{{${key}}}`)
+  const replaced = html.replace(/\{\{(\w+)\}\}/g, (_, key: string) => SAMPLE_VARS[key] ?? `{{${key}}}`)
+  return DOMPurify.sanitize(replaced)
 }
 
 // ─── Template Form Modal ──────────────────────────────────────────────────────
