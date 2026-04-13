@@ -9,6 +9,7 @@ from app.config import get_settings
 from app.database import create_tables
 from app.websocket.manager import manager
 from app.api.health import router as health_router
+from app.api.auth import router as auth_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ app.add_middleware(
 
 # Register routers
 app.include_router(health_router, prefix="/api")
+app.include_router(auth_router, prefix="/api")
 
 
 @app.websocket("/ws")

@@ -6,7 +6,7 @@ pydantic==2.10.3
 pydantic-settings==2.7.0
 python-dotenv==1.0.1
 python-jose[cryptography]==3.3.0
-passlib[bcrypt]==1.7.4
+bcrypt==5.0.0
 cryptography==43.0.3
 aiosmtplib==3.0.2
 aioimaplib==2.0.0
