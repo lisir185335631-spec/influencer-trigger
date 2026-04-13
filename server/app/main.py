@@ -24,6 +24,7 @@ from app.api.notifications import router as notifications_router
 from app.api.influencers import router as influencers_router
 from app.api.follow_up import router as follow_up_router
 from app.api.holidays import router as holidays_router
+from app.api.dashboard import router as dashboard_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -129,6 +130,7 @@ app.include_router(notifications_router, prefix="/api")
 app.include_router(influencers_router, prefix="/api")
 app.include_router(follow_up_router, prefix="/api")
 app.include_router(holidays_router, prefix="/api")
+app.include_router(dashboard_router, prefix="/api")
 
 
 @app.websocket("/ws")
