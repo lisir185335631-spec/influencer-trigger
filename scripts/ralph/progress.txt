@@ -1,0 +1,614 @@
+## Codebase Patterns
+- Backend runs from server/ directory; database URL uses relative path ./data/influencer.db, so data/ must exist under server/
+- All models import Base from app.database, not from sqlalchemy directly
+- Config uses pydantic-settings BaseSettings with @lru_cache; import via get_settings()
+- SQLAlchemy 2.0 mapped_column + Mapped[] style (not old Column style)
+- FastAPI app uses lifespan context manager for startup/shutdown (not deprecated on_event)
+- WebSocket manager is a singleton in app/websocket/manager.py
+- Frontend proxy: /api → http://localhost:8000, /ws → ws://localhost:8000
+- Pydantic v2: use model_validate() (not from_orm()), model_dump(exclude_unset=True) for PATCH
+- Enum fields on SQLAlchemy models: read .value for str output (e.g. inf.status.value)
+- New API router: add import + app.include_router() in main.py; prefix="/api" at register site
+
+---
+
+## 2026-04-13 00:37 - S01
+- 实现了 FastAPI 后端脚手架（main.py, config.py, database.py）
+- 创建全部 14 张表 SQLAlchemy ORM 模型（users, influencers, mailboxes, campaigns, templates, emails, tags, influencer_tags, notes, collaborations, holidays, scrape_tasks, email_events, notifications）
+- 配置了关键索引（influencer status+priority, email message_id, email_events type+email_id 等）
+- 创建 React 18 + Vite + TypeScript + TailwindCSS 前端脚手架，proxy 配置到 8000 端口
+- 创建 server/requirements.txt 和 server/.env.example
+- 验证 GET /api/health 返回 200，数据库 create_all 正常
+
+变更文件：
+- server/app/main.py, config.py, database.py, __init__.py
+- server/app/models/ (14 个模型文件)
+- server/app/api/health.py
+- server/app/websocket/manager.py
+- server/requirements.txt, server/.env.example
+- client/package.json, vite.config.ts, tsconfig*.json, tailwind.config.js, postcss.config.js
+- client/index.html, client/src/main.tsx, App.tsx, index.css
+
+**未来迭代的学习：**
+- pip install 时全局环境有 ai-agent-platform 依赖较新版本的 langgraph/langchain-openai，但不影响本项目功能
+- data/ 目录需要在 server/ 下（与 database_url 相对路径一致），项目根目录的 data/ 不起作用
+- npm create vite 在非空目录会 cancel，需手动写 package.json
+---
+
+## 2026-04-13 09:00 - S02
+- 实现了 JWT 用户认证系统（后端 + 前端）
+- 后端：bcrypt 密码哈希（直接用 bcrypt==5.0.0，跳过 passlib 兼容问题）、python-jose JWT（access_token 30min + refresh_token 7d）
+- 新建：server/app/schemas/auth.py、server/app/services/auth_service.py、server/app/deps.py、server/app/api/auth.py
+- 路由：POST /api/auth/register、/api/auth/login、/api/auth/refresh
+- JWT 保护通过 FastAPI Depends(get_current_user) 注入，不用全局 middleware
+- 前端：React Router v6 路由、AuthContext（全局认证状态）、axios interceptor（自动附 Bearer + 401 自动刷新 token + 跳转 /login）
+- 新建：client/src/api/client.ts（axios 实例）、auth.ts、stores/authStore.ts、AuthContext.tsx、pages/LoginPage.tsx、DashboardPage.tsx、components/ProtectedRoute.tsx
+- 更新 App.tsx 加入 BrowserRouter + AuthProvider + ProtectedRoute
+
+**未来迭代的学习：**
+- passlib[bcrypt] 与 bcrypt 5.0.0 不兼容（__about__ AttributeError + 72字节限制）；直接用 bcrypt.hashpw/checkpw 即可，删除 passlib 依赖
+- FastAPI 依赖注入 Depends(get_current_user) 比 middleware 更灵活（可选路由不受保护），推荐用于本项目
+- AuthContext 包裹整个 App，useAuthContext() 在任意子组件使用
+---
+
+## 2026-04-13 10:30 - S03
+- 实现前端整体布局框架与 9 个路由
+- WebSocket hook（自动重连，指数退避 1s→30s）+ WebSocketProvider（全局通知计数）
+- Sidebar 组件：9 个导航项（Dashboard/Scrape/Emails/CRM/Templates/Mailboxes/Follow-up/Team/Settings）+ 折叠按钮
+- MainLayout：左侧 Sidebar + 右侧顶栏（面包屑 + WS 状态点 + 通知铃铛 + 用户信息）+ 内容区
+- NotificationBell：右上角铃铛，显示未读数，点击清零
+- 8 个 stub 页面（内容后续 story 实现）
+- 修复 vite-env.d.ts 缺失导致的 CSS import 类型错误（noUncheckedSideEffectImports）
+- 安装 lucide-react（图标库）
+
+变更文件：
+- client/src/hooks/useWebSocket.ts（新增）
+- client/src/stores/WebSocketContext.tsx（新增）
+- client/src/components/NotificationBell.tsx（新增）
+- client/src/components/layout/Sidebar.tsx（新增）
+- client/src/components/layout/MainLayout.tsx（新增）
+- client/src/pages/{Scrape,Emails,CRM,Templates,Mailboxes,FollowUp,Team,Settings}Page.tsx（新增）
+- client/src/pages/DashboardPage.tsx（重写，移除嵌入式 layout）
+- client/src/App.tsx（更新，添加 WebSocketProvider + 9 条 MainLayout 包裹路由）
+- client/src/vite-env.d.ts（新增）
+
+**未来迭代的学习：**
+- noUncheckedSideEffectImports: true 需要 vite-env.d.ts 中 /// <reference types="vite/client" /> 才能 import CSS
+- WebSocketProvider 放在 BrowserRouter 内部、AuthProvider 内部，这样可以访问路由和认证上下文
+- Sidebar 折叠状态用 local state（不需要全局共享，每次登录重置也合理）
+- WS 断线重连：onclose 时 onclose=null 再 close() 防止 unmount 触发自动重连
+---
+
+## 2026-04-13 10:45 - S04
+- 实现发送邮箱全量 CRUD：POST /api/mailboxes、GET /api/mailboxes、PUT /{id}、DELETE /{id}
+- SMTP 密码用 Fernet 对称加密存储（cryptography 库），密钥来自 settings.encryption_key
+- POST /api/mailboxes/{id}/test：aiosmtplib 异步发送测试邮件，端口 465 = implicit TLS，其他 + smtp_use_tls = STARTTLS
+- APScheduler AsyncIOScheduler：每日 00:00 UTC 重置 today_sent / this_hour_sent
+- 前端 MailboxesPage：表格（email/状态/今日已发/日限额/退信率）、Add/Edit Modal、Test 按钮（带 OK/Fail 状态反馈 4 秒后清除）
+
+变更文件：
+- server/app/schemas/mailbox.py（新增）
+- server/app/services/mailbox_service.py（新增）
+- server/app/api/mailboxes.py（新增）
+- server/app/main.py（注册 mailboxes_router + APScheduler lifespan）
+- client/src/api/mailboxes.ts（新增）
+- client/src/pages/MailboxesPage.tsx（完整实现）
+
+**未来迭代的学习：**
+- Fernet key 必须是 44 字节 URL-safe base64（32 bytes encoded），settings 默认值无效时会在 _get_fernet() 抛出 ValueError，上层 API 捕捉后返回 500
+- aiosmtplib: use_tls=True 是 implicit SSL（465），STARTTLS 用 use_tls=False + starttls()
+- APScheduler AsyncIOScheduler 可以直接注册 async def coroutine；job 函数内部自己开 AsyncSessionLocal() 而非依赖 FastAPI DI
+- prd.json 的顶层 key 是 "userStories"，不是 "stories"（ralph-tools.py 内部做了映射）
+---
+
+## 2026-04-13 11:30 - S05
+- 实现邮件模板全量 CRUD：GET/POST /api/templates, PUT /{id}, DELETE /{id}
+- POST /api/templates/generate：调用 OpenAI gpt-4o 生成 3 套英文模板（formal/casual/direct），无 API key 时返回占位模板
+- 模板支持 Jinja2 风格变量 {{influencer_name}}, {{platform}}, {{followers}}, {{industry}}
+- 前端 TemplatesPage：表格展示（名称/主题/行业/风格/创建时间），按行业 chip 筛选
+- TemplateModal：HTML textarea 编辑 + preview panel（渲染变量替换效果）
+- GeneratePanel：AI 生成面板，输入行业关键词 → 展示 3 套 → "Use this template" 预填 Modal
+- 补充 client/eslint.config.js（项目遗漏，eslint v9 需要此文件）
+
+变更文件：
+- server/app/schemas/template.py（新增）
+- server/app/services/template_service.py（新增）
+- server/app/api/templates.py（新增）
+- server/app/main.py（注册 templates_router）
+- client/src/api/templates.ts（新增）
+- client/src/pages/TemplatesPage.tsx（完整实现，替换 stub）
+- client/eslint.config.js（新增，修复 eslint 缺失配置）
+
+**未来迭代的学习：**
+- openai==1.58.1 已作为 langchain-openai 的依赖安装，可直接 from openai import AsyncOpenAI
+- 无 OPENAI_API_KEY 时 generate 接口返回 placeholder 模板而非报错，避免开发阶段阻断流程
+- client/eslint.config.js 是 S01 遗漏的文件（eslint v9 breaking change），在此补齐
+- TemplateModal 用 form id + 外部 submit button 绑定，支持 preview 切换时无需重置 form 状态
+---
+
+## 2026-04-13 12:00 - S06
+- 实现网红邮箱抓取引擎（Scraper Agent + Playwright）
+- 后端：POST /api/scrape/tasks（创建抓取任务）、GET /api/scrape/tasks、GET /api/scrape/tasks/{id}
+- Scraper Agent（server/app/agents/scraper.py）：Playwright Chromium headless + stealth 脚本（navigator.webdriver 隐藏、随机 UA、viewport 伪装）
+- YouTube 抓取：搜索 "{industry} creator contact email" → 收集频道链接 → 访问 /about → 点击 "View email address" 按钮 → 提取邮箱
+- Instagram 抓取：探索 hashtag 页面 → 收集 post 链接 → 解析 username → 访问 profile → 提取 bio 中邮箱
+- 邮箱反混淆：[at]/[dot]/(at)/(dot)/＠ 等 → 标准格式，正则多层提取
+- MX 记录验证（dnspython）：异步运行，结果 cache，过滤无效域名
+- 跨平台去重：全局 seen_emails set，已存在 email 不重复写入
+- 抓取结果写入 influencers 表（如 email 已存在则跳过创建，不报错）
+- WebSocket 实时推送：scrape:progress 事件（status/progress/found_count/valid_count/latest_email）
+- TikTok/Twitter/Facebook 降级处理：stub 函数输出日志提示使用 CSV 导入
+- 前端 ScrapePage：任务列表表格（平台 tag/行业/状态徽章/进度条/有效邮箱数/目标数/创建时间）
+- 创建任务 Modal：平台复选框（注明 CSV only）+ 行业输入 + 拖动目标数量 range
+- 实时进度：useWebSocket hook 监听 scrape:progress，就地更新任务行无需刷新页面
+- 所有 Python 语法检查通过，TypeScript tsc --noEmit 零错误
+
+变更文件：
+- server/app/schemas/scrape.py（新增）
+- server/app/services/scrape_service.py（新增）
+- server/app/agents/scraper.py（新增）
+- server/app/api/scrape.py（新增）
+- server/app/main.py（注册 scrape_router）
+- client/src/api/scrape.ts（新增）
+- client/src/pages/ScrapePage.tsx（完整实现，替换 stub）
+
+**未来迭代的学习：**
+- Playwright stealth：通过 add_init_script 覆盖 navigator.webdriver 属性比 playwright-stealth 包更可靠（避免依赖兼容问题）
+- Instagram 要求登录才能看到大部分内容；抓取 hashtag explore 页面是无需登录的有限途径，后续可接入 cookie 注入方案
+- YouTube "View email address" 按钮只在频道 About 页出现，且须 JS 点击才能展示真实邮箱
+- MX 验证用 asyncio.run_in_executor 包装同步 dns.resolver.resolve，避免阻塞事件循环
+- BackgroundTasks 在 FastAPI 中是 starlette 的 InMemoryBackgroundTasks，request 完成后在同进程异步执行，适合轻量 scrape 任务；重生产场景可切换 Celery/Redis 队列
+- Scraper Agent 的 on_found 闭包需要 nonlocal 声明才能修改外层 counter 变量
+---
+
+## 2026-04-13 14:00 - S07
+- 创建 ScrapeTaskInfluencer 多对多关联表（scrape_task_id + influencer_id 复合主键），使用 create_all 自动建表
+- 更新 Scraper Agent on_found 闭包：新建 influencer 时用 flush() 获取 id 后立即插入关联记录；已存在 email 也检查关联是否存在，避免重复
+- 新增 get_task_influencers 服务函数（JOIN 关联表，支持按 followers 降序/升序排序）
+- 新增 ScrapeInfluencerResult schema（id/nickname/email/platform/profile_url/followers/bio/status）
+- 新增 GET /api/scrape/tasks/{id}/results 端点（?sort=followers 参数）
+- 新增前端 ScrapeInfluencerResult 类型 + scrapeApi.getTaskResults 方法
+- 新建 ScrapeTaskDetailPage.tsx：结果预览表格（名称/平台/邮箱/粉丝数/Bio），客户端 asc/desc 粉丝数排序，全选/单选勾选，"Send All (N)" 按钮跳转 /emails?influencer_ids=...
+- 更新 App.tsx 添加 /scrape/tasks/:taskId 路由
+- 更新 ScrapePage.tsx 任务行添加 cursor-pointer + onClick 跳转详情页
+
+变更文件：
+- server/app/models/scrape_task_influencer.py（新增）
+- server/app/agents/scraper.py（更新 on_found）
+- server/app/services/scrape_service.py（新增 get_task_influencers）
+- server/app/schemas/scrape.py（新增 ScrapeInfluencerResult）
+- server/app/api/scrape.py（新增 GET /tasks/{id}/results）
+- server/app/main.py（import 新 model）
+- client/src/api/scrape.ts（新增类型 + API 方法）
+- client/src/pages/ScrapeTaskDetailPage.tsx（新增）
+- client/src/pages/ScrapePage.tsx（行点击跳转）
+- client/src/App.tsx（新增路由）
+
+**未来迭代的学习：**
+- SQLAlchemy create_all 只建新表，不 alter 现有表；用新关联表而非 ALTER TABLE 更安全，不破坏已有数据
+- flush() vs commit()：flush() 发 INSERT 到数据库获取自增 id，但不结束事务；适合需要 id 后马上建关联的场景
+- React Router useParams 获取的参数是 string，需要 Number() 转换后才能做 API 请求
+- 详情页默认全选（初始化 selected = new Set(results.map(r => r.id))），方便用户直接发送全量
+---
+
+## 2026-04-13 15:00 - S08
+- 实现 CSV/Excel 网红名单导入功能（两步：preview + confirm）
+- 后端 schemas/import_.py：ColumnMappingItem、ImportPreviewResponse、ImportConfirmResponse
+- 后端 services/import_service.py：pandas 解析文件（UTF-8/GBK/Latin-1 编码自动尝试），列名 CN/EN 双语映射，邮箱格式正则验证 + MX 记录验证，与现有 influencers 去重（skip or overwrite）
+- 列映射字典支持 6 个字段：email/nickname/platform/followers/profile_url/industry，中英文 alias 各若干
+- 后端 api/import_.py：POST /api/influencers/import/preview（返回前 10 行 + 列数 + 建议映射）；POST /api/influencers/import/confirm（文件 + mapping JSON + overwrite_duplicates → 执行导入）
+- 在 main.py 注册 import_router
+- 前端 api/import_.ts：ColumnMappingItem 类型 + FIELD_OPTIONS + importApi.preview/confirm
+- 前端 ScrapePage.tsx 新增两个 Tab（Scrape Tasks / CSV Excel Import），Import Tab 包含：
+  - 拖拽上传区域（DragOver/DragLeave/Drop + input file fallback）
+  - preview 步骤：文件信息行、列映射网格（每列一个 select 下拉）、预览表格前 10 行（邮箱无效格标红）、覆盖选项 checkbox、Confirm Import 按钮
+  - done 步骤：三格统计卡片（已导入/跳过重复/无效）+ "Import Another File" 重置
+
+变更文件：
+- server/app/schemas/import_.py（新增）
+- server/app/services/import_service.py（新增）
+- server/app/api/import_.py（新增）
+- server/app/main.py（注册 import_router）
+- client/src/api/import_.ts（新增）
+- client/src/pages/ScrapePage.tsx（新增 ImportTab 组件 + 两个 Tab 布局）
+
+**未来迭代的学习：**
+- pandas read_excel/read_csv dtype=str 确保所有值作为字符串读取，避免数值列解析问题
+- multipart/form-data 里 JSON 字段要作为 string Form 传，前端用 JSON.stringify，后端 json.loads 反序列化
+- FastAPI File + Form 混合请求必须在前端设置 Content-Type: multipart/form-data（axios 配合 FormData 自动设置 boundary）
+- MX 验证耗时较长（每域名最多 5s），大文件导入时需告知用户等待；后续可加并发限制或跳过 MX 验证选项
+---
+
+## 2026-04-13 09:52 - S08 (iteration 13 — complete)
+- 实现 CSV/Excel 网红名单导入完整功能
+- 后端：server/app/schemas/import_.py（ImportPreviewResponse/ImportConfirmResponse schema）
+- 后端：server/app/services/import_service.py（中英文列名自动映射、pandas 解析、邮箱正则+MX校验、去重/覆盖逻辑）
+- 后端：server/app/api/import_.py（POST /api/influencers/import/preview + /confirm，JWT 保护，Form + UploadFile）
+- 后端：server/app/main.py（注册 import_router）
+- 前端：client/src/api/import_.ts（FIELD_OPTIONS + importApi.preview/confirm）
+- 前端：client/src/pages/ImportPage.tsx（拖拽上传、预览10行表格、列映射下拉、无效邮箱标红、去重选项、导入结果页）
+- 前端：client/src/App.tsx（添加 /import 路由）
+- 前端：client/src/components/layout/Sidebar.tsx（添加 Import 导航项 FileUp icon）
+- 前端：client/src/components/layout/MainLayout.tsx（添加 /import 页面标题）
+- TypeScript tsc --noEmit 零错误，Python py_compile 通过
+
+**未来迭代的学习：**
+- multipart/form-data 提交 JSON 数组时，需要 Form(...) 接收 string 后 json.loads() 解析，不能直接用 Body/JSON
+- pandas read_excel 需要 openpyxl 依赖（已安装），read_csv 编码降级：utf-8 → gbk → latin-1
+- MX cache 用全局 dict 跨请求复用，减少 DNS 查询
+- UploadFile.read() 只能调一次（流式），preview 和 confirm 两个接口各自 read 完整文件
+- 前端：type="file" 的 input onChange 需要用 useRef + inputRef.current?.click() 触发，onDrop 的 e.dataTransfer.files[0] 和 input 的 e.target.files?.[0] 是不同入口
+---
+
+## 2026-04-13 16:00 - S09
+- 实现批量邮件发送引擎（Sender Agent + 多邮箱轮换）
+- 后端 schemas/email.py：SendBatchRequest/SendBatchResponse/CampaignOut/EmailOut
+- 后端 services/email_service.py：create_campaign/list_campaigns/get_campaign
+- 后端 agents/sender.py：MailboxRotator（按 today_sent 升序选最小值 mailbox，均匀分配），_send_one（aiosmtplib, MIME HTML, Message-ID），_render_template（Jinja2），run_sender_agent（异步主循环：轮换邮箱→Jinja2 渲染→发送→1次重试→写入 emails 表→更新 today_sent/influencer.status→更新 campaign 统计→WS 推送→30-60s 间隔）
+- 后端 api/emails.py：POST /api/emails/send-batch（202, BackgroundTask）、GET /api/emails/campaigns、GET /api/emails/campaigns/{id}
+- 后端 main.py 注册 emails_router
+- requirements.txt 添加 jinja2==3.1.4
+- 前端 api/emails.ts：SendBatchRequest/Response、Campaign 类型、emailsApi（sendBatch/listCampaigns/getCampaign）
+- 前端 pages/EmailsPage.tsx：无网红时引导提示 → 发送表单（选模板+命名campaign）→ 进度面板（4张统计卡+进度条+WS实时+5s轮询降级）
+
+变更文件：
+- server/app/schemas/email.py（新增）
+- server/app/services/email_service.py（新增）
+- server/app/agents/sender.py（新增）
+- server/app/api/emails.py（新增）
+- server/app/main.py（注册 emails_router）
+- server/requirements.txt（添加 jinja2）
+- client/src/api/emails.ts（新增）
+- client/src/pages/EmailsPage.tsx（完整实现，替换 stub）
+
+**未来迭代的学习：**
+- MailboxRotator 用 min(available, key=lambda m: m.today_sent) 而非固定轮询，发送后本地更新 today_sent 保持 rotator 状态准确
+- FastAPI BackgroundTask 里不能复用请求的 db session（已关闭），必须新建 AsyncSessionLocal() 上下文
+- jinja2 未在 requirements.txt 列出但通常作为传递依赖存在，显式声明更安全
+- aiosmtplib: 465 端口用 use_tls=True（implicit SSL），其他端口 use_tls=False + starttls()
+- stdlib email 模块重名冲突：文件内 import email 会被 stdlib 遮蔽，改用 import email as stdlib_email 或直接 import email.mime.multipart/email.mime.text
+- WS + 轮询双保险：WebSocket 实时推送 + setInterval(5s) 轮询接口确保断线时进度不丢
+---
+
+## 2026-04-13 - S10
+- 实现 IMAP 24/7 邮件回复监控（Monitor Agent）
+- server/app/agents/monitor.py：完整 Monitor Agent，asyncio 后台 Task，POLL_INTERVAL=300s
+- 回复匹配三级策略：In-Reply-To → References → 发件人邮箱匹配 influencers.email
+- 退信检测：multipart/report + message/delivery-status + Status: 5.x.x；fallback 主题关键词匹配
+- 退信后更新 emails.status=bounced + mailbox.bounce_rate（bounce数/total_sent）
+- 回复后更新 emails.status=replied + reply_content + reply_from + replied_at；influencers.status=replied
+- 写入 email_events 表（source=imap）
+- WebSocket broadcast：email:status_change 事件（replied/bounced 两种）
+- 指数退避：_BACKOFF_SECS=[5,10,30,60]，换算为 skip poll cycles；每 mailbox 独立 error_state
+- FastAPI lifespan：asyncio.create_task(run_monitor_agent()) 启动，shutdown 时 cancel + wait 5s
+- Python py_compile 通过，TypeScript tsc --noEmit 零错误
+
+变更文件：
+- server/app/agents/monitor.py（新增）
+- server/app/main.py（新增 asyncio monitor task 的 lifespan 管理）
+
+**未来迭代的学习：**
+- aioimaplib fetch 响应是列表，需遍历 items 找 len>100 的 bytes 并尝试解析为 email message（不能直接用 data[1]）
+- asyncio.create_task() 必须在 event loop 运行后调用；lifespan contextmanager 内部已在 loop 中，安全
+- asyncio.shield(task) + wait_for 在 shutdown 时既能取消又能等待完成，避免 warning
+- 退信率计算：每次新增 bounce 都 COUNT(email.status=bounced WHERE mailbox_id=X) / mailbox.total_sent，简单准确
+- IMAP UNSEEN search：fetch 后服务器自动把消息标为 \Seen，无需手动 STORE \Seen flag
+---
+
+## 2026-04-13 - S11
+- 实现邮件状态看板（Email Status Dashboard）
+- 后端 schemas/email.py 新增：EmailListItem、EmailStats、EmailListResponse
+- 后端 services/email_service.py 新增：get_email_stats（6 个聚合指标）、list_emails（JOIN influencers + campaigns，支持 campaign_id/platform/status 筛选，分页 20 条）
+- 后端 api/emails.py 新增：GET /api/emails/stats（6 张汇总卡片数据）、GET /api/emails（分页+筛选邮件列表）
+- 路由顺序：/stats 和 ""（空路径）在 /campaigns 之前注册，避免 FastAPI 路径匹配歧义
+- 前端 api/emails.ts 新增：EmailListItem/EmailStats/EmailListResponse/EmailListParams 类型 + emailsApi.getStats() + emailsApi.listEmails(params)
+- 前端 EmailsPage.tsx 重构为双 Tab 结构：Email Status（默认） + Batch Send（含 influencer_ids 时自动切换）
+- StatusDashboard 组件：6 张统计卡片、筛选器（campaign/platform/status）、邮件列表表格、分页，WebSocket 监听 email:status_change 事件实时刷新
+- 状态标签色：sent=蓝、delivered=青、replied=绿、bounced=红、pending=灰、opened=黄
+- Python py_compile 通过，TypeScript tsc --noEmit 零错误
+
+变更文件：
+- server/app/schemas/email.py（新增 3 个 schema）
+- server/app/services/email_service.py（新增 list_emails + get_email_stats）
+- server/app/api/emails.py（新增 2 个端点）
+- client/src/api/emails.ts（新增类型 + API 方法）
+- client/src/pages/EmailsPage.tsx（重构为双 Tab）
+
+**未来迭代的学习：**
+- FastAPI 路由在同一 router 内按注册顺序匹配；`GET ""` 和 `GET "/stats"` 必须在 `GET "/campaigns/{id}"` 之前注册，否则 "/stats" 可能被解析为 campaign_id
+- SQLAlchemy case((condition, 1)) 不带 else_ 默认返回 NULL；func.count(case(...)) 只计非 NULL，等效于 COUNT(CASE WHEN ... THEN 1 END)
+- outerjoin(Campaign, ...) 确保无 campaign_id 的邮件（手动发送等）也出现在列表中，campaign_name 显示 null
+- 前端双 Tab 用 useState 控制 activeTab，URL 中存在 influencer_ids 时 useEffect 自动切换到 send tab
+- WebSocket loadData 回调用 useCallback + 依赖数组，确保 filter/page 变化时 WS handler 使用最新版本
+---
+
+## 2026-04-13 - S12
+- 实现了 Classifier Agent（`server/app/agents/classifier.py`）
+  - LangGraph single-node StateGraph，调用 GPT-4o-mini（`openai_classifier_model` from Settings）
+  - `ClassifyResult` Pydantic v2 model，`with_structured_output` 确保结构化返回
+  - 5 种意图分类：interested / pricing / declined / auto_reply / irrelevant
+  - 懒加载单例图，首次调用时构建；openai_api_key 未配置时直接返回 irrelevant fallback
+- 集成进 Monitor Agent（`_handle_reply` 末尾 `asyncio.create_task(_classify_and_notify(...))`）
+  - `_classify_and_notify`: 调用分类器 → 写 `influencer.reply_intent` → 更新 priority
+  - interested/pricing → high; declined/irrelevant → low; auto_reply 不改 priority
+  - auto_reply 不创建 Notification；其他意图创建 Notification（interested/pricing=urgent, declined=warning, irrelevant=info）
+  - WebSocket broadcast `influencer:intent_classified` 事件
+- 更改文件：
+  - server/app/agents/classifier.py（新建）
+  - server/app/agents/monitor.py（新增 imports + _classify_and_notify + asyncio.create_task 调用）
+
+**未来迭代的学习：**
+  - LangGraph with_structured_output 需要 Pydantic v2 BaseModel，TypedDict state 必须包含 result 字段初始值 None
+  - asyncio.create_task 在 FastAPI lifespan 内 asyncio.Task 中调用是安全的（Monitor 本身就是 asyncio.Task）
+  - auto_reply 对应 Notification 跳过、priority 不变，是重要业务规则
+---
+
+## 2026-04-13 - S13
+- 实现人工介入通知系统（后端 + 前端完整闭环）
+- 后端：server/app/api/notifications.py（GET/POST /api/notifications, PATCH /{id}/read, POST /read-all）
+- 后端：server/app/schemas/notification.py（NotificationOut/Create/ListResponse）
+- 后端：server/app/services/notification_service.py（list/create/mark_read/mark_all_read）
+- 后端：server/app/main.py（注册 notifications_router）
+- 后端：monitor._classify_and_notify 更新通知内容格式，包含平台/网红名/摘要/"Please check your email to reply." 提示
+- 前端：client/src/api/notifications.ts（NotificationItem 类型 + notificationsApi CRUD）
+- 前端：client/src/stores/WebSocketContext.tsx（监听 notification 事件，notificationTick 自增）
+- 前端：client/src/components/NotificationBell.tsx 完整重写：铃铛 + 未读数徽章 + 点击展开下拉面板，按意图优先级排序（interested > pricing > declined > irrelevant），未读通知玫红高亮，单条已读 + 全部已读，点击跳转 /crm
+
+**未来迭代的学习：**
+- NotificationBell 自管理 unreadCount state（从 API 初始化），通过 notificationTick 感知 WS 新通知，不依赖 WebSocketContext 的 clearUnread
+- useEffect 中监听 notificationTick 时，因为 open/fetchNotifications 是稳定引用，eslint-disable-line 忽略只针对 notificationTick 依赖
+- 通知面板 z-50 + shadow-xl，需在 header 内 relative 容器中定位（right-0 top-full）
+- sortNotifications: 未读优先 → intent 优先级（数字越小越高）→ 创建时间倒序
+---
+
+## 2026-04-13 - S13
+- 实现人工介入通知系统（S13）
+- 后端：server/app/schemas/notification.py（NotificationOut/Create/ListResponse），server/app/services/notification_service.py（list/create/mark_read/mark_all_read），server/app/api/notifications.py（4 个端点：GET/POST /notifications，PATCH /{id}/read，POST /read-all），server/app/main.py（注册 notifications_router）
+- 分类器触发通知：server/app/agents/monitor.py 中 _classify_and_notify 创建 Notification 记录（auto_reply 跳过），广播 WebSocket "notification" 事件
+- 通知内容：[平台] 网红名: 回复摘要 — Please check your email to reply.，含 intent/level（interested/pricing=urgent, declined=warning, irrelevant=info）
+- 前端：client/src/api/notifications.ts（接口定义），client/src/components/NotificationBell.tsx（铃铛+下拉列表，按意图优先级排序，未读高亮，点击标已读+跳转 CRM），client/src/stores/WebSocketContext.tsx（监听 notification 事件更新 notificationTick）
+- MainLayout 已集成 NotificationBell，无需额外改动
+- Python py_compile 全部通过，TypeScript tsc --noEmit 零错误
+
+**未来迭代的学习：**
+- 新建通知 API router 时 main.py 需同时导入 router 并 include_router，models/__init__.py 需导出 Notification 以确保 create_all 建表
+- WebSocketContext 的 notificationTick 是一个递增计数器，NotificationBell 检测其变化来触发重新加载，比传递完整 payload 更解耦
+- 通知排序：未读优先 → 按意图优先级（interested=0, pricing=1, declined=2, irrelevant=3） → 最新优先
+- 未读计数可在铃铛 badge 显示，也可在 WebSocket 事件中 +1 更新，两种路径合并通过 notificationTick
+---
+
+## 2026-04-13 - S13 (retry)
+- 修复通知内容中文提示：将 monitor.py 第456行的英文 "— Please check your email to reply." 改为 "— 请前往您的邮箱回复"
+- 更改的文件：server/app/agents/monitor.py
+
+**未来迭代的学习：**
+- 通知内容拼接在 monitor.py 的 classify_and_notify() 函数里，content 字段末尾追加固定提示语；中英文要与验收标准严格一致
+---
+
+## 2026-04-13 - S14
+- 实现 CRM 式网红档案与详情功能（后端 + 前端）
+- 后端：
+  - server/app/schemas/influencer.py（新增：TagOut, NoteOut, CollaborationOut, EmailTimelineItem, InfluencerDetail, InfluencerUpdate, InfluencerListItem, InfluencerListResponse, AssignTagsRequest）
+  - server/app/services/influencer_service.py（新增：list_influencers, get_influencer_detail, update_influencer, add_note, list_tags, create_tag, delete_tag, assign_tags）
+  - server/app/api/influencers.py（新增路由：GET/PATCH /influencers/{id}, GET /influencers/{id}/emails, POST /influencers/{id}/notes, GET/POST /tags, DELETE /tags/{id}, POST /influencers/{id}/tags, GET /influencers）
+  - server/app/main.py（注册 influencers_router）
+- 前端：
+  - client/src/api/influencers.ts（新增全部 API 客户端函数）
+  - client/src/pages/InfluencerDetailPage.tsx（新增：左侧 InfoCard + 右侧 4 Tab：EmailsTab/TagsTab/NotesTab/CollaborationsTab）
+  - client/src/pages/CRMPage.tsx（重写：表格列表页，支持搜索/状态/平台筛选，分页，点击跳转详情）
+  - client/src/App.tsx（新增 /crm/:id 路由）
+
+**未来迭代的学习：**
+  - Pydantic v2: model_validate() 替代 from_orm()，PATCH 用 model_dump(exclude_unset=True) 避免覆盖 None
+  - SQLAlchemy Enum 字段读取时是 Python Enum 对象，需要 .value 才能转字符串
+  - assign_tags 用 delete+insert 全量替换比 diff 更简洁，适合标签数量少的场景
+  - 新 router 注册在 main.py 末尾 include_router 处，prefix="/api" 统一在注册时加
+---
+
+## 2026-04-13 11:30 - S15
+- 实现了网红列表多维筛选：新增 tag_ids（AND 逻辑）、followers_min/max、industry（ilike）、reply_intent 五个过滤维度
+- 后端新增 PATCH /api/influencers/batch（批量归档/打标签）、POST /api/influencers/export（导出 CSV）
+- 新增 schemas：BatchUpdateRequest、BatchUpdateResponse、ExportRequest
+- 前端 CRMPage 完全重写：勾选框列、标签多选下拉（TagMultiSelect）、粉丝数区间输入、行业/意图/平台/状态下拉、底部浮动批量操作栏（打标签+归档+导出）、批量打标签 Modal
+- 前端 API 客户端新增 batchUpdateInfluencers、exportInfluencers；listInfluencers 用自定义 paramsSerializer 支持 tag_ids 数组参数
+
+变更文件：
+- server/app/schemas/influencer.py
+- server/app/services/influencer_service.py
+- server/app/api/influencers.py
+- client/src/api/influencers.ts
+- client/src/pages/CRMPage.tsx
+
+**未来迭代的学习：**
+- FastAPI Query 接收多值数组：List[int] = Query(default=[]) 会接收 ?tag_ids=1&tag_ids=2 格式
+- axios paramsSerializer 需自定义处理数组参数，否则会发送 tag_ids[]=1 格式（FastAPI 不识别）
+- tag AND 过滤：对每个 tag_id 做一次 influencer_id.in_(subquery) 叠加 where，每个子查询独立过滤后 AND 组合
+- PATCH /influencers/batch 路由必须在 /influencers/{influencer_id} 前注册，否则 "batch" 会被当作 influencer_id 匹配（FastAPI 路由顺序敏感）
+---
+
+## 2026-04-13 13:30 - S15
+- 实现了 CRM 网红列表页面，支持多维筛选、批量操作和 CSV 导出
+- 后端：GET /api/influencers（分页+平台/状态/标签/粉丝数/行业/关键词多维筛选），POST /api/influencers/export（CSV导出），PATCH /api/influencers/batch（批量打标签/归档）
+- 前端：CRMPage — 顶部筛选栏（平台/状态下拉、标签多选 TagMultiSelect、粉丝数区间、行业输入、关键词搜索），表格（勾选/网红名/平台/邮箱/粉丝数/状态/标签/优先级/最后联系时间），底部批量操作栏（浮动），分页
+- 修复：InfluencerListItem 增加 industry 字段，使 CSV 导出能正确输出行业列
+- 点击网红名 navigate(`/crm/${inf.id}`) 跳转详情页
+
+变更文件：
+- server/app/schemas/influencer.py（InfluencerListItem 增加 industry 字段）
+- server/app/services/influencer_service.py（list_influencers 传 industry，CSV 导出用 inf.industry）
+- server/app/api/influencers.py（list/batch/export 三个端点）
+- client/src/api/influencers.ts（InfluencerListItem 增加 industry 字段，所有 API 函数）
+- client/src/pages/CRMPage.tsx（完整列表页实现）
+
+**未来迭代的学习：**
+- InfluencerListItem 是列表专用精简 schema，不含 bio/profile_url 等详情字段；CSV 导出如需完整字段，应从 list_influencers 取数据
+- 标签多选下拉用 useRef + mousedown 全局监听实现点外关闭，比 onBlur 更可靠
+- 批量操作浮动栏 fixed bottom-6 + -translate-x-1/2，需确保父容器不设 overflow-hidden
+- 导出 CSV 时 exportInfluencers 返回 Blob，前端用 URL.createObjectURL 触发下载
+---
+
+## 2026-04-13 - S16
+- 实现回复网红筛选与优先级排序（后端 + 前端完整闭环）
+- 后端：compute_priority_score(intent, followers) — 意图分+粉丝档位分综合评分 → high/medium/low
+  - 意图分: interested=3, pricing=2, auto_reply=1, declined/irrelevant=0
+  - 粉丝分: ≥1M=3, 100K-1M=2, 10K-100K=1, <10K=0；总分≥4=high, ≥2=medium, <2=low
+- 后端：list_influencers 新增 sort_by="priority" 参数（SQLAlchemy case() 排序 high→medium→low）
+- 后端：list_influencers 自动为 replied 状态网红获取 reply_summary（最新邮件 reply_content 前150字）
+- 后端：monitor._classify_and_notify 改用 compute_priority_score 替代硬编码 _INTENT_PRIORITY 字典，综合粉丝量级评分
+- 后端：InfluencerListItem 新增 reply_summary 字段
+- 后端：GET /api/influencers 新增 sort_by Query 参数
+- 前端：api/influencers.ts 新增 reply_summary 字段、sort_by 参数（通过 paramsSerializer 传递）
+- 前端：CRMPage 新增 "All" / "Replied" 双 Tab 结构
+  - Replied Tab：专属 RepliedView 组件，强制 status=replied + sort_by=priority
+  - 列展示：网红名+邮箱/平台/粉丝/回复意图徽章/回复摘要/优先级徽章
+  - PriorityDropdown 组件：行内优先级下拉（调用 PATCH /influencers/{id}），支持 BD 主管手动调整
+  - 优先级徽章颜色：high=红/medium=黄/low=灰
+
+变更文件：
+- server/app/schemas/influencer.py（InfluencerListItem 增 reply_summary）
+- server/app/services/influencer_service.py（compute_priority_score + _get_reply_summary + sort_by 支持）
+- server/app/api/influencers.py（sort_by Query 参数）
+- server/app/agents/monitor.py（改用 compute_priority_score，删除 _INTENT_PRIORITY 字典）
+- client/src/api/influencers.ts（reply_summary + sort_by）
+- client/src/pages/CRMPage.tsx（双 Tab + RepliedView + PriorityDropdown）
+
+**未来迭代的学习：**
+- SQLAlchemy 2.0 case() 用于自定义排序：case((cond1, val1), (cond2, val2), else_=n) 可用于 order_by
+- _PRIORITY_ORDER 模块级常量（case 表达式）需在 Influencer 模型导入后定义，否则报 AttributeError
+- PriorityDropdown 行内编辑：onClick e.stopPropagation() 避免触发行导航；optimistic update (setItems) + API call 保持 UI 响应
+- reply_summary 只在 status=replied 时查询，避免对全量网红做额外 SQL
+- paramsSerializer 中分别处理 tag_ids 数组和 sort_by 字符串，保持一个统一的序列化入口
+---
+
+## 2026-04-13 14:00 - S17
+- 实现月度自动追发：Responder Agent + APScheduler + 前端配置页
+- 新增 `server/app/models/follow_up_settings.py`：FollowUpSettings 单例设置表（enabled, interval_days, max_count, hour_utc）
+- 新增 `server/app/agents/responder.py`：GPT-4o 差异化追发内容生成，6 种角度按 follow_up_count 切换；无 API Key 时自动降级为静态模板
+- 新增 `server/app/services/follow_up_service.py`：monthly_follow_up_check() 查询 status=contacted & last_email_sent_at < cutoff & 本月未发；发送 → 计数 → 超限归档；WebSocket 实时推送
+- 新增 `server/app/api/follow_up.py`：GET/PUT /api/follow-up/settings + GET /api/follow-up/logs（分页）
+- 新增 `server/app/scheduler.py`：APScheduler singleton，解耦 main.py 与 API 路由之间的循环导入
+- 更新 `server/app/main.py`：启动时读取 follow_up_settings 注册 monthly_follow_up 定时任务；引入 from app.scheduler import scheduler
+- 新增 `client/src/api/follow_up.ts`：API 类型定义 + followUpApi 方法
+- 更新 `client/src/pages/FollowUpPage.tsx`：追发策略配置面板（interval/max/hour/enable toggle）+ 追发日志列表 + 分页
+
+**未来迭代的学习：**
+- 抽出 `app/scheduler.py` singleton 是解决 main.py ↔ API 路由循环导入的标准做法
+- APScheduler `reschedule_job()` 可以在运行时动态修改 cron 触发器，无需重启
+- SQLAlchemy `exists()` 子查询需要 `.correlate(ParentModel)` 才能正确关联外键
+- 月度追发"本月未发"条件：sent_at >= 当月1日 00:00 UTC
+- 追发超限后 status=archived，Monitor Agent 收到回复后 status=replied，两者均会停止追发
+---
+
+## 2026-04-13 - S17
+- 实现月度自动追发（Responder Agent + APScheduler）
+- 后端：server/app/scheduler.py（APScheduler 单例，避免 main.py 循环导入）
+- 后端：server/app/models/follow_up_settings.py（追发配置 singleton 表：enabled/interval_days/max_count/hour_utc）
+- 后端：server/app/agents/responder.py（Responder Agent，GPT-4o 按 follow_up_count 选不同角度生成差异化追发内容，6种角度 + 静态兜底模板）
+- 后端：server/app/services/follow_up_service.py（monthly_follow_up_check：查询 status=contacted + last_email_sent_at < now()-interval_days + follow_up_count < max + 本月未发送，生成内容、发送、更新计数、超过 max → archived，网红回复后 status 变化自动跳过）
+- 后端：server/app/api/follow_up.py（GET/PUT /follow-up/settings，GET /follow-up/logs，POST /follow-up/trigger 手动触发）
+- 后端：server/app/models/__init__.py（新增 FollowUpSettings 导入确保 create_all 建表）
+- 后端：server/app/main.py（APScheduler 从 app.scheduler 导入单例，lifespan 启动时读取配置注册 monthly_follow_up CronJob）
+- 前端：client/src/api/follow_up.ts（FollowUpSettings/FollowUpLogItem 类型 + followUpApi CRUD）
+- 前端：client/src/pages/FollowUpPage.tsx（完整页面：SettingsPanel 含开关/间隔/最大次数/UTC时间选择器/保存，LogsTable 含分页+状态徽章+平台徽章）
+- Python py_compile 全部通过，TypeScript tsc --noEmit 零错误
+
+**未来迭代的学习：**
+- APScheduler 单例应在 app/scheduler.py 独立模块，避免 API router 从 app.main 导入形成循环依赖
+- monthly_follow_up_check 内部对每个 influencer 做 db.refresh() 重新检查 status，防止并发场景（如网红在 check 过程中回复）
+- FollowUpSettings 是 singleton 表（id=1），get_or_create_settings() 首次调用自动创建默认配置行
+- APScheduler reschedule_job() 在 settings update API 中调用，allow_non_existing=False 默认，job 必须已注册
+- EmailType.follow_up 已存在于 Email model，追发记录直接用此类型存储，不需要新表
+---
+
+## 2026-04-13 - S13
+- 验证并确认 S13 人工介入通知系统全部实现（Validator 上次超时导致 passes 重置）
+- 后端：POST/GET /api/notifications、PATCH /{id}/read、POST /read-all 全部就位
+- monitor.py `_classify_and_notify()` 在非 auto_reply 回复时创建 Notification 并广播 "notification" WebSocket 事件
+- 通知内容包含 [platform] name: summary — 请前往您的邮箱回复，intent 作为独立字段
+- 前端 NotificationBell.tsx：未读数显示、下拉列表、按意图优先级排序（interested>pricing>declined>irrelevant）
+- WebSocketContext 监听 "notification" 事件 → 更新 unreadCount + notificationTick
+- TypeScript typecheck exit 0，Python 语法检查无错误
+
+更改的文件：
+- scripts/ralph/prd.json（S13 passes: true）
+
+**未来迭代的学习：**
+- Validator 超时不代表代码缺失；重跑时先检查 git log 确认代码是否已提交，再验证 AC
+- NotificationBell 的 notificationTick 触发机制：WS 事件 → notificationTick+1 → useEffect 响应 → 如果面板已开则 fetchNotifications()
+---
+
+## 2026-04-13 - S13
+- 完善人工介入通知系统
+- 修复通知内容格式：新增意图（intent）字段到 content 文本，格式为 `[platform] name · intent: summary — 请前往您的邮箱回复`（满足 AC2 所有字段）
+- 新增 WebSocket 广播字段：influencer_name、is_read、created_at（供 NotificationBell 实时渲染）
+- 新增 server/app/services/webhook_service.py：基于 httpx 的 Feishu/Slack 异步 Webhook 推送（可选，从 settings 读取 URL，URL 为空则跳过）
+- 在 _classify_and_notify 中 notification 广播后以 asyncio.create_task 触发 webhook 推送（非阻塞）
+
+变更文件：
+- server/app/agents/monitor.py（更新 content 格式 + WS payload + webhook 调用）
+- server/app/services/webhook_service.py（新增）
+
+**未来迭代的学习：**
+- asyncio.create_task() 适合在 async 函数中 fire-and-forget 侧链任务（webhook、日志写入等），不阻塞主流程
+- httpx.AsyncClient 支持 timeout=float，推荐外部 HTTP 调用时总设超时防止挂起
+- 可选 Webhook URL：get_settings().field 为空字符串时直接 return，不用异常处理
+---
+
+## 2026-04-13 14:30 - S18
+- 实现了节假日祝福邮件全流程
+- 后端：schema（HolidayCreate/Update/Response + GreetingLog schemas）、service（CRUD + seed 6 个默认节日 + holiday_greeting_check 调度任务 + GPT-4o 生成）、API（GET/POST/PUT/DELETE /api/holidays + /logs + /trigger），main.py 注册 router + lifespan 内 seed + 08:00 UTC CronJob
+- 前端：client/src/api/holidays.ts、client/src/pages/HolidaysPage.tsx（三 Tab：日历视图/管理列表/祝福日志）、App.tsx 注册 /holidays 路由、Sidebar.tsx 添加 Holidays（Gift 图标）导航项
+- 变更文件：server/app/schemas/holiday.py（新建）、server/app/services/holiday_service.py（新建）、server/app/api/holidays.py（新建）、server/app/main.py（注册 router + seed + scheduler）、client/src/api/holidays.ts（新建）、client/src/pages/HolidaysPage.tsx（新建）、client/src/App.tsx（新增路由）、client/src/components/layout/Sidebar.tsx（新增 Gift 导航项）
+
+**未来迭代的学习：**
+  - _is_today() 区分 is_recurring（只比 month+day）和一次性节日（比 full date），在年份跨越时确保正确触发
+  - 祝福不计入 follow_up_count，用 EmailType.holiday 区分，排除逻辑同时检查 follow_up 和 holiday 两种类型
+  - seed_default_holidays 在 lifespan 内调用，每次启动检查 count==0 才插入，幂等安全
+  - update_holiday 的 greeting_template 字段可以设为 None（清空），需要在 kwargs 处理时对 None 保持赋值而非跳过
+  - Windows 上 ast.parse 读文件需指定 encoding='utf-8'，否则 GBK 解码报错
+---
+
+## 2026-04-13 - S18
+- 实现节假日祝福邮件系统（全栈）
+- 后端：server/app/models/holiday.py（已存在于S01，含 name/date/is_recurring/is_active/greeting_template）
+- 后端：server/app/services/holiday_service.py（seed_default_holidays预置6个节日，CRUD操作，holiday_greeting_check调度任务，generate_greeting via GPT-4o+静态兜底，list_greeting_logs分页查询）
+- 后端：server/app/agents/holiday_agent.py（Holiday Agent，GPT-4o生成个性化祝福，含6个节日静态模板）
+- 后端：server/app/api/holidays.py（GET/POST /holidays，PUT/DELETE /{id}，GET /logs，POST /trigger手动触发）
+- 后端：server/app/schemas/holiday.py（HolidayCreate/Update/Response/GreetingLogItem/LogsResponse）
+- 后端：server/app/main.py（lifespan中seed_default_holidays + 注册08:00 UTC CronJob）
+- 后端：server/app/models/__init__.py（导出Holiday确保create_all建表）
+- 前端：client/src/api/holidays.ts（holidaysApi: list/create/update/delete/listLogs/trigger）
+- 前端：client/src/pages/HolidaysPage.tsx（三Tab：Calendar日历视图/Manage管理表格/Greeting Logs日志）
+- 前端：client/src/App.tsx（/holidays路由）
+- 前端：client/src/components/layout/Sidebar.tsx（Holidays导航项，Gift图标）
+- Python py_compile全部通过，TypeScript tsc --noEmit零错误
+
+**未来迭代的学习：**
+- is_recurring节假日按 month+day 匹配（不含年份），不可重复节假日按完整日期匹配
+- holiday greeting check排除逻辑：exists子查询检查本月是否已有follow_up或holiday类型邮件，需.correlate(Influencer)关联
+- follow_up_count不自增是祝福与追发的核心区分；存储为EmailType.holiday而非follow_up
+- 日历视图中recurring节假日的key格式为 "month-day"（0-indexed month），精确节假日为 "year-month-day"
+- holiday_agent.py作为独立Agent文件存在，但holiday_service.py内置了generate_greeting()，两者功能类似（service优先）
+---
+
+## 2026-04-13 - S18
+- 验证 S18 节假日祝福邮件全部实现（已在上一次迭代完成并标记 passes: true）
+- 后端：server/app/agents/holiday_agent.py（GPT-4o 个性化祝福生成 + 6 个节日静态兜底模板）
+- 后端：server/app/services/holiday_service.py（seed_default_holidays + CRUD + list_greeting_logs + holiday_greeting_check APScheduler job）
+- 后端：server/app/schemas/holiday.py（HolidayCreate/HolidayUpdate/HolidayResponse/HolidayGreetingLogItem）
+- 后端：server/app/api/holidays.py（GET/POST /api/holidays，PUT/DELETE /api/holidays/{id}，GET /api/holidays/logs，POST /api/holidays/trigger）
+- 后端：server/app/main.py（注册 holidays_router + seed_default_holidays + APScheduler 08:00 UTC holiday_greeting_check）
+- 前端：client/src/api/holidays.ts（Holiday/HolidayCreate/HolidayUpdate/HolidayGreetingLogItem 类型 + holidaysApi CRUD）
+- 前端：client/src/pages/HolidaysPage.tsx（日历视图 tab + 管理表格 tab + 祝福日志 tab，Add/Edit Modal，Delete Confirm）
+- 前端：client/src/components/layout/Sidebar.tsx（新增 Holidays 导航项，Gift 图标）
+- 前端：client/src/App.tsx（注册 /holidays 路由）
+- Python py_compile 全部通过，TypeScript tsc --noEmit 零错误
+
+**未来迭代的学习：**
+- holiday_service.py 内置 GPT-4o greeting 生成（不依赖 holiday_agent.py），holiday_agent.py 是独立的可替换实现
+- 节假日重复发送检查：月初为 month_start，subquery exists(follow_up OR holiday email this month)
+- 节假日祝福不更新 follow_up_count 也不更新 influencer status，与追发不同
+- seed_default_holidays() 幂等：用 sa_func.count() 检查 holidays 表行数，count>0 直接 return
+- APScheduler 节假日 job 固定在 08:00 UTC（不可配置），与追发 job 动态读配置不同
+- HolidaysPage 用 3 个 tab（Calendar/Manage/Logs）组织功能，日历用 ChevronLeft/Right 翻月
+---
