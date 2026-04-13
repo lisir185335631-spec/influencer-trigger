@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 import dns.resolver
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+from sqlalchemy import select
 
 from app.database import AsyncSessionLocal
 from app.models.influencer import Influencer, InfluencerPlatform
@@ -320,7 +321,7 @@ async def run_scraper_agent(task_id: int) -> None:
     """
     async with AsyncSessionLocal() as db:
         result = await db.execute(
-            __import__("sqlalchemy", fromlist=["select"]).select(ScrapeTask).where(ScrapeTask.id == task_id)
+            select(ScrapeTask).where(ScrapeTask.id == task_id)
         )
         task: ScrapeTask | None = result.scalar_one_or_none()
         if not task:
@@ -353,20 +354,17 @@ async def run_scraper_agent(task_id: int) -> None:
             found_total += 1
 
             # Write to influencers table (upsert by email)
-            from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-            from app.models.influencer import InfluencerPlatform as IP
-
             platform_map = {
-                "instagram": IP.instagram,
-                "youtube": IP.youtube,
-                "tiktok": IP.tiktok,
-                "twitter": IP.twitter,
-                "facebook": IP.facebook,
+                "instagram": InfluencerPlatform.instagram,
+                "youtube": InfluencerPlatform.youtube,
+                "tiktok": InfluencerPlatform.tiktok,
+                "twitter": InfluencerPlatform.twitter,
+                "facebook": InfluencerPlatform.facebook,
             }
-            plat = platform_map.get(current_platform, IP.other)
+            plat = platform_map.get(current_platform, InfluencerPlatform.other)
 
             existing_result = await db.execute(
-                __import__("sqlalchemy", fromlist=["select"]).select(Influencer).where(Influencer.email == email)
+                select(Influencer).where(Influencer.email == email)
             )
             existing = existing_result.scalar_one_or_none()
 
