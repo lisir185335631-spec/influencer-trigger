@@ -1,0 +1,461 @@
+{
+  "project": "influencer-trigger",
+  "description": "国外社交媒体平台网红自动触发系统 - 自动抓取网红邮箱、批量发送邮件、实时监控状态、智能分流、CRM管理",
+  "tech_stack": "FastAPI + LangGraph + SQLAlchemy async + React 18 + TypeScript + TailwindCSS + Playwright + Redis",
+  "working_directory": "C:/Users/Administrator/Desktop/Ai_Agent/influencer-trigger",
+  "branchName": "main",
+  "userStories": [
+    {
+      "id": "S01",
+      "title": "项目脚手架与数据库初始化",
+      "priority": "high",
+      "description": "搭建 FastAPI 后端框架 + React 前端框架 + SQLAlchemy 数据库 Schema。后端：创建 server/app/main.py 入口（含 CORS、路由注册、startup/shutdown 事件）、config.py 配置管理（从 .env 读取）、database.py（async SQLAlchemy engine + session）。前端：Vite + React 18 + TypeScript + TailwindCSS 脚手架，配置 proxy 到后端 8000 端口。数据库：实现全部 13 张表的 SQLAlchemy ORM 模型（influencers, emails, mailboxes, campaigns, templates, tags, influencer_tags, notes, collaborations, holidays, scrape_tasks, users, email_events, notifications），含关键索引。创建 .env.example 示例文件。",
+      "acceptanceCriteria": [
+        "FastAPI 服务在 8000 端口启动，GET /api/health 返回 200",
+        "React 开发服务在 3000 端口启动，显示首页",
+        "全部 13 张表的 ORM 模型定义完整，字段类型和约束与 plan 文档一致",
+        "数据库自动建表（SQLAlchemy create_all），SQLite 文件在 data/ 目录",
+        ".env.example 包含所有必要环境变量"
+      ],
+      "depends_on": [],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S02",
+      "title": "用户认证系统（JWT）",
+      "priority": "high",
+      "description": "实现用户注册、登录、JWT 认证中间件。POST /api/auth/register（管理员创建用户，bcrypt 哈希密码），POST /api/auth/login（验证密码，返回 access_token + refresh_token），POST /api/auth/refresh。JWT middleware 保护所有 /api/* 路由。角色枚举：admin/manager/operator。前端：登录页面 + token 存储（localStorage）+ axios 拦截器自动附加 Authorization header + 401 自动跳转登录。",
+      "acceptanceCriteria": [
+        "注册接口创建用户，密码 bcrypt 哈希存储",
+        "登录接口返回 JWT access_token（30min 过期）和 refresh_token（7d）",
+        "未携带或过期 token 访问受保护接口返回 401",
+        "前端登录页面可正常登录并跳转到仪表盘",
+        "用户角色信息包含在 JWT payload 中"
+      ],
+      "depends_on": [
+        "S01"
+      ],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S03",
+      "title": "前端布局框架与路由",
+      "priority": "high",
+      "description": "搭建前端整体布局：左侧导航栏（Logo + 9 个页面入口）+ 右侧内容区 + 顶部面包屑。React Router v6 配置 9 个路由。纯白背景 #ffffff，克制高级风格，TailwindCSS utility-first。导航栏支持折叠。响应式适配（最小 1280px 宽度）。全局 WebSocket 连接管理（自动重连）。通知铃铛组件（右上角，显示未读数）。",
+      "acceptanceCriteria": [
+        "左侧导航栏包含 Dashboard/Scrape/Emails/CRM/Templates/Mailboxes/Follow-up/Team/Settings 共 9 项",
+        "点击导航项正确切换路由和内容",
+        "纯白背景 #ffffff，无多余装饰，UI 风格克制高级",
+        "WebSocket 连接建立成功，断线自动重连",
+        "右上角通知铃铛显示未读通知数量"
+      ],
+      "depends_on": [
+        "S01",
+        "S02"
+      ],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S04",
+      "title": "发送邮箱管理（CRUD + SMTP 测试）",
+      "priority": "high",
+      "description": "实现发送邮箱的增删改查和连接测试功能。后端：POST /api/mailboxes（添加邮箱，SMTP 密码用 Fernet 加密存储），GET /api/mailboxes（列表），PUT /api/mailboxes/{id}，DELETE /api/mailboxes/{id}，POST /api/mailboxes/{id}/test（发送测试邮件验证 SMTP 配置）。每个邮箱可配置 daily_limit 和 hourly_limit。每日 00:00 UTC 重置 today_sent 计数（APScheduler job）。前端：邮箱管理页面，表格展示所有邮箱（邮箱地址/状态/今日已发/日限额/退信率），添加邮箱表单（邮箱+SMTP host+port+密码+IMAP host+port），测试连接按钮。",
+      "acceptanceCriteria": [
+        "添加邮箱后，密码以 Fernet 加密形式存储在数据库",
+        "测试连接按钮发送测试邮件到指定邮箱并返回成功/失败",
+        "邮箱列表页正确展示状态、今日已发、日限额",
+        "支持编辑和删除邮箱",
+        "每日 00:00 UTC 自动重置 today_sent 为 0"
+      ],
+      "depends_on": [
+        "S01",
+        "S02"
+      ],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S05",
+      "title": "邮件模板管理（CRUD + LLM 生成）",
+      "priority": "high",
+      "description": "实现邮件模板的增删改查和 AI 自动生成。后端：GET /api/templates，POST /api/templates，PUT /api/templates/{id}，DELETE /api/templates/{id}，POST /api/templates/generate（输入行业关键词，GPT-4o 生成 3 套风格模板：formal/casual/direct）。模板支持 Jinja2 变量：{{influencer_name}}, {{platform}}, {{followers}}, {{industry}}。仅英文模板。前端：模板管理页面，模板列表（名称/行业/风格/创建时间），创建/编辑表单（富文本编辑器，HTML 支持），AI 生成按钮（输入行业 → 生成 3 套 → 用户选择保存），模板预览（填入示例变量值渲染预览）。",
+      "acceptanceCriteria": [
+        "POST /api/templates/generate 输入行业关键词返回 3 套英文邮件模板",
+        "模板支持 {{influencer_name}} 等变量，预览时正确替换",
+        "模板库页面可 CRUD 操作，按行业分类筛选",
+        "支持 HTML 富文本格式编辑",
+        "模板预览正确渲染 HTML 和变量替换效果"
+      ],
+      "depends_on": [
+        "S01",
+        "S02"
+      ],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S06",
+      "title": "网红邮箱抓取引擎（Scraper Agent + Playwright）",
+      "priority": "high",
+      "description": "实现 Scraper Agent，使用 Playwright 从 5 大平台抓取网红公开邮箱。后端：POST /api/scrape/tasks（创建抓取任务：platforms[], industry, target_count），GET /api/scrape/tasks，GET /api/scrape/tasks/{id}。Scraper Agent 实现：启动 Playwright Chromium headless + stealth 插件，按平台搜索行业关键词，滚动加载网红列表，逐一访问主页提取邮箱（正则 + 反混淆），MX 记录验证，跨平台邮箱去重，结果写入 influencers 表。每平台最多 1 个浏览器并发，操作间隔 2-5 秒随机。WebSocket 实时推送抓取进度。前端：抓取任务页面，创建任务表单（选平台+输行业+设数量），任务列表（状态/进度/有效邮箱数），进度条实时更新。",
+      "acceptanceCriteria": [
+        "创建抓取任务后 Playwright 自动启动抓取流程",
+        "至少支持 Instagram 和 YouTube 的邮箱提取（其他平台可降级为手动输入提示）",
+        "邮箱反混淆处理：[at]→@，(dot)→. 等",
+        "MX 记录验证过滤无效邮箱域名",
+        "WebSocket 实时推送抓取进度到前端",
+        "抓取结果正确写入 influencers 表"
+      ],
+      "depends_on": [
+        "S01",
+        "S03"
+      ],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S07",
+      "title": "抓取结果预览与确认",
+      "priority": "medium",
+      "description": "抓取完成后展示结果列表，用户确认后一键进入发送流程。前端：抓取任务详情页增加结果预览表格（网红名/平台/邮箱/粉丝数/简介摘要），支持按粉丝数排序，支持勾选/取消勾选（手动移除不想联系的），底部'全部发送'按钮跳转到批量发送页面（携带选中的网红 ID 列表）。后端：GET /api/scrape/tasks/{id}/results 返回抓取到的网红列表。",
+      "acceptanceCriteria": [
+        "抓取结果表格正确展示网红信息",
+        "支持按粉丝数排序",
+        "支持勾选/取消勾选移除不想联系的网红",
+        "'全部发送'按钮跳转到发送页面并携带选中网红 ID"
+      ],
+      "depends_on": [
+        "S06"
+      ],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S08",
+      "title": "CSV/Excel 网红名单导入",
+      "priority": "high",
+      "description": "支持导入已有网红名单。后端：POST /api/influencers/import（接收文件上传，解析 .xlsx/.csv），POST /api/influencers/import/preview（预览前 10 行 + 列映射），POST /api/influencers/import/confirm（确认导入）。列名自动映射（中英文映射表：email/邮箱, nickname/昵称, platform/平台, followers/粉丝数, profile_url/主页链接, industry/行业）。必填列：email；选填列其余。邮箱格式正则校验 + MX 验证。与已有网红邮箱去重，重复项标记。前端：导入页面，拖拽上传文件，预览表格（前 10 行），列映射确认（下拉选择），无效邮箱标红，去重提示，确认导入按钮。",
+      "acceptanceCriteria": [
+        "支持 .xlsx 和 .csv 格式上传",
+        "列名自动映射中英文（email=邮箱 等）",
+        "预览展示前 10 行 + 列映射确认界面",
+        "无效邮箱标红提示",
+        "与已有网红邮箱去重，重复项可选跳过或覆盖",
+        "导入完成后数据正确写入 influencers 表"
+      ],
+      "depends_on": [
+        "S01",
+        "S03"
+      ],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S09",
+      "title": "批量邮件发送引擎（Sender Agent + 多邮箱轮换）",
+      "priority": "high",
+      "description": "实现 Sender Agent，支持批量发送邮件和多邮箱自动轮换。后端：POST /api/emails/send-batch（接收 influencer_ids[] + template_id，创建 campaign，启动异步发送任务）。MailboxRotator 类：查询 status=active 且 today_sent < daily_limit 的邮箱，按 today_sent 升序选择（均匀分配），达到限额自动跳过。发送流程：解密 SMTP 密码 → aiosmtplib 连接 → Jinja2 渲染模板变量 → 生成 MIME 邮件（HTML）→ 发送 → 记录 message_id → 更新 today_sent → 写入 emails 表。发送间隔 30-60 秒随机。失败重试 1 次。WebSocket 推送发送进度。前端：发送页面，选择网红列表 + 模板 → 确认发送，进度面板（已发送/成功/失败/总数），实时更新。",
+      "acceptanceCriteria": [
+        "批量发送正确使用多邮箱轮换，均匀分配",
+        "单邮箱达到日限额自动切换下一个",
+        "邮件模板变量正确替换（网红名、平台、粉丝数、行业）",
+        "发送间隔 30-60 秒随机",
+        "发送失败自动重试 1 次",
+        "WebSocket 实时推送发送进度",
+        "发送记录正确写入 emails 表（含 message_id）",
+        "campaign 记录更新发送统计"
+      ],
+      "depends_on": [
+        "S04",
+        "S05"
+      ],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S10",
+      "title": "IMAP 24/7 邮件回复监控（Monitor）",
+      "priority": "high",
+      "description": "实现 24/7 IMAP 轮询后台任务，检测网红回复邮件。后台 asyncio task 在 FastAPI startup 启动，每 5 分钟轮询所有 active 邮箱的收件箱。回复匹配逻辑：优先匹配 In-Reply-To header → emails.message_id，回退匹配发件人邮箱 → influencers.email，再回退匹配邮件主题。检测到回复后：更新 emails.status=replied + reply_content + replied_at，更新 influencers.status=replied，写入 email_events 表。退信检测：解析 DSN 通知，5.x.x 永久失败标记退信，更新 mailbox.bounce_rate。异常处理：连接断开指数退避重试（5s→10s→30s→60s），错误日志记录。WebSocket 推送状态变更。",
+      "acceptanceCriteria": [
+        "FastAPI 启动后 IMAP 监控后台任务自动运行",
+        "每 5 分钟检查一次所有活跃邮箱的收件箱",
+        "正确匹配回复邮件与原始发送邮件（In-Reply-To 优先）",
+        "检测到回复后更新 emails 和 influencers 状态",
+        "退信正确检测并更新邮箱退信率",
+        "IMAP 连接断开后自动重连（指数退避）",
+        "WebSocket 推送新回复和状态变更事件"
+      ],
+      "depends_on": [
+        "S04",
+        "S09"
+      ],
+      "passes": true,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S11",
+      "title": "邮件状态看板",
+      "priority": "medium",
+      "description": "前端邮件中心页面，展示所有邮件的实时状态。顶部状态汇总卡片：总发送数 / 已送达 / 已打开 / 已回复 / 未回复 / 退信（调用 GET /api/emails/stats）。下方邮件列表表格：网红名 / 邮箱 / 发送时间 / 当前状态 / 最后更新时间。筛选：按批次、平台、状态。状态标签色：sent=蓝 / delivered=青 / replied=绿 / bounced=红 / pending=灰。WebSocket 监听 email_status_change 事件，实时更新表格和统计卡片。后端：GET /api/emails（分页+筛选），GET /api/emails/stats。",
+      "acceptanceCriteria": [
+        "顶部 6 个状态汇总卡片数值正确",
+        "邮件列表支持按批次、平台、状态筛选",
+        "状态标签颜色正确对应",
+        "WebSocket 实时更新状态变更，无需手动刷新",
+        "列表支持分页（每页 20 条）"
+      ],
+      "depends_on": [
+        "S09",
+        "S10"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S12",
+      "title": "回复意图分类（Classifier Agent）",
+      "priority": "high",
+      "description": "实现 Classifier Agent，对网红回复邮件进行意图分类。Monitor 检测到回复后触发 Classifier。调用 GPT-4o-mini 分析回复内容，分类为 5 种意图：interested / pricing / declined / auto_reply / irrelevant。返回 JSON {intent, confidence, summary}。分类结果写入 influencers.reply_intent。auto_reply 不触发人工通知。其他意图触发通知。更新 influencers.priority：interested/pricing → high，declined → low，irrelevant → low。后端：分类逻辑封装在 agents/classifier.py，通过 LangGraph State 接收回复内容。",
+      "acceptanceCriteria": [
+        "回复邮件自动触发意图分类",
+        "GPT-4o-mini 正确分类 5 种意图",
+        "分类结果写入 influencers.reply_intent",
+        "auto_reply 类型不触发人工通知",
+        "优先级自动更新：interested/pricing → high"
+      ],
+      "depends_on": [
+        "S10"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S13",
+      "title": "人工介入通知系统",
+      "priority": "high",
+      "description": "检测到非 auto_reply 回复后，立即通知 BD 运营人工介入。后端：POST /api/notifications（创建通知），GET /api/notifications（列表，支持 is_read 筛选），PATCH /api/notifications/{id}/read（标为已读），POST /api/notifications/read-all。通知内容：网红名 / 平台 / 回复意图分类 / 回复内容摘要 / '请前往您的邮箱回复'提示。WebSocket 实时推送 notification 事件。前端：通知铃铛点击展开通知列表，按意图优先级排序（interested > pricing > declined > irrelevant），未读通知高亮，点击跳转到网红详情。可选：飞书/Slack Webhook 推送（系统设置中配置 Webhook URL）。",
+      "acceptanceCriteria": [
+        "非 auto_reply 回复触发系统通知",
+        "通知包含网红名、平台、意图、摘要、'请前往您的邮箱回复'",
+        "WebSocket 实时推送通知到前端",
+        "通知铃铛显示未读数，点击展开列表",
+        "按意图优先级排序",
+        "支持标记已读和全部已读"
+      ],
+      "depends_on": [
+        "S03",
+        "S12"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S14",
+      "title": "CRM 网红档案与详情页",
+      "priority": "medium",
+      "description": "实现 CRM 式网红管理的档案和详情功能。后端：GET /api/influencers/{id}（返回完整档案：基础信息 + 邮件历史 + 标签 + 备注 + 合作历史），PATCH /api/influencers/{id}（更新信息），GET /api/influencers/{id}/emails（邮件往来时间线），POST /api/influencers/{id}/notes（添加备注），GET /api/tags, POST /api/tags, DELETE /api/tags/{id}（标签 CRUD），POST /api/influencers/{id}/tags（关联标签）。前端：网红详情页 — 左侧基础信息卡片（头像/昵称/平台/邮箱/粉丝/状态/优先级），右侧 Tab 切换（邮件历史时间线 / 标签管理 / 备注列表 / 合作历史）。标签支持多选和新建。备注支持添加，按时间倒序。",
+      "acceptanceCriteria": [
+        "网红详情页展示完整基础信息",
+        "邮件历史时间线正确展示所有往来邮件",
+        "支持创建和分配标签（多选）",
+        "支持添加备注，按时间倒序展示",
+        "合作历史 Tab 展示合作记录"
+      ],
+      "depends_on": [
+        "S01",
+        "S03"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S15",
+      "title": "CRM 网红列表与多维筛选",
+      "priority": "medium",
+      "description": "实现网红列表页面，支持多维筛选、搜索、批量操作。后端：GET /api/influencers（分页+多维筛选：platform, status, tag_ids, followers_min, followers_max, industry, reply_intent, keyword），POST /api/influencers/export（导出 CSV），PATCH /api/influencers/batch（批量操作：打标签/归档）。前端：网红列表页 — 顶部筛选栏（平台下拉/状态下拉/标签多选/粉丝数区间/行业/关键词搜索），表格（勾选框/网红名/平台/邮箱/粉丝数/状态/标签/优先级/最后联系时间），底部批量操作栏（批量打标签/批量归档/导出CSV），分页。点击网红名跳转详情页。",
+      "acceptanceCriteria": [
+        "支持按平台/状态/标签/粉丝数/行业/关键词多维筛选",
+        "筛选结果正确且支持组合筛选",
+        "批量打标签和批量归档功能正常",
+        "导出 CSV 包含正确的字段",
+        "表格分页，每页 20 条",
+        "点击网红名跳转详情页"
+      ],
+      "depends_on": [
+        "S14"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S16",
+      "title": "回复网红筛选与优先级排序",
+      "priority": "medium",
+      "description": "对已回复网红进行质量评估和优先级排序。后端：GET /api/influencers?status=replied（筛选已回复网红），优先级评分逻辑：合作意向（来自 Classifier Agent 的 intent + confidence）+ 粉丝量级（分档：<10K/10K-100K/100K-1M/>1M）+ 内容匹配度（可选，后续迭代 LLM 分析）。综合评分 → priority: high/medium/low。BD 主管可手动调整 priority。前端：已回复网红筛选视图 — 默认按 priority 排序（high→medium→low），每行展示：网红名/平台/粉丝/回复意图/回复摘要/优先级徽章，支持手动调整优先级下拉。",
+      "acceptanceCriteria": [
+        "已回复网红列表按优先级排序",
+        "优先级评分综合考虑意图和粉丝量级",
+        "BD 主管可手动调整优先级",
+        "回复摘要正确展示",
+        "优先级徽章颜色区分（high=红/medium=黄/low=灰）"
+      ],
+      "depends_on": [
+        "S12",
+        "S15"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S17",
+      "title": "月度自动追发（Responder Agent + APScheduler）",
+      "priority": "medium",
+      "description": "对未回复网红每月自动追发 1 封差异化邮件。后端：APScheduler CronTrigger 每日 10:00 UTC 执行 monthly_follow_up_check()：查询 influencers WHERE status='contacted' AND last_email_sent_at < now()-30d AND follow_up_count < max(默认6) AND 本月未发送。对每个网红：GPT-4o 生成差异化追发内容（传入 follow_up_count 确保每次角度不同），调用 Sender Agent 发送，follow_up_count += 1，超过 max → status=archived。如果中途网红回复，自动停止追发。前端：追发设置页 — 配置追发间隔天数（默认30）、最大追发次数（默认6）、追发时间（UTC时区）。追发日志列表。",
+      "acceptanceCriteria": [
+        "APScheduler 每日 10:00 UTC 执行追发检查",
+        "满足条件的未回复网红自动追发",
+        "每次追发内容差异化（GPT-4o 生成）",
+        "追发计数正确递增",
+        "超过最大次数自动归档",
+        "网红回复后自动停止追发",
+        "前端可配置追发策略参数"
+      ],
+      "depends_on": [
+        "S09",
+        "S10"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S18",
+      "title": "节假日祝福邮件",
+      "priority": "medium",
+      "description": "在国际节假日自动向所有活跃网红发送祝福邮件。后端：holidays 表预置节日数据（圣诞/新年/感恩节/情人节/万圣节/复活节），支持用户自定义添加。APScheduler CronTrigger 每日 08:00 UTC 检查今天是否节假日，是则：查询所有 status != archived 的网红，排除本月已收到追发/祝福的，GPT-4o 根据节日+行业生成个性化祝福，批量发送（不计入 follow_up_count）。前端：节假日管理页面 — 日历视图展示节日，支持添加/编辑/删除自定义节日。祝福发送日志。GET /api/holidays, POST /api/holidays, PUT /api/holidays/{id}, DELETE /api/holidays/{id}。",
+      "acceptanceCriteria": [
+        "预置 6 个国际节假日",
+        "节假日当天自动发送祝福邮件",
+        "祝福内容个性化（结合节日+行业）",
+        "不重复发送（本月已有追发/祝福的跳过）",
+        "祝福不计入追发次数",
+        "前端日历视图展示节日",
+        "支持用户自定义添加节日"
+      ],
+      "depends_on": [
+        "S09",
+        "S17"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S19",
+      "title": "数据仪表盘",
+      "priority": "medium",
+      "description": "首页数据仪表盘，展示核心运营指标。后端：GET /api/dashboard/stats（核心指标：总网红数/本周新增/总发送/本周发送/回复率/有效回复率/合作转化率），GET /api/dashboard/trends（近30天每日发送量+回复量折线数据），GET /api/dashboard/platform-distribution（各平台网红数量），GET /api/dashboard/mailbox-health（各邮箱使用量/限额/退信率）。前端：Dashboard 页面 — 顶部 5 个核心指标卡片，中部折线图（Recharts，近30天趋势），左下平台分布饼图，右下邮箱健康度表格（进度条展示使用率，退信率>10%标红告警）。",
+      "acceptanceCriteria": [
+        "5 个核心指标卡片数据正确",
+        "折线图展示近 30 天每日发送量和回复量",
+        "平台分布饼图正确展示",
+        "邮箱健康度表格展示使用率和退信率",
+        "退信率 > 10% 红色告警标识",
+        "页面加载时间 < 2 秒"
+      ],
+      "depends_on": [
+        "S09",
+        "S10",
+        "S11"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S20",
+      "title": "团队管理与权限控制",
+      "priority": "low",
+      "description": "管理员管理团队成员账号和权限。后端：GET /api/users, POST /api/users（管理员创建），PUT /api/users/{id}（修改角色/信息），DELETE /api/users/{id}（禁用）。权限中间件：admin 全部权限，manager 查看仪表盘+管理网红+配置模板，operator 创建任务+查看网红+处理回复。最多 10 个成员。前端：团队管理页面（仅 admin 可见）— 成员列表（用户名/角色/邮箱/状态），添加成员表单，编辑角色下拉，禁用/启用开关。非 admin 用户不显示团队管理导航项。",
+      "acceptanceCriteria": [
+        "管理员可创建/编辑/禁用团队成员",
+        "三种角色权限正确隔离",
+        "operator 无法访问团队管理和系统设置",
+        "manager 无法创建用户",
+        "最多 10 个团队成员限制",
+        "非 admin 不显示团队管理导航"
+      ],
+      "depends_on": [
+        "S02",
+        "S03"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "",
+      "retryCount": 0
+    },
+    {
+      "id": "S21",
+      "title": "系统设置与原生进程部署",
+      "priority": "low",
+      "description": "系统级配置页面 + 原生进程部署（不使用 Docker）。后端：GET /api/settings, PUT /api/settings（追发间隔天数/最大追发次数/抓取并发数/通知 Webhook URL）。设置存储在 JSON 配置文件或数据库。通知 Webhook：飞书/Slack 推送（POST 到用户配置的 Webhook URL）。部署：start.bat/start.sh 一键启动脚本（启动 FastAPI + Redis），nginx.conf 反向代理配置（API 代理 + 前端静态文件托管），PM2 ecosystem.config.js 进程管理配置（可选）。前端 build 产物由 nginx 托管。",
+      "acceptanceCriteria": [
+        "系统设置页面可配置追发策略、抓取并发数、Webhook URL",
+        "设置修改后立即生效",
+        "飞书/Slack Webhook 通知正确推送",
+        "start.bat/start.sh 一键启动所有服务（FastAPI + Redis）",
+        "nginx.conf 正确配置反向代理 API 和托管前端静态文件",
+        "服务重启后数据不丢失（SQLite 文件持久化）"
+      ],
+      "depends_on": [
+        "S17",
+        "S18",
+        "S19",
+        "S20"
+      ],
+      "passes": false,
+      "blocked": false,
+      "notes": "[Opus安全审查] S02实现中发现3个安全加固项需在本Story统一修复：1) config.py SECRET_KEY去掉硬编码默认值，未设置时raise ValueError强制报错；2) 用Redis做refresh token黑名单，刷新后旧token立即失效；3) 加slowapi限流中间件，登录接口5次/15分钟/IP",
+      "retryCount": 0
+    }
+  ]
+}
