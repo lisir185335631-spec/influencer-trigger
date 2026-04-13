@@ -337,7 +337,7 @@
         "S12",
         "S15"
       ],
-      "passes": false,
+      "passes": true,
       "blocked": false,
       "notes": "",
       "retryCount": 0
