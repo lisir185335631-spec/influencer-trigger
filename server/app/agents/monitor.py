@@ -446,8 +446,8 @@ async def _classify_and_notify(
                 display_name = influencer.nickname or influencer.email
                 platform_str = influencer.platform.value if influencer.platform else "unknown"
                 content = (
-                    f"[{platform_str}] {display_name}: {result.summary} "
-                    "— 请前往您的邮箱回复"
+                    f"[{platform_str}] {display_name} · {result.intent}: "
+                    f"{result.summary} — 请前往您的邮箱回复"
                 )
                 notification = Notification(
                     influencer_id=influencer_id,
@@ -462,16 +462,27 @@ async def _classify_and_notify(
                 notification_data = {
                     "id": notification.id,
                     "influencer_id": influencer_id,
+                    "influencer_name": display_name,
                     "title": notification.title,
                     "content": notification.content,
                     "level": notification.level.value,
                     "intent": notification.intent,
+                    "is_read": False,
+                    "created_at": notification.created_at.isoformat() if notification.created_at else None,
                 }
 
             await db.commit()
 
         if notification_data:
             await manager.broadcast("notification", notification_data)
+            # Optional: push to Feishu / Slack if configured
+            from app.services.webhook_service import send_notification_webhooks  # local import
+            asyncio.create_task(
+                send_notification_webhooks(
+                    notification_data["title"],
+                    notification_data["content"],
+                )
+            )
 
         await manager.broadcast("influencer:intent_classified", {
             "influencer_id": influencer_id,
