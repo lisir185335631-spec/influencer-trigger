@@ -18,6 +18,7 @@ from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router
 from app.api.scrape import router as scrape_router
 from app.api.import_ import router as import_router
+from app.api.emails import router as emails_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -77,6 +78,7 @@ app.include_router(mailboxes_router, prefix="/api")
 app.include_router(templates_router, prefix="/api")
 app.include_router(scrape_router, prefix="/api")
 app.include_router(import_router, prefix="/api")
+app.include_router(emails_router, prefix="/api")
 
 
 @app.websocket("/ws")
