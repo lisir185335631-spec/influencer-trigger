@@ -110,6 +110,7 @@ class InfluencerListItem(BaseModel):
     email: str
     platform: Optional[str] = None
     followers: Optional[int] = None
+    industry: Optional[str] = None
     status: str
     priority: str
     reply_intent: Optional[str] = None

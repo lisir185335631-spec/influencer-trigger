@@ -84,6 +84,7 @@ async def list_influencers(
                 email=inf.email,
                 platform=inf.platform.value if inf.platform else None,
                 followers=inf.followers,
+                industry=inf.industry,
                 status=inf.status.value,
                 priority=inf.priority.value,
                 reply_intent=inf.reply_intent.value if inf.reply_intent else None,
@@ -365,7 +366,7 @@ async def export_influencers_csv(
             inf.email,
             inf.platform or "",
             inf.followers if inf.followers is not None else "",
-            "",  # industry not in InfluencerListItem — left blank
+            inf.industry or "",
             inf.status,
             inf.priority,
             inf.reply_intent or "",
