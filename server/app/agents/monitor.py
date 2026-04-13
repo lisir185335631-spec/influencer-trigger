@@ -447,19 +447,37 @@ async def _classify_and_notify(
                 influencer.priority = _INTENT_PRIORITY[result.intent]
 
             # Create notification for all intents except auto_reply
+            notification_data: dict | None = None
             if result.intent != "auto_reply":
                 display_name = influencer.nickname or influencer.email
+                platform_str = influencer.platform.value if influencer.platform else "unknown"
+                content = (
+                    f"[{platform_str}] {display_name}: {result.summary} "
+                    "— Please check your email to reply."
+                )
                 notification = Notification(
                     influencer_id=influencer_id,
                     email_id=email_id,
                     title=f"Reply from {display_name}",
-                    content=result.summary,
+                    content=content,
                     level=_INTENT_LEVEL.get(result.intent, NotificationLevel.info),
                     intent=result.intent,
                 )
                 db.add(notification)
+                await db.flush()
+                notification_data = {
+                    "id": notification.id,
+                    "influencer_id": influencer_id,
+                    "title": notification.title,
+                    "content": notification.content,
+                    "level": notification.level.value,
+                    "intent": notification.intent,
+                }
 
             await db.commit()
+
+        if notification_data:
+            await manager.broadcast("notification", notification_data)
 
         await manager.broadcast("influencer:intent_classified", {
             "influencer_id": influencer_id,

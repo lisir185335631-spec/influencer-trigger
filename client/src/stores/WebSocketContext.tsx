@@ -5,6 +5,7 @@ interface WebSocketContextValue {
   status: WsStatus
   unreadCount: number
   clearUnread: () => void
+  notificationTick: number
 }
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null)
@@ -13,10 +14,12 @@ const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${win
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0)
+  const [notificationTick, setNotificationTick] = useState(0)
 
   const handleMessage = useCallback((msg: WsMessage) => {
     if (msg.event === 'notification') {
       setUnreadCount((prev) => prev + 1)
+      setNotificationTick((prev) => prev + 1)
     }
   }, [])
 
@@ -25,7 +28,7 @@ export function WebSocketProvider({ children }: { children: ReactNode }) {
   const clearUnread = useCallback(() => setUnreadCount(0), [])
 
   return (
-    <WebSocketContext.Provider value={{ status, unreadCount, clearUnread }}>
+    <WebSocketContext.Provider value={{ status, unreadCount, clearUnread, notificationTick }}>
       {children}
     </WebSocketContext.Provider>
   )
