@@ -5,7 +5,9 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.models.influencer import Influencer
 from app.models.scrape_task import ScrapeTask, ScrapeTaskStatus
+from app.models.scrape_task_influencer import ScrapeTaskInfluencer
 from app.schemas.scrape import ScrapeTaskCreate
 
 logger = logging.getLogger(__name__)
@@ -36,6 +38,20 @@ async def list_scrape_tasks(db: AsyncSession) -> list[ScrapeTask]:
 async def get_scrape_task(db: AsyncSession, task_id: int) -> ScrapeTask | None:
     result = await db.execute(select(ScrapeTask).where(ScrapeTask.id == task_id))
     return result.scalar_one_or_none()
+
+
+async def get_task_influencers(
+    db: AsyncSession, task_id: int, sort_by_followers: bool = False
+) -> list[Influencer]:
+    stmt = (
+        select(Influencer)
+        .join(ScrapeTaskInfluencer, ScrapeTaskInfluencer.influencer_id == Influencer.id)
+        .where(ScrapeTaskInfluencer.scrape_task_id == task_id)
+    )
+    if sort_by_followers:
+        stmt = stmt.order_by(Influencer.followers.desc().nullslast())
+    result = await db.execute(stmt)
+    return list(result.scalars().all())
 
 
 async def update_task_status(

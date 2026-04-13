@@ -11,6 +11,8 @@ from app.config import get_settings
 from app.database import AsyncSessionLocal, create_tables
 from app.websocket.manager import manager
 from app.api.health import router as health_router
+# noqa: F401 — import models so create_all sees them
+import app.models.scrape_task_influencer  # noqa: F401
 from app.api.auth import router as auth_router
 from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router

@@ -7,10 +7,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import get_db
 from app.deps import get_current_user
 from app.schemas.auth import TokenData
-from app.schemas.scrape import ScrapeTaskCreate, ScrapeTaskResponse
+from app.schemas.scrape import ScrapeTaskCreate, ScrapeTaskResponse, ScrapeInfluencerResult
 from app.services.scrape_service import (
     create_scrape_task,
     get_scrape_task,
+    get_task_influencers,
     list_scrape_tasks,
 )
 from app.agents.scraper import run_scraper_agent
@@ -71,3 +72,18 @@ async def get_task(
     if not task:
         raise HTTPException(status_code=404, detail="Scrape task not found")
     return task
+
+
+@router.get("/tasks/{task_id}/results", response_model=list[ScrapeInfluencerResult])
+async def get_task_results(
+    task_id: int,
+    sort: str = "followers",
+    db: AsyncSession = Depends(get_db),
+    _: TokenData = Depends(get_current_user),
+):
+    task = await get_scrape_task(db, task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Scrape task not found")
+    sort_by_followers = sort == "followers"
+    influencers = await get_task_influencers(db, task_id, sort_by_followers=sort_by_followers)
+    return influencers

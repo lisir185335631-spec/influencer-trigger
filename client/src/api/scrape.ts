@@ -25,6 +25,18 @@ export interface ScrapeTaskCreate {
   target_count: number
 }
 
+export interface ScrapeInfluencerResult {
+  id: number
+  nickname: string | null
+  email: string
+  platform: string | null
+  profile_url: string | null
+  followers: number | null
+  industry: string | null
+  bio: string | null
+  status: string
+}
+
 export const scrapeApi = {
   createTask: (data: ScrapeTaskCreate) =>
     apiClient.post<ScrapeTask>('/scrape/tasks', data).then(r => r.data),
@@ -34,6 +46,11 @@ export const scrapeApi = {
 
   getTask: (id: number) =>
     apiClient.get<ScrapeTask>(`/scrape/tasks/${id}`).then(r => r.data),
+
+  getTaskResults: (id: number, sort: 'followers' | 'default' = 'followers') =>
+    apiClient
+      .get<ScrapeInfluencerResult[]>(`/scrape/tasks/${id}/results`, { params: { sort } })
+      .then(r => r.data),
 }
 
 export function parsePlatforms(raw: string): string[] {

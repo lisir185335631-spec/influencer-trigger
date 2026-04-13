@@ -21,6 +21,7 @@ from sqlalchemy import select
 from app.database import AsyncSessionLocal
 from app.models.influencer import Influencer, InfluencerPlatform
 from app.models.scrape_task import ScrapeTask, ScrapeTaskStatus
+from app.models.scrape_task_influencer import ScrapeTaskInfluencer
 from app.services.scrape_service import update_task_status
 from app.websocket.manager import manager
 
@@ -377,10 +378,21 @@ async def run_scraper_agent(task_id: int) -> None:
                     industry=industry,
                 )
                 db.add(inf)
+                await db.flush()  # get inf.id without full commit
+                db.add(ScrapeTaskInfluencer(scrape_task_id=task_id, influencer_id=inf.id))
                 await db.commit()
                 valid_total += 1
             else:
-                # already exists — count as valid but don't duplicate
+                # already exists — link to this task if not already linked
+                link_result = await db.execute(
+                    select(ScrapeTaskInfluencer).where(
+                        ScrapeTaskInfluencer.scrape_task_id == task_id,
+                        ScrapeTaskInfluencer.influencer_id == existing.id,
+                    )
+                )
+                if link_result.scalar_one_or_none() is None:
+                    db.add(ScrapeTaskInfluencer(scrape_task_id=task_id, influencer_id=existing.id))
+                    await db.commit()
                 valid_total += 1
 
             progress = min(99, int((valid_total / task.target_count) * 100))

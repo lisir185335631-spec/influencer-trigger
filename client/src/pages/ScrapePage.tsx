@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Plus,
   X,
@@ -244,6 +245,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ScrapePage() {
+  const navigate = useNavigate()
   const [tasks, setTasks] = useState<ScrapeTask[]>([])
   const [loading, setLoading] = useState(true)
   const [showCreate, setShowCreate] = useState(false)
@@ -368,7 +370,11 @@ export default function ScrapePage() {
                 const t = resolveTask(rawTask)
                 const live = (t as ScrapeTask & { _live?: ProgressEvent })._live
                 return (
-                  <tr key={t.id} className="hover:bg-gray-50/60 transition-colors">
+                  <tr
+                    key={t.id}
+                    className="hover:bg-gray-50/60 transition-colors cursor-pointer"
+                    onClick={() => navigate(`/scrape/tasks/${t.id}`)}
+                  >
                     <td className="px-4 py-3">
                       <PlatformTags raw={t.platforms} />
                     </td>

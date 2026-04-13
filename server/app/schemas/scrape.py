@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import List
+from typing import List, Optional
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -35,3 +35,17 @@ class ScrapeTaskResponse(BaseModel):
     completed_at: datetime | None
     created_at: datetime
     updated_at: datetime
+
+
+class ScrapeInfluencerResult(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    nickname: Optional[str]
+    email: str
+    platform: Optional[str]
+    profile_url: Optional[str]
+    followers: Optional[int]
+    industry: Optional[str]
+    bio: Optional[str]
+    status: str

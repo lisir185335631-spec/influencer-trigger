@@ -6,6 +6,7 @@ import MainLayout from './components/layout/MainLayout'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import ScrapePage from './pages/ScrapePage'
+import ScrapeTaskDetailPage from './pages/ScrapeTaskDetailPage'
 import EmailsPage from './pages/EmailsPage'
 import CRMPage from './pages/CRMPage'
 import TemplatesPage from './pages/TemplatesPage'
@@ -17,6 +18,7 @@ import SettingsPage from './pages/SettingsPage'
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
   { path: '/scrape', element: <ScrapePage /> },
+  { path: '/scrape/tasks/:taskId', element: <ScrapeTaskDetailPage /> },
   { path: '/emails', element: <EmailsPage /> },
   { path: '/crm', element: <CRMPage /> },
   { path: '/templates', element: <TemplatesPage /> },
