@@ -14,6 +14,7 @@ import {
   ChevronRight,
   Zap,
   FileUp,
+  Gift,
 } from 'lucide-react'
 
 interface NavItem {
@@ -31,6 +32,7 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Templates', to: '/templates', icon: FileText },
   { label: 'Mailboxes', to: '/mailboxes', icon: Inbox },
   { label: 'Follow-up', to: '/followup', icon: RefreshCw },
+  { label: 'Holidays', to: '/holidays', icon: Gift },
 ]
 
 const BOTTOM_NAV_ITEMS: NavItem[] = [

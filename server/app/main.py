@@ -23,6 +23,7 @@ from app.api.emails import router as emails_router
 from app.api.notifications import router as notifications_router
 from app.api.influencers import router as influencers_router
 from app.api.follow_up import router as follow_up_router
+from app.api.holidays import router as holidays_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -63,6 +64,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         replace_existing=True,
     )
     logger.info("Follow-up scheduler job registered at %02d:00 UTC", fu_settings.hour_utc)
+
+    # Seed default holidays and schedule daily holiday greeting job
+    from app.services.holiday_service import seed_default_holidays, holiday_greeting_check
+    async with AsyncSessionLocal() as db:
+        await seed_default_holidays(db)
+
+    scheduler.add_job(
+        holiday_greeting_check,
+        CronTrigger(hour=8, minute=0, timezone="UTC"),
+        id="holiday_greeting",
+        replace_existing=True,
+    )
+    logger.info("Holiday greeting scheduler job registered at 08:00 UTC")
 
     scheduler.start()
     logger.info("Scheduler started.")
@@ -114,6 +128,7 @@ app.include_router(emails_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(influencers_router, prefix="/api")
 app.include_router(follow_up_router, prefix="/api")
+app.include_router(holidays_router, prefix="/api")
 
 
 @app.websocket("/ws")

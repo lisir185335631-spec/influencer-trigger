@@ -16,6 +16,7 @@ import TeamPage from './pages/TeamPage'
 import SettingsPage from './pages/SettingsPage'
 import ImportPage from './pages/ImportPage'
 import InfluencerDetailPage from './pages/InfluencerDetailPage'
+import HolidaysPage from './pages/HolidaysPage'
 
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
@@ -28,6 +29,7 @@ const PROTECTED_ROUTES = [
   { path: '/templates', element: <TemplatesPage /> },
   { path: '/mailboxes', element: <MailboxesPage /> },
   { path: '/followup', element: <FollowUpPage /> },
+  { path: '/holidays', element: <HolidaysPage /> },
   { path: '/team', element: <TeamPage /> },
   { path: '/settings', element: <SettingsPage /> },
 ]
