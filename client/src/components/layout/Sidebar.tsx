@@ -13,6 +13,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Zap,
+  FileUp,
 } from 'lucide-react'
 
 interface NavItem {
@@ -24,6 +25,7 @@ interface NavItem {
 const NAV_ITEMS: NavItem[] = [
   { label: 'Dashboard', to: '/dashboard', icon: LayoutDashboard },
   { label: 'Scrape', to: '/scrape', icon: Search },
+  { label: 'Import', to: '/import', icon: FileUp },
   { label: 'Emails', to: '/emails', icon: Mail },
   { label: 'CRM', to: '/crm', icon: Users },
   { label: 'Templates', to: '/templates', icon: FileText },

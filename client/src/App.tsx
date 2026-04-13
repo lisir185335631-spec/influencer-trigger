@@ -14,9 +14,11 @@ import MailboxesPage from './pages/MailboxesPage'
 import FollowUpPage from './pages/FollowUpPage'
 import TeamPage from './pages/TeamPage'
 import SettingsPage from './pages/SettingsPage'
+import ImportPage from './pages/ImportPage'
 
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
+  { path: '/import', element: <ImportPage /> },
   { path: '/scrape', element: <ScrapePage /> },
   { path: '/scrape/tasks/:taskId', element: <ScrapeTaskDetailPage /> },
   { path: '/emails', element: <EmailsPage /> },

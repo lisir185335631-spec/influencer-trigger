@@ -8,6 +8,7 @@ import NotificationBell from '../NotificationBell'
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
   '/scrape': 'Scrape',
+  '/import': 'Import',
   '/emails': 'Emails',
   '/crm': 'CRM',
   '/templates': 'Templates',
