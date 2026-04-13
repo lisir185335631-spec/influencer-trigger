@@ -729,3 +729,12 @@
 - 闭包捕获循环变量 bug 在并发场景下会暴露，用工厂函数（make_xxx）生成独立闭包
 - scrape_concurrency 默认值为 3（SystemSettings model default），UI 改后立即对下一次抓取任务生效（读取时机：任务启动）
 ---
+
+## 2026-04-13 - S21 (final validation pass)
+- 确认 scraper.py 模块注释已更新：删除旧的「Per-platform: max 1 browser concurrent」描述，改为「controlled by scrape_concurrency system setting」
+- 所有 21 个 story 已通过，项目实现完整
+- 变更文件：server/app/agents/scraper.py (comment only)
+
+**未来迭代的学习：**
+- 模块顶部 docstring 应与实际行为保持同步，过时的注释会在验证时被标记为实现不一致
+---
