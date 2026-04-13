@@ -658,3 +658,25 @@
 - 10 人上限检查在 POST /users 中用 count_users() 实现，超出返回 400
 - UserResponse.model_validate(user) 需要 model_config = {"from_attributes": True}
 ---
+
+## 2026-04-13 14:50 - S20 (AC3 补充修复)
+- 补充 AC3：operator 无法访问系统设置 — Sidebar.tsx 修改 bottomNavItems 逻辑，role !== 'operator' 才显示 Settings 导航项
+- 原实现仅对 Team 做了 admin-only 过滤，Settings 对所有角色可见，不符合 AC3
+
+变更文件：
+- client/src/components/layout/Sidebar.tsx（Settings 从 always-visible 改为仅 admin/manager 可见）
+
+**未来迭代的学习：**
+- Sidebar 的角色过滤逻辑：BOTTOM_NAV_ITEMS 中的每项都应该有独立的角色条件，不能一刀切
+---
+
+## 2026-04-13 10:30 - S20 (retry fix)
+- 修复了 SettingsPage.tsx 缺少 operator 角色拦截的问题
+- 在组件顶部添加了角色检查：当 role === 'operator' 时返回"系统设置 — 仅管理员和经理可访问"提示
+- 遵循 TeamPage 已验证的相同模式（useAuthContext → role 判断 → 返回提示 div）
+- 更改的文件：client/src/pages/SettingsPage.tsx
+
+**未来迭代的学习：**
+- 每个受权限保护的页面都必须有组件级别的角色检查，仅靠导航栏隐藏是不够的（用户可直接在地址栏输入 URL）
+- SettingsPage 允许 admin 和 manager 访问，仅拦截 operator；TeamPage 只允许 admin 访问
+---
