@@ -114,6 +114,7 @@ class InfluencerListItem(BaseModel):
     status: str
     priority: str
     reply_intent: Optional[str] = None
+    reply_summary: Optional[str] = None
     follow_up_count: int
     last_email_sent_at: Optional[datetime] = None
     created_at: datetime

@@ -53,12 +53,14 @@ async def list_influencers_endpoint(
     followers_max: Optional[int] = Query(None),
     industry: Optional[str] = Query(None),
     reply_intent: Optional[str] = Query(None),
+    sort_by: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: TokenData = Depends(get_current_user),
 ) -> InfluencerListResponse:
     items, total = await list_influencers(
         db, page, page_size, status, platform, priority, search,
         tag_ids or None, followers_min, followers_max, industry, reply_intent,
+        sort_by=sort_by,
     )
     total_pages = max(1, (total + page_size - 1) // page_size)
     return InfluencerListResponse(

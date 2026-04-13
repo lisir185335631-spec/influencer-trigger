@@ -75,6 +75,7 @@ export interface InfluencerListItem {
   status: string
   priority: string
   reply_intent: string | null
+  reply_summary: string | null
   follow_up_count: number
   last_email_sent_at: string | null
   created_at: string
@@ -112,8 +113,9 @@ export async function listInfluencers(params?: {
   followers_max?: number
   industry?: string
   reply_intent?: string
+  sort_by?: string
 }): Promise<InfluencerListResponse> {
-  const { tag_ids, ...rest } = params ?? {}
+  const { tag_ids, sort_by, ...rest } = params ?? {}
   const queryParams: Record<string, unknown> = { ...rest }
   // axios serializes arrays as tag_ids[]=1 by default; use paramsSerializer to send tag_ids=1&tag_ids=2
   const res = await apiClient.get('/influencers', {
@@ -124,6 +126,7 @@ export async function listInfluencers(params?: {
         if (v !== undefined && v !== null && v !== '') sp.append(k, String(v))
       }
       if (tag_ids?.length) tag_ids.forEach((id) => sp.append('tag_ids', String(id)))
+      if (sort_by) sp.append('sort_by', sort_by)
       return sp.toString()
     },
   })

@@ -1,10 +1,10 @@
 import csv
 import io
 from typing import Optional
-from sqlalchemy import select, delete, func, and_
+from sqlalchemy import select, delete, func, case
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.models.influencer import Influencer, InfluencerStatus, InfluencerPriority
+from app.models.influencer import Influencer, InfluencerStatus, InfluencerPriority, ReplyIntent
 from app.models.tag import Tag
 from app.models.influencer_tag import InfluencerTag
 from app.models.note import Note
@@ -24,6 +24,65 @@ from app.schemas.influencer import (
 )
 
 
+# ── Priority scoring ─────────────────────────────────────────────────────────
+
+_INTENT_SCORE: dict[str, int] = {
+    "interested": 3,
+    "pricing": 2,
+    "auto_reply": 1,
+    "declined": 0,
+    "irrelevant": 0,
+}
+
+_PRIORITY_ORDER = case(
+    (Influencer.priority == InfluencerPriority.high, 1),
+    (Influencer.priority == InfluencerPriority.medium, 2),
+    (Influencer.priority == InfluencerPriority.low, 3),
+    else_=4,
+)
+
+
+def _followers_score(followers: Optional[int]) -> int:
+    if followers is None:
+        return 0
+    if followers >= 1_000_000:
+        return 3
+    if followers >= 100_000:
+        return 2
+    if followers >= 10_000:
+        return 1
+    return 0
+
+
+def compute_priority_score(intent: Optional[str], followers: Optional[int]) -> InfluencerPriority:
+    """Compute influencer priority from intent + followers tier."""
+    intent_pts = _INTENT_SCORE.get(intent or "", 0)
+    followers_pts = _followers_score(followers)
+    total = intent_pts + followers_pts
+    if total >= 4:
+        return InfluencerPriority.high
+    if total >= 2:
+        return InfluencerPriority.medium
+    return InfluencerPriority.low
+
+
+async def _get_reply_summary(db: AsyncSession, influencer_id: int) -> Optional[str]:
+    """Return first 150 chars of the most recent reply content, or None."""
+    result = await db.execute(
+        select(Email.reply_content)
+        .where(
+            Email.influencer_id == influencer_id,
+            Email.reply_content.isnot(None),
+        )
+        .order_by(Email.replied_at.desc())
+        .limit(1)
+    )
+    content = result.scalar_one_or_none()
+    if content:
+        return content[:150] if len(content) > 150 else content
+    return None
+
+
 # ── Influencer list ──────────────────────────────────────────────────────────
 
 async def list_influencers(
@@ -39,6 +98,7 @@ async def list_influencers(
     followers_max: Optional[int] = None,
     industry: Optional[str] = None,
     reply_intent: Optional[str] = None,
+    sort_by: Optional[str] = None,
 ) -> tuple[list[InfluencerListItem], int]:
     query = select(Influencer)
 
@@ -70,13 +130,18 @@ async def list_influencers(
     count_q = select(func.count()).select_from(query.subquery())
     total: int = (await db.execute(count_q)).scalar_one()
 
-    query = query.order_by(Influencer.created_at.desc())
+    if sort_by == "priority":
+        query = query.order_by(_PRIORITY_ORDER, Influencer.created_at.desc())
+    else:
+        query = query.order_by(Influencer.created_at.desc())
+
     query = query.offset((page - 1) * page_size).limit(page_size)
     rows = list((await db.execute(query)).scalars().all())
 
     items: list[InfluencerListItem] = []
     for inf in rows:
         tags = await _get_tags_for_influencer(db, inf.id)
+        reply_summary = await _get_reply_summary(db, inf.id) if inf.status == InfluencerStatus.replied else None
         items.append(
             InfluencerListItem(
                 id=inf.id,
@@ -88,6 +153,7 @@ async def list_influencers(
                 status=inf.status.value,
                 priority=inf.priority.value,
                 reply_intent=inf.reply_intent.value if inf.reply_intent else None,
+                reply_summary=reply_summary,
                 follow_up_count=inf.follow_up_count,
                 last_email_sent_at=inf.last_email_sent_at,
                 created_at=inf.created_at,

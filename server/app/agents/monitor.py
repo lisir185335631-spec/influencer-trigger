@@ -398,13 +398,6 @@ _INTENT_LEVEL: dict[str, NotificationLevel] = {
     "irrelevant": NotificationLevel.info,
 }
 
-# Priority update rules: interested/pricing → high, declined/irrelevant → low
-_INTENT_PRIORITY: dict[str, InfluencerPriority] = {
-    "interested": InfluencerPriority.high,
-    "pricing": InfluencerPriority.high,
-    "declined": InfluencerPriority.low,
-    "irrelevant": InfluencerPriority.low,
-}
 
 
 async def _classify_and_notify(
@@ -415,7 +408,7 @@ async def _classify_and_notify(
     """
     Run Classifier Agent on a reply, then:
       - Write reply_intent to influencers table
-      - Update influencer priority (interested/pricing → high, declined/irrelevant → low)
+      - Update influencer priority using composite score (intent + followers tier); auto_reply skipped
       - Create a Notification record (skipped for auto_reply)
       - Broadcast classification result via WebSocket
     """
@@ -442,9 +435,10 @@ async def _classify_and_notify(
             except ValueError:
                 influencer.reply_intent = ReplyIntent.irrelevant
 
-            # Update priority (auto_reply leaves priority unchanged)
-            if result.intent in _INTENT_PRIORITY:
-                influencer.priority = _INTENT_PRIORITY[result.intent]
+            # Update priority using composite score (intent + followers tier); auto_reply skipped
+            if result.intent != "auto_reply":
+                from app.services.influencer_service import compute_priority_score  # local import avoids circular
+                influencer.priority = compute_priority_score(result.intent, influencer.followers)
 
             # Create notification for all intents except auto_reply
             notification_data: dict | None = None
