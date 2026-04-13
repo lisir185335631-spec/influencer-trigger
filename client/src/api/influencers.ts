@@ -71,6 +71,7 @@ export interface InfluencerListItem {
   email: string
   platform: string | null
   followers: number | null
+  industry: string | null
   status: string
   priority: string
   reply_intent: string | null
