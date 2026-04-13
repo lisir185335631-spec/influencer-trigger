@@ -82,8 +82,13 @@ def _parse_file(content: bytes, filename: str) -> pd.DataFrame:
     raise ValueError("Cannot decode CSV file — unsupported encoding")
 
 
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
+
+
 async def preview_import(file: UploadFile) -> ImportPreviewResponse:
     content = await file.read()
+    if len(content) > _MAX_FILE_SIZE:
+        raise ValueError(f"File too large ({len(content) / 1024 / 1024:.1f} MB). Maximum: 10 MB")
     df = _parse_file(content, file.filename or "upload.csv")
     df = df.fillna("")
 

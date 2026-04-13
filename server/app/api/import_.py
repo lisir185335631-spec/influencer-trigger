@@ -24,6 +24,7 @@ _ALLOWED_TYPES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
 }
 _ALLOWED_EXTENSIONS = {".csv", ".xlsx", ".xls"}
+_MAX_FILE_SIZE = 10 * 1024 * 1024  # 10 MB
 
 
 def _validate_file(file: UploadFile) -> None:
@@ -33,6 +34,11 @@ def _validate_file(file: UploadFile) -> None:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"Unsupported file type '{ext}'. Allowed: .csv, .xlsx, .xls",
+        )
+    if file.size is not None and file.size > _MAX_FILE_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File too large ({file.size / 1024 / 1024:.1f} MB). Maximum: 10 MB",
         )
 
 
