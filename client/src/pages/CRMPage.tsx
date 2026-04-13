@@ -1,7 +1,25 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { Search, ChevronLeft, ChevronRight } from 'lucide-react'
-import { listInfluencers, type InfluencerListItem } from '../api/influencers'
+import {
+  Search,
+  ChevronLeft,
+  ChevronRight,
+  Download,
+  Tag,
+  Archive,
+  ChevronDown,
+  X,
+} from 'lucide-react'
+import {
+  listInfluencers,
+  listTags,
+  batchUpdateInfluencers,
+  exportInfluencers,
+  type InfluencerListItem,
+  type TagOut,
+} from '../api/influencers'
+
+// ── constants ────────────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
   new: 'bg-gray-100 text-gray-600',
@@ -16,6 +34,25 @@ const PRIORITY_COLORS: Record<string, string> = {
   low: 'bg-gray-100 text-gray-500',
 }
 
+const PLATFORM_ICONS: Record<string, string> = {
+  tiktok: '🎵',
+  instagram: '📸',
+  youtube: '▶️',
+  twitter: '🐦',
+  facebook: '📘',
+  other: '🌐',
+}
+
+const REPLY_INTENT_LABELS: Record<string, string> = {
+  interested: 'Interested',
+  pricing: 'Pricing',
+  declined: 'Declined',
+  auto_reply: 'Auto-reply',
+  irrelevant: 'Irrelevant',
+}
+
+// ── helpers ───────────────────────────────────────────────────────────────────
+
 function formatFollowers(n: number | null): string {
   if (n == null) return '—'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
@@ -28,40 +65,193 @@ function formatDate(d: string | null): string {
   return new Date(d).toLocaleDateString('zh-CN')
 }
 
-const PLATFORM_ICONS: Record<string, string> = {
-  tiktok: '🎵',
-  instagram: '📸',
-  youtube: '▶️',
-  twitter: '🐦',
-  facebook: '📘',
-  other: '🌐',
+// ── tag multi-select dropdown ─────────────────────────────────────────────────
+
+function TagMultiSelect({
+  allTags,
+  selected,
+  onChange,
+}: {
+  allTags: TagOut[]
+  selected: number[]
+  onChange: (ids: number[]) => void
+}) {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    function handle(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
+    }
+    document.addEventListener('mousedown', handle)
+    return () => document.removeEventListener('mousedown', handle)
+  }, [])
+
+  function toggle(id: number) {
+    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
+  }
+
+  const label =
+    selected.length === 0
+      ? 'All tags'
+      : selected.length === 1
+      ? (allTags.find((t) => t.id === selected[0])?.name ?? '1 tag')
+      : `${selected.length} tags`
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="flex items-center gap-1 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600 bg-white hover:bg-gray-50 min-w-[110px] justify-between"
+      >
+        <span>{label}</span>
+        <ChevronDown size={13} className="text-gray-400 shrink-0" />
+      </button>
+      {open && (
+        <div className="absolute z-20 mt-1 bg-white border border-gray-100 rounded-xl shadow-lg py-1 min-w-[160px] max-h-60 overflow-y-auto">
+          {allTags.length === 0 && (
+            <p className="text-xs text-gray-400 px-3 py-2">No tags yet</p>
+          )}
+          {allTags.map((t) => (
+            <label
+              key={t.id}
+              className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                className="rounded"
+                checked={selected.includes(t.id)}
+                onChange={() => toggle(t.id)}
+              />
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: t.color }}
+              />
+              <span className="text-sm text-gray-700">{t.name}</span>
+            </label>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 }
+
+// ── batch tag modal ───────────────────────────────────────────────────────────
+
+function BatchTagModal({
+  allTags,
+  onConfirm,
+  onClose,
+}: {
+  allTags: TagOut[]
+  onConfirm: (tagIds: number[]) => void
+  onClose: () => void
+}) {
+  const [selected, setSelected] = useState<number[]>([])
+
+  function toggle(id: number) {
+    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
+      <div className="bg-white rounded-2xl shadow-xl p-6 w-80">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="font-semibold text-gray-900">Assign tags</h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+            <X size={16} />
+          </button>
+        </div>
+        <div className="space-y-1 max-h-52 overflow-y-auto mb-4">
+          {allTags.map((t) => (
+            <label
+              key={t.id}
+              className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer"
+            >
+              <input
+                type="checkbox"
+                className="rounded"
+                checked={selected.includes(t.id)}
+                onChange={() => toggle(t.id)}
+              />
+              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
+              <span className="text-sm text-gray-700">{t.name}</span>
+            </label>
+          ))}
+          {allTags.length === 0 && (
+            <p className="text-sm text-gray-400 py-2 text-center">No tags available</p>
+          )}
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={onClose}
+            className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => { if (selected.length) onConfirm(selected) }}
+            disabled={selected.length === 0}
+            className="flex-1 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            Apply
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── main page ─────────────────────────────────────────────────────────────────
 
 export default function CRMPage() {
   const navigate = useNavigate()
+
+  // data
   const [items, setItems] = useState<InfluencerListItem[]>([])
+  const [allTags, setAllTags] = useState<TagOut[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
   const [totalPages, setTotalPages] = useState(1)
+  const [loading, setLoading] = useState(true)
+
+  // filters
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [statusFilter, setStatusFilter] = useState('')
   const [platformFilter, setPlatformFilter] = useState('')
-  const [loading, setLoading] = useState(true)
+  const [tagFilter, setTagFilter] = useState<number[]>([])
+  const [followersMin, setFollowersMin] = useState('')
+  const [followersMax, setFollowersMax] = useState('')
+  const [industryFilter, setIndustryFilter] = useState('')
+  const [replyIntentFilter, setReplyIntentFilter] = useState('')
 
-  // Debounce search
+  // selection
+  const [selected, setSelected] = useState<Set<number>>(new Set())
+  const [batchTagOpen, setBatchTagOpen] = useState(false)
+  const [batchLoading, setBatchLoading] = useState(false)
+
+  // debounce search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
     return () => clearTimeout(t)
   }, [search])
 
+  // reset page on filter change
   useEffect(() => {
     setPage(1)
-  }, [debouncedSearch, statusFilter, platformFilter])
+    setSelected(new Set())
+  }, [debouncedSearch, statusFilter, platformFilter, tagFilter, followersMin, followersMax, industryFilter, replyIntentFilter])
 
+  // load data
   useEffect(() => {
     load()
-  }, [page, debouncedSearch, statusFilter, platformFilter])
+  }, [page, debouncedSearch, statusFilter, platformFilter, tagFilter, followersMin, followersMax, industryFilter, replyIntentFilter])
+
+  // load tags once
+  useEffect(() => {
+    listTags().then(setAllTags).catch(() => {})
+  }, [])
 
   async function load() {
     setLoading(true)
@@ -72,6 +262,11 @@ export default function CRMPage() {
         search: debouncedSearch || undefined,
         status: statusFilter || undefined,
         platform: platformFilter || undefined,
+        tag_ids: tagFilter.length ? tagFilter : undefined,
+        followers_min: followersMin ? parseInt(followersMin) : undefined,
+        followers_max: followersMax ? parseInt(followersMax) : undefined,
+        industry: industryFilter || undefined,
+        reply_intent: replyIntentFilter || undefined,
       })
       setItems(res.items)
       setTotal(res.total)
@@ -80,6 +275,81 @@ export default function CRMPage() {
       setLoading(false)
     }
   }
+
+  // ── selection helpers ──────────────────────────────────────────────────────
+
+  const allPageSelected = items.length > 0 && items.every((i) => selected.has(i.id))
+
+  function toggleSelectAll() {
+    if (allPageSelected) {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        items.forEach((i) => next.delete(i.id))
+        return next
+      })
+    } else {
+      setSelected((prev) => {
+        const next = new Set(prev)
+        items.forEach((i) => next.add(i.id))
+        return next
+      })
+    }
+  }
+
+  function toggleRow(id: number) {
+    setSelected((prev) => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  // ── batch actions ──────────────────────────────────────────────────────────
+
+  async function handleBatchArchive() {
+    if (!selected.size) return
+    setBatchLoading(true)
+    try {
+      await batchUpdateInfluencers({ influencer_ids: [...selected], action: 'archive' })
+      setSelected(new Set())
+      await load()
+    } finally {
+      setBatchLoading(false)
+    }
+  }
+
+  async function handleBatchTag(tagIds: number[]) {
+    setBatchLoading(true)
+    try {
+      await batchUpdateInfluencers({ influencer_ids: [...selected], action: 'assign_tags', tag_ids: tagIds })
+      setBatchTagOpen(false)
+      setSelected(new Set())
+      await load()
+    } finally {
+      setBatchLoading(false)
+    }
+  }
+
+  async function handleExport() {
+    const blob = await exportInfluencers({
+      status: statusFilter || undefined,
+      platform: platformFilter || undefined,
+      search: debouncedSearch || undefined,
+      tag_ids: tagFilter.length ? tagFilter : undefined,
+      followers_min: followersMin ? parseInt(followersMin) : undefined,
+      followers_max: followersMax ? parseInt(followersMax) : undefined,
+      industry: industryFilter || undefined,
+      reply_intent: replyIntentFilter || undefined,
+    })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'influencers.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  // ── render ─────────────────────────────────────────────────────────────────
 
   return (
     <div className="p-6 flex flex-col gap-5">
@@ -91,33 +361,30 @@ export default function CRMPage() {
             {total} influencer{total !== 1 ? 's' : ''} total
           </p>
         </div>
+        <button
+          onClick={handleExport}
+          className="flex items-center gap-1.5 text-sm border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 text-gray-600"
+        >
+          <Download size={14} />
+          Export CSV
+        </button>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-3">
+      <div className="flex flex-wrap gap-2.5">
+        {/* Search */}
         <div className="relative">
           <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             type="text"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            placeholder="Search by name or email…"
-            className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400 w-56"
+            placeholder="Name or email…"
+            className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400 w-48"
           />
         </div>
 
-        <select
-          value={statusFilter}
-          onChange={(e) => setStatusFilter(e.target.value)}
-          className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600"
-        >
-          <option value="">All statuses</option>
-          <option value="new">New</option>
-          <option value="contacted">Contacted</option>
-          <option value="replied">Replied</option>
-          <option value="archived">Archived</option>
-        </select>
-
+        {/* Platform */}
         <select
           value={platformFilter}
           onChange={(e) => setPlatformFilter(e.target.value)}
@@ -131,6 +398,62 @@ export default function CRMPage() {
           <option value="facebook">Facebook</option>
           <option value="other">Other</option>
         </select>
+
+        {/* Status */}
+        <select
+          value={statusFilter}
+          onChange={(e) => setStatusFilter(e.target.value)}
+          className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600"
+        >
+          <option value="">All statuses</option>
+          <option value="new">New</option>
+          <option value="contacted">Contacted</option>
+          <option value="replied">Replied</option>
+          <option value="archived">Archived</option>
+        </select>
+
+        {/* Tags multi-select */}
+        <TagMultiSelect allTags={allTags} selected={tagFilter} onChange={setTagFilter} />
+
+        {/* Followers range */}
+        <div className="flex items-center gap-1">
+          <input
+            type="number"
+            value={followersMin}
+            onChange={(e) => setFollowersMin(e.target.value)}
+            placeholder="Followers min"
+            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 w-28 text-gray-600"
+          />
+          <span className="text-gray-400 text-sm">–</span>
+          <input
+            type="number"
+            value={followersMax}
+            onChange={(e) => setFollowersMax(e.target.value)}
+            placeholder="max"
+            className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 w-20 text-gray-600"
+          />
+        </div>
+
+        {/* Industry */}
+        <input
+          type="text"
+          value={industryFilter}
+          onChange={(e) => setIndustryFilter(e.target.value)}
+          placeholder="Industry…"
+          className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-400 w-32 text-gray-600"
+        />
+
+        {/* Reply intent */}
+        <select
+          value={replyIntentFilter}
+          onChange={(e) => setReplyIntentFilter(e.target.value)}
+          className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600"
+        >
+          <option value="">All intents</option>
+          {Object.entries(REPLY_INTENT_LABELS).map(([v, l]) => (
+            <option key={v} value={v}>{l}</option>
+          ))}
+        </select>
       </div>
 
       {/* Table */}
@@ -138,11 +461,22 @@ export default function CRMPage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
+              <th className="px-4 py-3 w-8">
+                <input
+                  type="checkbox"
+                  className="rounded"
+                  checked={allPageSelected}
+                  onChange={toggleSelectAll}
+                />
+              </th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Influencer
               </th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Platform
+              </th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
+                Email
               </th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Followers
@@ -151,10 +485,10 @@ export default function CRMPage() {
                 Status
               </th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Priority
+                Tags
               </th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                Tags
+                Priority
               </th>
               <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
                 Last Email
@@ -164,14 +498,14 @@ export default function CRMPage() {
           <tbody className="divide-y divide-gray-50">
             {loading && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
                   Loading…
                 </td>
               </tr>
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className="px-4 py-8 text-center text-sm text-gray-400">
+                <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
                   No influencers found
                 </td>
               </tr>
@@ -180,14 +514,23 @@ export default function CRMPage() {
               items.map((inf) => (
                 <tr
                   key={inf.id}
-                  onClick={() => navigate(`/crm/${inf.id}`)}
-                  className="hover:bg-gray-50 cursor-pointer transition-colors"
+                  className={`hover:bg-gray-50 transition-colors ${selected.has(inf.id) ? 'bg-indigo-50/40' : ''}`}
                 >
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900">
+                  <td className="px-4 py-3 w-8" onClick={(e) => e.stopPropagation()}>
+                    <input
+                      type="checkbox"
+                      className="rounded"
+                      checked={selected.has(inf.id)}
+                      onChange={() => toggleRow(inf.id)}
+                    />
+                  </td>
+                  <td
+                    className="px-4 py-3 cursor-pointer"
+                    onClick={() => navigate(`/crm/${inf.id}`)}
+                  >
+                    <p className="font-medium text-gray-900 hover:text-indigo-600 transition-colors">
                       {inf.nickname ?? '—'}
                     </p>
-                    <p className="text-xs text-gray-400 mt-0.5">{inf.email}</p>
                   </td>
                   <td className="px-4 py-3 text-gray-600">
                     {inf.platform ? (
@@ -199,6 +542,7 @@ export default function CRMPage() {
                       '—'
                     )}
                   </td>
+                  <td className="px-4 py-3 text-gray-500 text-xs">{inf.email}</td>
                   <td className="px-4 py-3 text-gray-600">
                     {formatFollowers(inf.followers)}
                   </td>
@@ -207,13 +551,6 @@ export default function CRMPage() {
                       className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[inf.status] ?? 'bg-gray-100 text-gray-600'}`}
                     >
                       {inf.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span
-                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[inf.priority] ?? 'bg-gray-100 text-gray-500'}`}
-                    >
-                      {inf.priority}
                     </span>
                   </td>
                   <td className="px-4 py-3">
@@ -228,11 +565,16 @@ export default function CRMPage() {
                         </span>
                       ))}
                       {inf.tags.length > 3 && (
-                        <span className="text-xs text-gray-400">
-                          +{inf.tags.length - 3}
-                        </span>
+                        <span className="text-xs text-gray-400">+{inf.tags.length - 3}</span>
                       )}
                     </div>
+                  </td>
+                  <td className="px-4 py-3">
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[inf.priority] ?? 'bg-gray-100 text-gray-500'}`}
+                    >
+                      {inf.priority}
+                    </span>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-400">
                     {formatDate(inf.last_email_sent_at)}
@@ -268,6 +610,54 @@ export default function CRMPage() {
             </button>
           </div>
         </div>
+      )}
+
+      {/* Batch action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-xl">
+          <span className="text-sm font-medium">{selected.size} selected</span>
+          <div className="w-px h-4 bg-white/20" />
+          <button
+            onClick={() => setBatchTagOpen(true)}
+            disabled={batchLoading}
+            className="flex items-center gap-1.5 text-sm hover:text-indigo-300 transition-colors disabled:opacity-50"
+          >
+            <Tag size={14} />
+            Assign tags
+          </button>
+          <button
+            onClick={handleBatchArchive}
+            disabled={batchLoading}
+            className="flex items-center gap-1.5 text-sm hover:text-yellow-300 transition-colors disabled:opacity-50"
+          >
+            <Archive size={14} />
+            Archive
+          </button>
+          <button
+            onClick={handleExport}
+            disabled={batchLoading}
+            className="flex items-center gap-1.5 text-sm hover:text-green-300 transition-colors disabled:opacity-50"
+          >
+            <Download size={14} />
+            Export CSV
+          </button>
+          <div className="w-px h-4 bg-white/20" />
+          <button
+            onClick={() => setSelected(new Set())}
+            className="text-white/60 hover:text-white"
+          >
+            <X size={14} />
+          </button>
+        </div>
+      )}
+
+      {/* Batch tag modal */}
+      {batchTagOpen && (
+        <BatchTagModal
+          allTags={allTags}
+          onConfirm={handleBatchTag}
+          onClose={() => setBatchTagOpen(false)}
+        />
       )}
     </div>
   )

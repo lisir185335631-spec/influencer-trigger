@@ -131,3 +131,29 @@ class InfluencerListResponse(BaseModel):
 
 class AssignTagsRequest(BaseModel):
     tag_ids: list[int]
+
+
+# ── Batch operations ─────────────────────────────────────────────────────────
+
+class BatchUpdateRequest(BaseModel):
+    influencer_ids: list[int]
+    action: str  # "archive" | "assign_tags"
+    tag_ids: Optional[list[int]] = None
+
+
+class BatchUpdateResponse(BaseModel):
+    affected: int
+
+
+# ── Export params ─────────────────────────────────────────────────────────────
+
+class ExportRequest(BaseModel):
+    status: Optional[str] = None
+    platform: Optional[str] = None
+    priority: Optional[str] = None
+    search: Optional[str] = None
+    tag_ids: Optional[list[int]] = None
+    followers_min: Optional[int] = None
+    followers_max: Optional[int] = None
+    industry: Optional[str] = None
+    reply_intent: Optional[str] = None

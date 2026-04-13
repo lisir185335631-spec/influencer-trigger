@@ -1,13 +1,18 @@
-from typing import Optional
+from typing import Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+import io
 
 from app.database import get_db
 from app.deps import get_current_user
 from app.schemas.auth import TokenData
 from app.schemas.influencer import (
     AssignTagsRequest,
+    BatchUpdateRequest,
+    BatchUpdateResponse,
+    ExportRequest,
     InfluencerDetail,
     InfluencerListResponse,
     InfluencerUpdate,
@@ -19,8 +24,10 @@ from app.schemas.influencer import (
 from app.services.influencer_service import (
     add_note,
     assign_tags,
+    batch_update_influencers,
     create_tag,
     delete_tag,
+    export_influencers_csv,
     get_influencer_detail,
     get_influencer_emails,
     list_influencers,
@@ -41,10 +48,18 @@ async def list_influencers_endpoint(
     platform: Optional[str] = Query(None),
     priority: Optional[str] = Query(None),
     search: Optional[str] = Query(None),
+    tag_ids: List[int] = Query(default=[]),
+    followers_min: Optional[int] = Query(None),
+    followers_max: Optional[int] = Query(None),
+    industry: Optional[str] = Query(None),
+    reply_intent: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: TokenData = Depends(get_current_user),
 ) -> InfluencerListResponse:
-    items, total = await list_influencers(db, page, page_size, status, platform, priority, search)
+    items, total = await list_influencers(
+        db, page, page_size, status, platform, priority, search,
+        tag_ids or None, followers_min, followers_max, industry, reply_intent,
+    )
     total_pages = max(1, (total + page_size - 1) // page_size)
     return InfluencerListResponse(
         items=items,
@@ -52,6 +67,49 @@ async def list_influencers_endpoint(
         page=page,
         page_size=page_size,
         total_pages=total_pages,
+    )
+
+
+# ── Batch operations ─────────────────────────────────────────────────────────
+
+@router.patch("/influencers/batch", response_model=BatchUpdateResponse)
+async def batch_update_influencers_endpoint(
+    body: BatchUpdateRequest,
+    db: AsyncSession = Depends(get_db),
+    _: TokenData = Depends(get_current_user),
+) -> BatchUpdateResponse:
+    if body.action not in ("archive", "assign_tags"):
+        raise HTTPException(status_code=400, detail="action must be 'archive' or 'assign_tags'")
+    if body.action == "assign_tags" and not body.tag_ids:
+        raise HTTPException(status_code=400, detail="tag_ids required for assign_tags action")
+    affected = await batch_update_influencers(db, body)
+    return BatchUpdateResponse(affected=affected)
+
+
+# ── CSV Export ────────────────────────────────────────────────────────────────
+
+@router.post("/influencers/export")
+async def export_influencers_endpoint(
+    body: ExportRequest,
+    db: AsyncSession = Depends(get_db),
+    _: TokenData = Depends(get_current_user),
+) -> StreamingResponse:
+    csv_content = await export_influencers_csv(
+        db,
+        status=body.status,
+        platform=body.platform,
+        priority=body.priority,
+        search=body.search,
+        tag_ids=body.tag_ids,
+        followers_min=body.followers_min,
+        followers_max=body.followers_max,
+        industry=body.industry,
+        reply_intent=body.reply_intent,
+    )
+    return StreamingResponse(
+        io.StringIO(csv_content),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=influencers.csv"},
     )
 
 

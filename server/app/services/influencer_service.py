@@ -1,5 +1,7 @@
+import csv
+import io
 from typing import Optional
-from sqlalchemy import select, delete, func
+from sqlalchemy import select, delete, func, and_
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.influencer import Influencer, InfluencerStatus, InfluencerPriority
@@ -9,6 +11,7 @@ from app.models.note import Note
 from app.models.collaboration import Collaboration
 from app.models.email import Email
 from app.schemas.influencer import (
+    BatchUpdateRequest,
     InfluencerUpdate,
     TagCreate,
     NoteCreate,
@@ -31,6 +34,11 @@ async def list_influencers(
     platform: Optional[str] = None,
     priority: Optional[str] = None,
     search: Optional[str] = None,
+    tag_ids: Optional[list[int]] = None,
+    followers_min: Optional[int] = None,
+    followers_max: Optional[int] = None,
+    industry: Optional[str] = None,
+    reply_intent: Optional[str] = None,
 ) -> tuple[list[InfluencerListItem], int]:
     query = select(Influencer)
 
@@ -45,6 +53,19 @@ async def list_influencers(
         query = query.where(
             (Influencer.email.ilike(like)) | (Influencer.nickname.ilike(like))
         )
+    if industry:
+        query = query.where(Influencer.industry.ilike(f"%{industry}%"))
+    if reply_intent:
+        query = query.where(Influencer.reply_intent == reply_intent)
+    if followers_min is not None:
+        query = query.where(Influencer.followers >= followers_min)
+    if followers_max is not None:
+        query = query.where(Influencer.followers <= followers_max)
+    if tag_ids:
+        # Influencer must have ALL specified tags (AND logic per tag)
+        for tid in tag_ids:
+            sub = select(InfluencerTag.influencer_id).where(InfluencerTag.tag_id == tid)
+            query = query.where(Influencer.id.in_(sub))
 
     count_q = select(func.count()).select_from(query.subquery())
     total: int = (await db.execute(count_q)).scalar_one()
@@ -252,3 +273,105 @@ async def _get_collaborations(db: AsyncSession, influencer_id: int) -> list[Coll
         .order_by(Collaboration.created_at.desc())
     )
     return [CollaborationOut.model_validate(c) for c in result.scalars().all()]
+
+
+# ── Batch operations ─────────────────────────────────────────────────────────
+
+async def batch_update_influencers(
+    db: AsyncSession,
+    data: BatchUpdateRequest,
+) -> int:
+    """Apply batch action to a list of influencer IDs. Returns count of affected rows."""
+    if not data.influencer_ids:
+        return 0
+
+    rows = list(
+        (
+            await db.execute(
+                select(Influencer).where(Influencer.id.in_(data.influencer_ids))
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+    if data.action == "archive":
+        for inf in rows:
+            inf.status = InfluencerStatus.archived
+
+    elif data.action == "assign_tags" and data.tag_ids:
+        for inf in rows:
+            # Fetch existing tag IDs for this influencer
+            existing = set(
+                (
+                    await db.execute(
+                        select(InfluencerTag.tag_id).where(
+                            InfluencerTag.influencer_id == inf.id
+                        )
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            for tid in data.tag_ids:
+                if tid not in existing:
+                    db.add(InfluencerTag(influencer_id=inf.id, tag_id=tid))
+
+    await db.commit()
+    return len(rows)
+
+
+# ── CSV export ────────────────────────────────────────────────────────────────
+
+async def export_influencers_csv(
+    db: AsyncSession,
+    status: Optional[str] = None,
+    platform: Optional[str] = None,
+    priority: Optional[str] = None,
+    search: Optional[str] = None,
+    tag_ids: Optional[list[int]] = None,
+    followers_min: Optional[int] = None,
+    followers_max: Optional[int] = None,
+    industry: Optional[str] = None,
+    reply_intent: Optional[str] = None,
+) -> str:
+    """Return a CSV string of all matching influencers (no pagination)."""
+    items, _ = await list_influencers(
+        db=db,
+        page=1,
+        page_size=100_000,
+        status=status,
+        platform=platform,
+        priority=priority,
+        search=search,
+        tag_ids=tag_ids,
+        followers_min=followers_min,
+        followers_max=followers_max,
+        industry=industry,
+        reply_intent=reply_intent,
+    )
+
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow([
+        "id", "nickname", "email", "platform", "followers",
+        "industry", "status", "priority", "reply_intent",
+        "tags", "follow_up_count", "last_email_sent_at", "created_at",
+    ])
+    for inf in items:
+        writer.writerow([
+            inf.id,
+            inf.nickname or "",
+            inf.email,
+            inf.platform or "",
+            inf.followers if inf.followers is not None else "",
+            "",  # industry not in InfluencerListItem — left blank
+            inf.status,
+            inf.priority,
+            inf.reply_intent or "",
+            "|".join(t.name for t in inf.tags),
+            inf.follow_up_count,
+            inf.last_email_sent_at.isoformat() if inf.last_email_sent_at else "",
+            inf.created_at.isoformat(),
+        ])
+    return output.getvalue()

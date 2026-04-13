@@ -106,8 +106,52 @@ export async function listInfluencers(params?: {
   platform?: string
   priority?: string
   search?: string
+  tag_ids?: number[]
+  followers_min?: number
+  followers_max?: number
+  industry?: string
+  reply_intent?: string
 }): Promise<InfluencerListResponse> {
-  const res = await apiClient.get('/influencers', { params })
+  const { tag_ids, ...rest } = params ?? {}
+  const queryParams: Record<string, unknown> = { ...rest }
+  // axios serializes arrays as tag_ids[]=1 by default; use paramsSerializer to send tag_ids=1&tag_ids=2
+  const res = await apiClient.get('/influencers', {
+    params: queryParams,
+    paramsSerializer: (p) => {
+      const sp = new URLSearchParams()
+      for (const [k, v] of Object.entries(p)) {
+        if (v !== undefined && v !== null && v !== '') sp.append(k, String(v))
+      }
+      if (tag_ids?.length) tag_ids.forEach((id) => sp.append('tag_ids', String(id)))
+      return sp.toString()
+    },
+  })
+  return res.data
+}
+
+export async function batchUpdateInfluencers(payload: {
+  influencer_ids: number[]
+  action: 'archive' | 'assign_tags'
+  tag_ids?: number[]
+}): Promise<{ affected: number }> {
+  const res = await apiClient.patch('/influencers/batch', payload)
+  return res.data
+}
+
+export async function exportInfluencers(params?: {
+  status?: string
+  platform?: string
+  priority?: string
+  search?: string
+  tag_ids?: number[]
+  followers_min?: number
+  followers_max?: number
+  industry?: string
+  reply_intent?: string
+}): Promise<Blob> {
+  const res = await apiClient.post('/influencers/export', params ?? {}, {
+    responseType: 'blob',
+  })
   return res.data
 }
 
