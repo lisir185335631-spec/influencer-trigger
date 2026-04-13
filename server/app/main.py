@@ -3,13 +3,13 @@ import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
 from app.database import AsyncSessionLocal, create_tables
+from app.scheduler import scheduler
 from app.websocket.manager import manager
 from app.api.health import router as health_router
 # noqa: F401 — import models so create_all sees them
@@ -22,12 +22,12 @@ from app.api.import_ import router as import_router
 from app.api.emails import router as emails_router
 from app.api.notifications import router as notifications_router
 from app.api.influencers import router as influencers_router
+from app.api.follow_up import router as follow_up_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 settings = get_settings()
-scheduler = AsyncIOScheduler()
 
 
 async def _reset_today_sent_job() -> None:
@@ -50,6 +50,20 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         id="reset_today_sent",
         replace_existing=True,
     )
+
+    # Load follow-up settings and schedule monthly follow-up job
+    from app.services.follow_up_service import get_or_create_settings, monthly_follow_up_check
+    async with AsyncSessionLocal() as db:
+        fu_settings = await get_or_create_settings(db)
+
+    scheduler.add_job(
+        monthly_follow_up_check,
+        CronTrigger(hour=fu_settings.hour_utc, minute=0, timezone="UTC"),
+        id="monthly_follow_up",
+        replace_existing=True,
+    )
+    logger.info("Follow-up scheduler job registered at %02d:00 UTC", fu_settings.hour_utc)
+
     scheduler.start()
     logger.info("Scheduler started.")
 
@@ -99,6 +113,7 @@ app.include_router(import_router, prefix="/api")
 app.include_router(emails_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(influencers_router, prefix="/api")
+app.include_router(follow_up_router, prefix="/api")
 
 
 @app.websocket("/ws")
