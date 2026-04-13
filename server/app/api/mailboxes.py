@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, status
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
@@ -39,6 +40,11 @@ async def create_mailbox_endpoint(
 ):
     try:
         return await create_mailbox(db, body)
+    except IntegrityError:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"Mailbox with email '{body.email}' already exists",
+        )
     except ValueError as e:
         raise HTTPException(status_code=500, detail=str(e))
 

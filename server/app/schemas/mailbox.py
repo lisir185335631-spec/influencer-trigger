@@ -1,5 +1,5 @@
 from datetime import datetime
-from pydantic import BaseModel, EmailStr, ConfigDict
+from pydantic import BaseModel, EmailStr, ConfigDict, Field
 
 
 class MailboxCreate(BaseModel):
@@ -11,8 +11,8 @@ class MailboxCreate(BaseModel):
     smtp_use_tls: bool = True
     imap_host: str | None = None
     imap_port: int = 993
-    daily_limit: int = 500
-    hourly_limit: int = 50
+    daily_limit: int = Field(default=500, ge=1, le=10000)
+    hourly_limit: int = Field(default=50, ge=1, le=1000)
 
 
 class MailboxUpdate(BaseModel):
@@ -23,8 +23,8 @@ class MailboxUpdate(BaseModel):
     smtp_use_tls: bool | None = None
     imap_host: str | None = None
     imap_port: int | None = None
-    daily_limit: int | None = None
-    hourly_limit: int | None = None
+    daily_limit: int | None = Field(default=None, ge=1, le=10000)
+    hourly_limit: int | None = Field(default=None, ge=1, le=1000)
 
 
 class MailboxResponse(BaseModel):
