@@ -1,0 +1,489 @@
+"""
+Monitor Agent — 24/7 IMAP polling for email replies and DSN bounce notifications.
+
+Lifecycle:
+  FastAPI lifespan starts run_monitor_agent() as an asyncio.Task on startup.
+  The task loops every POLL_INTERVAL_SECONDS, polling all active mailboxes
+  that have an IMAP host configured.
+  Per-mailbox errors use exponential back-off (5→10→30→60 s expressed as
+  "skip N poll cycles").
+"""
+import asyncio
+import email as stdlib_email
+import json
+import logging
+import re
+from datetime import datetime, timezone
+from typing import Optional
+
+import aioimaplib
+from sqlalchemy import select
+
+from app.database import AsyncSessionLocal
+from app.models.email import Email, EmailStatus
+from app.models.email_event import EmailEvent, EventType
+from app.models.influencer import Influencer, InfluencerStatus
+from app.models.mailbox import Mailbox, MailboxStatus
+from app.services.mailbox_service import decrypt_password
+from app.websocket.manager import manager
+
+logger = logging.getLogger(__name__)
+
+POLL_INTERVAL_SECONDS = 300  # 5 minutes
+# Back-off steps in seconds; expressed as skip-cycles relative to POLL_INTERVAL
+_BACKOFF_SECS = [5, 10, 30, 60]
+
+
+# ---------------------------------------------------------------------------
+# IMAP helpers
+# ---------------------------------------------------------------------------
+
+async def _connect_imap(mailbox: Mailbox, password: str) -> Optional[aioimaplib.IMAP4]:
+    """Create and authenticate an IMAP connection. Returns client or None on failure."""
+    host = mailbox.imap_host
+    port = mailbox.imap_port or 993
+
+    if port == 993:
+        client: aioimaplib.IMAP4 = aioimaplib.IMAP4_SSL(host=host, port=port)
+    else:
+        client = aioimaplib.IMAP4(host=host, port=port)
+
+    try:
+        await client.wait_hello_from_server()
+        status, _ = await client.login(mailbox.email, password)
+        if status != "OK":
+            logger.warning("IMAP login failed for %s (status=%s)", mailbox.email, status)
+            return None
+        return client
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("IMAP connect error for %s: %s", mailbox.email, exc)
+        return None
+
+
+def _parse_email_from_fetch(data: list) -> Optional[stdlib_email.message.Message]:
+    """
+    Extract raw bytes from an aioimaplib fetch response and parse as email.
+    Scans all items in data looking for something that parses as a valid message.
+    """
+    for item in data:
+        if not isinstance(item, bytes) or len(item) < 80:
+            continue
+        try:
+            msg = stdlib_email.message_from_bytes(item)
+            # A real email has at least one of these headers
+            if msg.get("From") or msg.get("To") or msg.get("Date"):
+                return msg
+        except Exception:
+            pass
+    return None
+
+
+async def _fetch_unseen(
+    mailbox: Mailbox,
+    password: str,
+) -> list[stdlib_email.message.Message]:
+    """Connect via IMAP, search UNSEEN, fetch and return parsed messages."""
+    client = await _connect_imap(mailbox, password)
+    if client is None:
+        return []
+
+    messages: list[stdlib_email.message.Message] = []
+    try:
+        status, _ = await client.select("INBOX")
+        if status != "OK":
+            return messages
+
+        status, lines = await client.search("UNSEEN")
+        if status != "OK" or not lines:
+            return messages
+
+        raw_ids = lines[0] if lines else b""
+        if isinstance(raw_ids, bytes):
+            raw_ids = raw_ids.decode(errors="replace")
+        uid_list = [u for u in str(raw_ids).strip().split() if u]
+
+        # Cap to 50 messages per poll cycle to avoid overload
+        for uid in uid_list[:50]:
+            try:
+                fetch_status, fetch_data = await client.fetch(uid, "(RFC822)")
+                if fetch_status == "OK" and fetch_data:
+                    msg = _parse_email_from_fetch(fetch_data)
+                    if msg is not None:
+                        messages.append(msg)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.debug("Fetch uid=%s from %s failed: %s", uid, mailbox.email, exc)
+
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.warning("IMAP search/fetch error for %s: %s", mailbox.email, exc)
+    finally:
+        try:
+            await asyncio.wait_for(client.logout(), timeout=5.0)
+        except Exception:
+            pass
+
+    return messages
+
+
+# ---------------------------------------------------------------------------
+# Message analysis helpers
+# ---------------------------------------------------------------------------
+
+def _extract_body(msg: stdlib_email.message.Message) -> str:
+    """Extract plain-text (preferred) or HTML body from a message, max 4 KB."""
+    parts: list[str] = []
+    if msg.is_multipart():
+        for part in msg.walk():
+            ct = part.get_content_type()
+            cd = part.get("Content-Disposition", "")
+            if "attachment" in cd:
+                continue
+            if ct in ("text/plain", "text/html"):
+                try:
+                    payload = part.get_payload(decode=True)
+                    if payload:
+                        charset = part.get_content_charset("utf-8") or "utf-8"
+                        parts.append(payload.decode(charset, errors="replace"))
+                except Exception:
+                    pass
+    else:
+        try:
+            payload = msg.get_payload(decode=True)
+            if payload:
+                charset = msg.get_content_charset("utf-8") or "utf-8"
+                parts.append(payload.decode(charset, errors="replace"))
+        except Exception:
+            pass
+    return "\n".join(parts)[:4096]
+
+
+_DSN_SUBJECT_RE = re.compile(
+    r"(undeliverable|delivery\s+fail|mail\s+delivery\s+fail|"
+    r"returned\s+mail|non.delivery|failed\s+delivery|bounce)",
+    re.I,
+)
+_STATUS_CODE_RE = re.compile(r"Status:\s*(5\.\d+\.\d+)", re.I)
+_RECIPIENT_RE = re.compile(
+    r"(?:Final-Recipient|Original-Recipient):\s*rfc822;\s*(.+)", re.I
+)
+
+
+def _detect_bounce(msg: stdlib_email.message.Message) -> Optional[tuple[str, Optional[str]]]:
+    """
+    Check if msg is a permanent bounce (DSN).
+    Returns (bounce_code, bounced_to_email) or None if not a bounce.
+    """
+    content_type = msg.get_content_type()
+
+    # Check for multipart/report with message/delivery-status
+    if content_type == "multipart/report":
+        code: Optional[str] = None
+        recipient: Optional[str] = None
+        for part in msg.walk():
+            pt = part.get_content_type()
+            if pt == "message/delivery-status":
+                try:
+                    payload = part.get_payload(decode=False)
+                    if isinstance(payload, list):
+                        payload_str = "\n".join(
+                            (p.as_string() if hasattr(p, "as_string") else str(p))
+                            for p in payload
+                        )
+                    elif isinstance(payload, bytes):
+                        payload_str = payload.decode(errors="replace")
+                    else:
+                        payload_str = str(payload) if payload else ""
+
+                    m = _STATUS_CODE_RE.search(payload_str)
+                    if m:
+                        code = m.group(1)
+                    r = _RECIPIENT_RE.search(payload_str)
+                    if r:
+                        recipient = r.group(1).strip()
+                except Exception:
+                    pass
+        if code and code.startswith("5"):
+            return code, recipient
+
+    # Fallback: subject heuristic
+    subject = msg.get("Subject", "")
+    if _DSN_SUBJECT_RE.search(subject):
+        # Try to find recipient in the body
+        body = _extract_body(msg)
+        email_match = re.search(r"[\w.+%-]+@[\w.-]+\.[A-Za-z]{2,}", body)
+        recipient = email_match.group(0).lower() if email_match else None
+        return "5.0.0", recipient
+
+    return None
+
+
+def _extract_from_email(msg: stdlib_email.message.Message) -> str:
+    """Extract plain email address from From header."""
+    from_header = msg.get("From", "")
+    m = re.search(r"[\w.+%-]+@[\w.-]+\.[A-Za-z]{2,}", from_header)
+    return m.group(0).lower() if m else ""
+
+
+# ---------------------------------------------------------------------------
+# Database update helpers
+# ---------------------------------------------------------------------------
+
+async def _handle_bounce(
+    mailbox_id: int,
+    bounce_code: str,
+    bounced_to: Optional[str],
+) -> None:
+    """Update email/influencer status for a detected bounce."""
+    if not bounced_to:
+        return
+
+    bounced_to = bounced_to.lower()
+    async with AsyncSessionLocal() as db:
+        # Find the most recent sent email to this address
+        result = await db.execute(
+            select(Email)
+            .join(Influencer, Email.influencer_id == Influencer.id)
+            .where(Influencer.email == bounced_to)
+            .where(Email.status.in_([EmailStatus.sent, EmailStatus.delivered]))
+            .order_by(Email.sent_at.desc())
+            .limit(1)
+        )
+        email_record = result.scalar_one_or_none()
+        if not email_record or email_record.status == EmailStatus.bounced:
+            return
+
+        now = datetime.now(timezone.utc)
+        email_record.status = EmailStatus.bounced
+        email_record.bounced_at = now
+
+        db.add(EmailEvent(
+            email_id=email_record.id,
+            influencer_id=email_record.influencer_id,
+            event_type=EventType.bounced,
+            metadata_json=json.dumps({"code": bounce_code, "to": bounced_to}),
+            source="imap",
+            occurred_at=now,
+        ))
+        await db.commit()
+
+        # Recalculate bounce_rate for the mailbox
+        mailbox = await db.get(Mailbox, mailbox_id)
+        if mailbox and mailbox.total_sent > 0:
+            bounce_result = await db.execute(
+                select(Email)
+                .where(Email.mailbox_id == mailbox_id)
+                .where(Email.status == EmailStatus.bounced)
+            )
+            bounce_count = len(list(bounce_result.scalars().all()))
+            mailbox.bounce_rate = round(bounce_count / mailbox.total_sent, 4)
+            await db.commit()
+
+        await manager.broadcast("email:status_change", {
+            "email_id": email_record.id,
+            "influencer_id": email_record.influencer_id,
+            "status": "bounced",
+            "bounce_code": bounce_code,
+        })
+        logger.info("Bounce recorded for %s (code=%s)", bounced_to, bounce_code)
+
+
+async def _handle_reply(
+    msg: stdlib_email.message.Message,
+    from_email: str,
+) -> None:
+    """Match a reply message to a sent email and update records."""
+    in_reply_to = msg.get("In-Reply-To", "").strip()
+    references = msg.get("References", "").strip()
+
+    async with AsyncSessionLocal() as db:
+        email_record: Optional[Email] = None
+
+        # Strategy 1: In-Reply-To exact match
+        if in_reply_to:
+            result = await db.execute(
+                select(Email)
+                .where(Email.message_id == in_reply_to)
+                .where(Email.status != EmailStatus.replied)
+                .limit(1)
+            )
+            email_record = result.scalar_one_or_none()
+
+        # Strategy 2: References header — check each message-id
+        if not email_record and references:
+            for ref_id in references.split():
+                result = await db.execute(
+                    select(Email)
+                    .where(Email.message_id == ref_id.strip())
+                    .where(Email.status != EmailStatus.replied)
+                    .limit(1)
+                )
+                email_record = result.scalar_one_or_none()
+                if email_record:
+                    break
+
+        # Strategy 3: Sender email matches an influencer we contacted
+        if not email_record and from_email:
+            result = await db.execute(
+                select(Email)
+                .join(Influencer, Email.influencer_id == Influencer.id)
+                .where(Influencer.email == from_email)
+                .where(Email.status.in_([
+                    EmailStatus.sent,
+                    EmailStatus.delivered,
+                    EmailStatus.opened,
+                ]))
+                .order_by(Email.sent_at.desc())
+                .limit(1)
+            )
+            email_record = result.scalar_one_or_none()
+
+        if not email_record:
+            return  # Not related to any sent email
+
+        body = _extract_body(msg)
+        now = datetime.now(timezone.utc)
+
+        email_record.status = EmailStatus.replied
+        email_record.reply_content = body[:4096]
+        email_record.reply_from = from_email
+        email_record.replied_at = now
+
+        # Update influencer status
+        influencer = await db.get(Influencer, email_record.influencer_id)
+        if influencer:
+            influencer.status = InfluencerStatus.replied
+
+        db.add(EmailEvent(
+            email_id=email_record.id,
+            influencer_id=email_record.influencer_id,
+            event_type=EventType.replied,
+            metadata_json=json.dumps({"from": from_email}),
+            source="imap",
+            occurred_at=now,
+        ))
+        await db.commit()
+
+        await manager.broadcast("email:status_change", {
+            "email_id": email_record.id,
+            "influencer_id": email_record.influencer_id,
+            "status": "replied",
+            "reply_from": from_email,
+            "reply_preview": body[:256],
+        })
+        logger.info(
+            "Reply recorded: email_id=%d from=%s", email_record.id, from_email
+        )
+
+
+async def _process_message(
+    msg: stdlib_email.message.Message,
+    mailbox_id: int,
+) -> None:
+    """Route a single IMAP message to bounce or reply handler."""
+    # Bounce check first (DSN notifications are usually not replies)
+    bounce_info = _detect_bounce(msg)
+    if bounce_info:
+        code, bounced_to = bounce_info
+        await _handle_bounce(mailbox_id, code, bounced_to)
+        return
+
+    # Otherwise treat as potential reply
+    from_email = _extract_from_email(msg)
+    if from_email:
+        await _handle_reply(msg, from_email)
+
+
+# ---------------------------------------------------------------------------
+# Poll loop
+# ---------------------------------------------------------------------------
+
+async def _poll_mailbox(mailbox: Mailbox) -> None:
+    """Poll one mailbox for new messages."""
+    try:
+        password = decrypt_password(mailbox.smtp_password_encrypted)
+    except Exception as exc:
+        logger.error("Cannot decrypt password for mailbox %d: %s", mailbox.id, exc)
+        return
+
+    messages = await _fetch_unseen(mailbox, password)
+    for msg in messages:
+        try:
+            await _process_message(msg, mailbox.id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.exception(
+                "Error processing message from mailbox %s: %s", mailbox.email, exc
+            )
+
+
+async def run_monitor_agent() -> None:
+    """
+    Main Monitor Agent loop.
+    Started as an asyncio.Task inside FastAPI lifespan.
+    Polls all active IMAP-configured mailboxes every POLL_INTERVAL_SECONDS.
+    Exponential back-off per mailbox on repeated errors.
+    """
+    logger.info(
+        "Monitor Agent started (poll_interval=%ds)", POLL_INTERVAL_SECONDS
+    )
+
+    # Track per-mailbox error state: mailbox_id → (error_count, skip_cycles_remaining)
+    error_state: dict[int, tuple[int, int]] = {}
+
+    while True:
+        try:
+            async with AsyncSessionLocal() as db:
+                result = await db.execute(
+                    select(Mailbox)
+                    .where(Mailbox.status == MailboxStatus.active)
+                    .where(Mailbox.imap_host.isnot(None))
+                )
+                mailboxes = list(result.scalars().all())
+
+            for mailbox in mailboxes:
+                mid = mailbox.id
+                err_count, skip_remaining = error_state.get(mid, (0, 0))
+
+                # Skip this mailbox if it's in back-off
+                if skip_remaining > 0:
+                    error_state[mid] = (err_count, skip_remaining - 1)
+                    logger.debug(
+                        "Mailbox %s in back-off, %d cycles remaining",
+                        mailbox.email, skip_remaining,
+                    )
+                    continue
+
+                try:
+                    await _poll_mailbox(mailbox)
+                    # Success — clear error state
+                    error_state.pop(mid, None)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    new_count = err_count + 1
+                    step = min(new_count - 1, len(_BACKOFF_SECS) - 1)
+                    # Convert backoff seconds to approximate poll cycles
+                    skip = max(1, _BACKOFF_SECS[step] // max(POLL_INTERVAL_SECONDS, 1))
+                    error_state[mid] = (new_count, skip)
+                    logger.warning(
+                        "Mailbox %s poll error #%d, backing off %d cycle(s): %s",
+                        mailbox.email, new_count, skip, exc,
+                    )
+
+        except asyncio.CancelledError:
+            logger.info("Monitor Agent cancelled, shutting down.")
+            return
+        except Exception as exc:
+            logger.exception("Monitor Agent outer loop error: %s", exc)
+
+        try:
+            await asyncio.sleep(POLL_INTERVAL_SECONDS)
+        except asyncio.CancelledError:
+            logger.info("Monitor Agent cancelled during sleep, shutting down.")
+            return

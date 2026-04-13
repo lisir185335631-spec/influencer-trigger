@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
@@ -50,7 +51,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     scheduler.start()
     logger.info("Scheduler started.")
 
+    # Start IMAP monitor background task
+    from app.agents.monitor import run_monitor_agent
+    monitor_task: asyncio.Task = asyncio.create_task(
+        run_monitor_agent(), name="monitor_agent"
+    )
+    logger.info("Monitor Agent background task started.")
+
     yield
+
+    # Cancel monitor task on shutdown
+    monitor_task.cancel()
+    try:
+        await asyncio.wait_for(asyncio.shield(monitor_task), timeout=5.0)
+    except (asyncio.CancelledError, asyncio.TimeoutError):
+        pass
+    logger.info("Monitor Agent stopped.")
 
     scheduler.shutdown(wait=False)
     logger.info("Shutting down Influencer Trigger service...")
