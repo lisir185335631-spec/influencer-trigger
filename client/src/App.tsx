@@ -15,6 +15,7 @@ import FollowUpPage from './pages/FollowUpPage'
 import TeamPage from './pages/TeamPage'
 import SettingsPage from './pages/SettingsPage'
 import ImportPage from './pages/ImportPage'
+import InfluencerDetailPage from './pages/InfluencerDetailPage'
 
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
@@ -23,6 +24,7 @@ const PROTECTED_ROUTES = [
   { path: '/scrape/tasks/:taskId', element: <ScrapeTaskDetailPage /> },
   { path: '/emails', element: <EmailsPage /> },
   { path: '/crm', element: <CRMPage /> },
+  { path: '/crm/:id', element: <InfluencerDetailPage /> },
   { path: '/templates', element: <TemplatesPage /> },
   { path: '/mailboxes', element: <MailboxesPage /> },
   { path: '/followup', element: <FollowUpPage /> },
