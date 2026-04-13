@@ -6,14 +6,18 @@ from typing import AsyncGenerator
 from apscheduler.triggers.cron import CronTrigger
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from slowapi import _rate_limit_exceeded_handler
+from slowapi.errors import RateLimitExceeded
 
 from app.config import get_settings
 from app.database import AsyncSessionLocal, create_tables
+from app.limiter import limiter
 from app.scheduler import scheduler
 from app.websocket.manager import manager
 from app.api.health import router as health_router
 # noqa: F401 — import models so create_all sees them
 import app.models.scrape_task_influencer  # noqa: F401
+import app.models.system_settings  # noqa: F401
 from app.api.auth import router as auth_router
 from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router
@@ -26,6 +30,7 @@ from app.api.follow_up import router as follow_up_router
 from app.api.holidays import router as holidays_router
 from app.api.dashboard import router as dashboard_router
 from app.api.users import router as users_router
+from app.api.settings import router as settings_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -111,6 +116,10 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# Rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)  # type: ignore[arg-type]
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
@@ -133,6 +142,7 @@ app.include_router(follow_up_router, prefix="/api")
 app.include_router(holidays_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
+app.include_router(settings_router, prefix="/api")
 
 
 @app.websocket("/ws")

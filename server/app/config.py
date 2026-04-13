@@ -1,5 +1,16 @@
-from pydantic_settings import BaseSettings
 from functools import lru_cache
+
+from pydantic import field_validator
+from pydantic_settings import BaseSettings
+
+_INSECURE_KEYS = frozenset({
+    "",
+    "change-me-in-production",
+    "your-super-secret-key-change-in-production",
+    "your-secret-key",
+    "change-me-32-byte-fernet-key-b64=",
+    "your-fernet-encryption-key-here",
+})
 
 
 class Settings(BaseSettings):
@@ -18,6 +29,16 @@ class Settings(BaseSettings):
 
     # Encryption key for SMTP passwords (Fernet, 32-byte base64)
     encryption_key: str = "change-me-32-byte-fernet-key-b64="
+
+    @field_validator("secret_key")
+    @classmethod
+    def secret_key_must_be_secure(cls, v: str) -> str:
+        if v in _INSECURE_KEYS:
+            raise ValueError(
+                "SECRET_KEY must be set to a secure random value in .env. "
+                "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\""
+            )
+        return v
 
     # OpenAI
     openai_api_key: str = ""

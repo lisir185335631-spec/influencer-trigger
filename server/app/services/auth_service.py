@@ -1,3 +1,5 @@
+import hashlib
+import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
@@ -9,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.config import get_settings
 from app.models.user import User, UserRole
 from app.schemas.auth import TokenData
+
+logger = logging.getLogger(__name__)
 
 
 def hash_password(password: str) -> str:
@@ -54,6 +58,39 @@ def decode_token(token: str) -> Optional[TokenData]:
         return TokenData(user_id=int(user_id), username=username, role=role)
     except JWTError:
         return None
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def blacklist_refresh_token(token: str) -> None:
+    """Add a refresh token to the Redis blacklist so it cannot be reused."""
+    settings = get_settings()
+    ttl_seconds = settings.refresh_token_expire_days * 86400
+    key = f"rt_blacklist:{_token_hash(token)}"
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        await r.setex(key, ttl_seconds, "1")
+        await r.aclose()
+    except Exception as exc:
+        logger.warning("Redis blacklist write failed (non-fatal): %s", exc)
+
+
+async def is_refresh_token_blacklisted(token: str) -> bool:
+    """Return True if the refresh token has been blacklisted."""
+    settings = get_settings()
+    key = f"rt_blacklist:{_token_hash(token)}"
+    try:
+        import redis.asyncio as aioredis
+        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        result = await r.get(key)
+        await r.aclose()
+        return result is not None
+    except Exception as exc:
+        logger.warning("Redis blacklist read failed (fail-open): %s", exc)
+        return False  # Fail open — do not block login if Redis is down
 
 
 async def get_user_by_username(db: AsyncSession, username: str) -> Optional[User]:
