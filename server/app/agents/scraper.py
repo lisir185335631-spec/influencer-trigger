@@ -4,7 +4,7 @@ Scraper Agent — Playwright-based influencer email extractor.
 Supports: Instagram, YouTube (full Playwright scraping)
 Degrades:  TikTok, Twitter, Facebook (stub — shows manual-input prompt)
 
-Per-platform: max 1 browser concurrent, random 2-5 second delay between page visits.
+Concurrency: controlled by `scrape_concurrency` system setting (default 3), random 2-5 second delay between page visits.
 """
 
 import asyncio
