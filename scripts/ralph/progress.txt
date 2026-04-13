@@ -612,3 +612,29 @@
 - APScheduler 节假日 job 固定在 08:00 UTC（不可配置），与追发 job 动态读配置不同
 - HolidaysPage 用 3 个 tab（Calendar/Manage/Logs）组织功能，日历用 ChevronLeft/Right 翻月
 ---
+
+## 2026-04-13 - S19
+- 实现了数据仪表盘（Dashboard）完整功能
+- 后端：创建 4 个 GET 端点 /api/dashboard/{stats,trends,platform-distribution,mailbox-health}
+- Pydantic schemas：DashboardStats / TrendPoint / PlatformItem / MailboxHealthItem
+- 服务层使用 SQLAlchemy 聚合查询（func.count, case, func.date）计算各指标
+- 折线图趋势：按 sent_at / replied_at 分组，手动填充 30 天完整日期序列
+- 前端：安装 recharts，DashboardPage.tsx 实现 5 张指标卡 + LineChart + PieChart + 邮箱健康表格
+- 退信率 >10% 用红色 + ⚠ 告警标识
+- 使用率进度条展示 today_sent / daily_limit
+
+变更文件：
+- server/app/schemas/dashboard.py（新增）
+- server/app/services/dashboard_service.py（新增）
+- server/app/api/dashboard.py（新增）
+- server/app/main.py（注册 dashboard_router）
+- client/src/api/dashboard.ts（新增）
+- client/src/pages/DashboardPage.tsx（完整实现，替换 stub）
+- client/package.json + package-lock.json（新增 recharts 依赖）
+
+**未来迭代的学习：**
+- Recharts ResponsiveContainer 需包裹实际图表组件，宽度设 "100%" 高度给固定数值
+- SQLite func.date() 可直接用于 GROUP BY 按天聚合 DateTime 列
+- prd.json 顶层 key 是 "userStories"（不是 "stories"），ralph-tools.py 内部处理
+- 跨表聚合时 join+case 可在同一 select() 里完成，避免多次查询
+---
