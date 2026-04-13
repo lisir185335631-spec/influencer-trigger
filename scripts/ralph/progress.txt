@@ -717,3 +717,15 @@
 - Redis blacklist 用 sha256 hash 替代存原始 token，节省空间 + 避免敏感数据落库
 - SystemSettings + FollowUpSettings 合并在 /api/settings，避免前端需要两个请求
 ---
+
+## 2026-04-13 - S21 (retry fix)
+- 修复 AC2「设置修改后立即生效」：scraper.py 现在在任务启动时读取 `get_or_create_system_settings(db).scrape_concurrency`，创建 `asyncio.Semaphore(concurrency)`，用 `asyncio.gather()` 替换原来的顺序 for 循环，实现真正的跨平台并发控制
+- 修复 current_platform 闭包 bug：用 `make_on_found(platform)` 工厂函数替代共享可变变量，每个平台有独立的回调闭包
+- 添加 `asyncio.Lock` 保护 DB write 在并发平台任务下不交错
+- 变更文件：server/app/agents/scraper.py
+
+**未来迭代的学习：**
+- asyncio 并发下共享 DB session 需要 Lock 保护 flush/commit 序列，避免交错
+- 闭包捕获循环变量 bug 在并发场景下会暴露，用工厂函数（make_xxx）生成独立闭包
+- scrape_concurrency 默认值为 3（SystemSettings model default），UI 改后立即对下一次抓取任务生效（读取时机：任务启动）
+---
