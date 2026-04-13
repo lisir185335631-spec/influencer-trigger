@@ -680,3 +680,40 @@
 - 每个受权限保护的页面都必须有组件级别的角色检查，仅靠导航栏隐藏是不够的（用户可直接在地址栏输入 URL）
 - SettingsPage 允许 admin 和 manager 访问，仅拦截 operator；TeamPage 只允许 admin 访问
 ---
+
+## 2026-04-13 14:00 - S21
+- 实现了系统设置页面（前端）+ Settings API（后端）+ 部署脚本
+- 新建 SystemSettings DB model (id=1 singleton): scrape_concurrency, webhook_feishu, webhook_slack
+- 新建 GET/PUT /api/settings（合并 SystemSettings + FollowUpSettings）
+- 新建 POST /api/settings/test-webhook（测试 Feishu/Slack Webhook URL）
+- 更新 webhook_service：从 DB 读取 URL，env vars 作为 fallback
+- 前端 SettingsPage 完整实现：追发策略/抓取并发/Webhook URL 配置，测试按钮
+- S02 安全加固：config.py 增加 SECRET_KEY validator（拒绝已知不安全默认值），auth_service.py 增加 Redis refresh token 黑名单，auth.py 加 slowapi 限流（5次/15min/IP）
+- 创建 server/.env（开发环境用，含生成的 SECRET_KEY 和 ENCRYPTION_KEY）
+- 部署脚本：start.sh, start.bat, nginx.conf（反向代理 + 前端静态文件），ecosystem.config.js（PM2）
+
+变更文件：
+- server/app/limiter.py（新增，slowapi singleton）
+- server/app/models/system_settings.py（新增）
+- server/app/schemas/settings.py（新增）
+- server/app/services/settings_service.py（新增）
+- server/app/services/webhook_service.py（更新：支持 DB URL + env fallback）
+- server/app/api/settings.py（新增）
+- server/app/config.py（增加 SECRET_KEY validator）
+- server/app/services/auth_service.py（增加 Redis blacklist）
+- server/app/api/auth.py（增加 slowapi 限流 + blacklist check on refresh）
+- server/app/main.py（注册 slowapi + settings_router + system_settings model import）
+- server/requirements.txt（增加 slowapi==0.1.9）
+- server/.env（新建，开发用）
+- client/src/api/settings.ts（新增）
+- client/src/pages/SettingsPage.tsx（完整实现）
+- start.sh, start.bat, nginx.conf, ecosystem.config.js（新增）
+
+**未来迭代的学习：**
+- slowapi 在 Windows 上会尝试读取 .env 文件，文件中不能有非 ASCII 字符（特别是 em dash —），否则 GBK 编码会报错
+- slowapi Limiter 需要在 main.py 中 `app.state.limiter = limiter` + `app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)`
+- slowapi 限流装饰器必须在路由函数中加 `request: Request` 参数（框架传递客户端 IP）
+- pydantic field_validator + pydantic-settings BaseSettings 配合：validator 在 Settings() 初始化时触发，捕获 ValidationError 而非 ValueError
+- Redis blacklist 用 sha256 hash 替代存原始 token，节省空间 + 避免敏感数据落库
+- SystemSettings + FollowUpSettings 合并在 /api/settings，避免前端需要两个请求
+---

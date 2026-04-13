@@ -431,7 +431,7 @@
       "passes": true,
       "blocked": false,
       "notes": "",
-      "retryCount": 1
+      "retryCount": 0
     },
     {
       "id": "S21",
@@ -452,7 +452,7 @@
         "S19",
         "S20"
       ],
-      "passes": false,
+      "passes": true,
       "blocked": false,
       "notes": "[Opus安全审查] S02实现中发现3个安全加固项需在本Story统一修复：1) config.py SECRET_KEY去掉硬编码默认值，未设置时raise ValueError强制报错；2) 用Redis做refresh token黑名单，刷新后旧token立即失效；3) 加slowapi限流中间件，登录接口5次/15分钟/IP",
       "retryCount": 0
