@@ -453,7 +453,7 @@ async def _classify_and_notify(
                 platform_str = influencer.platform.value if influencer.platform else "unknown"
                 content = (
                     f"[{platform_str}] {display_name}: {result.summary} "
-                    "— Please check your email to reply."
+                    "— 请前往您的邮箱回复"
                 )
                 notification = Notification(
                     influencer_id=influencer_id,
