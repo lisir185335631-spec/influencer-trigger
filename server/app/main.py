@@ -14,6 +14,7 @@ from app.api.health import router as health_router
 from app.api.auth import router as auth_router
 from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router
+from app.api.scrape import router as scrape_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -71,6 +72,7 @@ app.include_router(health_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(mailboxes_router, prefix="/api")
 app.include_router(templates_router, prefix="/api")
+app.include_router(scrape_router, prefix="/api")
 
 
 @app.websocket("/ws")
