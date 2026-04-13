@@ -9,7 +9,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import aiosmtplib
-from jinja2 import Template as JinjaTemplate
+from jinja2.sandbox import SandboxedEnvironment
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -32,8 +32,11 @@ class MailboxRotator:
         self._mailboxes = list(mailboxes)
 
     def next(self) -> Optional[Mailbox]:
-        """Return the active mailbox with lowest today_sent that's under daily_limit."""
-        available = [m for m in self._mailboxes if m.today_sent < m.daily_limit]
+        """Return the active mailbox with lowest today_sent that's under both daily and hourly limits."""
+        available = [
+            m for m in self._mailboxes
+            if m.today_sent < m.daily_limit and m.this_hour_sent < m.hourly_limit
+        ]
         if not available:
             return None
         return min(available, key=lambda m: m.today_sent)
@@ -82,6 +85,9 @@ async def _send_one(
         return False, str(exc), None
 
 
+_sandbox_env = SandboxedEnvironment()
+
+
 def _render_template(body_html: str, subject: str, influencer: Influencer) -> tuple[str, str]:
     """Render Jinja2 template variables for an influencer."""
     ctx = {
@@ -90,8 +96,8 @@ def _render_template(body_html: str, subject: str, influencer: Influencer) -> tu
         "followers": f"{influencer.followers:,}" if influencer.followers else "many",
         "industry": influencer.industry or "your industry",
     }
-    rendered_body = JinjaTemplate(body_html).render(**ctx)
-    rendered_subject = JinjaTemplate(subject).render(**ctx)
+    rendered_body = _sandbox_env.from_string(body_html).render(**ctx)
+    rendered_subject = _sandbox_env.from_string(subject).render(**ctx)
     return rendered_subject, rendered_body
 
 
@@ -197,10 +203,12 @@ async def run_sender_agent(
                     .where(Mailbox.id == mailbox.id)
                     .values(
                         today_sent=Mailbox.today_sent + 1,
+                        this_hour_sent=Mailbox.this_hour_sent + 1,
                         total_sent=Mailbox.total_sent + 1,
                     )
                 )
                 mailbox.today_sent += 1  # keep local rotator view in sync
+                mailbox.this_hour_sent += 1
                 # Mark influencer as contacted
                 influencer.status = InfluencerStatus.contacted
                 influencer.last_email_sent_at = datetime.now(timezone.utc)
