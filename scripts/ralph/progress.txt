@@ -638,3 +638,23 @@
 - prd.json 顶层 key 是 "userStories"（不是 "stories"），ralph-tools.py 内部处理
 - 跨表聚合时 join+case 可在同一 select() 里完成，避免多次查询
 ---
+
+## 2026-04-13 - S20
+- 实现团队管理与权限控制（后端 + 前端完整闭环）
+- 后端：server/app/schemas/user.py（UserCreateRequest/UserUpdateRequest/UserResponse/UserListResponse）
+- 后端：server/app/services/user_service.py（list_users/get_user_by_id/count_users/create_user_admin/update_user，MAX_TEAM_SIZE=10）
+- 后端：server/app/deps.py（新增 require_admin/require_manager_or_above 依赖注入函数）
+- 后端：server/app/api/users.py（GET /api/users，POST /api/users，PUT /api/users/{id}，DELETE /api/users/{id}，全部 require_admin 保护）
+- 后端：server/app/main.py（注册 users_router）
+- 前端：client/src/api/users.ts（UserItem/UserCreateRequest/UserUpdateRequest 类型 + usersApi CRUD）
+- 前端：client/src/pages/TeamPage.tsx（管理员专属页面：成员表格+RoleBadge+EditRoleDropdown行内编辑+禁用/启用切换+AddMemberModal+权限说明卡片）
+- 前端：client/src/components/layout/Sidebar.tsx（Team 导航项仅 admin 可见，动态计算 bottomNavItems）
+- Python py_compile 全部通过，TypeScript tsc --noEmit 零错误
+
+**未来迭代的学习：**
+- require_admin/require_manager_or_above 已在 deps.py 定义，可直接 Depends() 用于任意路由
+- Sidebar 用 useAuthContext() 读取 role，动态构建 bottomNavItems 数组（admin 才包含 Team 项）
+- 自我保护逻辑：管理员不能降级自己的 role，不能禁用自己的账号（user_id == current_user.user_id 判断）
+- 10 人上限检查在 POST /users 中用 count_users() 实现，超出返回 400
+- UserResponse.model_validate(user) 需要 model_config = {"from_attributes": True}
+---
