@@ -68,7 +68,7 @@ export default function Sidebar() {
 
   const bottomNavItems: NavItem[] = [
     ...(role === 'admin' ? [TEAM_NAV] : []),
-    SETTINGS_NAV,
+    ...(role !== 'operator' ? [SETTINGS_NAV] : []),
   ]
 
   return (
