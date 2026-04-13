@@ -339,10 +339,11 @@ function getRuntime() {
 function getStoryState(story) {
   const runtime = getRuntime();
   const gate = dashboardData.auditGate;
+  // passes/blocked 优先于运行时状态，防止 Ralph 退出后冻结的 current_story 覆盖真实结果
+  if (story.passes === true) return 'passed';
+  if (story.blocked) return 'blocked';
   if (story.id === runtime.current_story) return 'active';
   if (gate && gate.story_id === story.id && gate.status === 'pending') return 'auditing';
-  if (story.blocked) return 'blocked';
-  if (story.passes === true) return 'passed';
   if (story.passes === false && (story.retryCount > 0 || story.notes)) return 'failed';
   return 'pending';
 }

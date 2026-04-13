@@ -43,3 +43,6 @@ scripts/ralph/ralph-lock.json
 scripts/ralph/audit-gate.json
 scripts/ralph/cost-log.jsonl
 scripts/ralph/backups/
+scripts/ralph/agent-logs/
+scripts/ralph/ralph-output.log
+.gstack/

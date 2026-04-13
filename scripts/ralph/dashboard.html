@@ -213,10 +213,11 @@ function fmtElapsed(s) {
 let _auditGate = null;
 
 function getState(story, cur) {
+  // passes/blocked 优先于运行时状态，防止 Ralph 退出后冻结的 cur 覆盖真实结果
+  if (story.passes === true) return 'passed';
+  if (story.blocked) return 'blocked';
   if (story.id === cur) return 'active';
   if (_auditGate && _auditGate.story_id === story.id && _auditGate.status === 'pending') return 'auditing';
-  if (story.blocked) return 'blocked';
-  if (story.passes === true) return 'passed';
   if (story.passes === false && (story.retryCount > 0 || story.notes)) return 'failed';
   return 'pending';
 }

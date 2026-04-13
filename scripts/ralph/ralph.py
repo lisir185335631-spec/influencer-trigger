@@ -5,6 +5,7 @@ Coding 3.0 升级：崩溃恢复 + 成本追踪 + 显式 Story ID 传递 + prd.j
 """
 
 import json
+import signal
 import sys
 import subprocess
 import time
@@ -14,6 +15,11 @@ import atexit
 from pathlib import Path
 from datetime import datetime
 
+# ─── 管道断裂防护（防止 | head -N 等管道截断导致进程静默退出）───
+# Unix 上 SIGPIPE 默认会杀掉进程；Windows 无 SIGPIPE 但有 BrokenPipeError
+if hasattr(signal, "SIGPIPE"):
+    signal.signal(signal.SIGPIPE, signal.SIG_DFL)
+
 # Windows 控制台默认 GBK 编码，无法输出 emoji → 强制 UTF-8
 if sys.stdout and hasattr(sys.stdout, "reconfigure"):
     try:
@@ -21,6 +27,20 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         sys.stderr.reconfigure(encoding="utf-8", errors="replace")
     except Exception:
         pass
+
+
+def safe_print(*args, **kwargs):
+    """BrokenPipeError 安全的 print，防止管道截断导致进程退出"""
+    try:
+        print(*args, **kwargs)
+    except BrokenPipeError:
+        # 管道已断，降级为写日志文件
+        try:
+            log_path = Path(__file__).parent.resolve() / "ralph-output.log"
+            with open(log_path, "a", encoding="utf-8") as f:
+                f.write(" ".join(str(a) for a in args) + "\n")
+        except Exception:
+            pass
 
 try:
     import dashboard
@@ -43,12 +63,33 @@ VALIDATOR_TIMEOUT_SECONDS = 60 * 60  # Validator 超时：60 分钟
 MAX_BACKUPS = 10                   # prd.json 备份保留数量
 AUDIT_POLL_INTERVAL = 30           # 审计门禁轮询间隔（秒）
 
-# Agent 选择：支持 "claude"（默认）或 "codex"
-_positional_args = [a for a in sys.argv[1:] if not a.startswith("--")]
-AGENT = _positional_args[0] if _positional_args else "claude"
+# 参数解析：正确处理 --key value 格式，防止 value 被当作位置参数
+def _parse_args():
+    """解析命令行参数，返回 (agent, model, no_audit_gate, daemon)"""
+    args = sys.argv[1:]
+    agent = "claude"
+    model = "sonnet"
+    no_audit_gate = False
+    daemon = False
+    i = 0
+    while i < len(args):
+        if args[i] == "--model" and i + 1 < len(args):
+            model = args[i + 1]
+            i += 2
+        elif args[i] == "--no-audit-gate":
+            no_audit_gate = True
+            i += 1
+        elif args[i] == "--daemon":
+            daemon = True
+            i += 1
+        elif not args[i].startswith("--"):
+            agent = args[i]  # 真正的位置参数：agent 类型
+            i += 1
+        else:
+            i += 1  # 跳过未知 flag
+    return agent, model, no_audit_gate, daemon
 
-# 审计门禁开关：默认启用，--no-audit-gate 关闭（调试用）
-NO_AUDIT_GATE = "--no-audit-gate" in sys.argv
+AGENT, MODEL, NO_AUDIT_GATE, DAEMON_MODE = _parse_args()
 
 # ─────────────────────────────────────────────
 # 路径配置
@@ -68,34 +109,73 @@ BACKUP_DIR = SCRIPT_DIR / "backups"
 # ─────────────────────────────────────────────
 # 命令构建
 # ─────────────────────────────────────────────
-def build_cmd(prompt: str) -> list[str]:
-    """根据 AGENT 配置构建命令"""
+def build_cmd() -> list[str]:
+    """根据 AGENT 配置构建基础命令（prompt 通过 stdin 传递，不作为 CLI 参数）"""
     import platform
     if AGENT == "codex":
-        return ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox", prompt]
+        return ["codex", "exec", "--dangerously-bypass-approvals-and-sandbox"]
     # Windows 下 subprocess 需要用 .cmd 扩展名
     claude_bin = "claude.cmd" if platform.system() == "Windows" else "claude"
-    return [claude_bin, "--print", "--dangerously-skip-permissions", "--model", "sonnet", prompt]
+    return [claude_bin, "--print", "--dangerously-skip-permissions", "--model", MODEL]
 
 
-def build_process_cmd(prompt: str) -> list[str]:
+def build_process_cmd() -> list[str]:
     """构建子进程命令，兼容 Windows（跳过 Unix PTY）"""
     import platform
-    cmd = build_cmd(prompt)
+    cmd = build_cmd()
     if platform.system() != "Windows":
         return ["script", "-q", "/dev/null"] + cmd
     return cmd
 
 
 # ─────────────────────────────────────────────
+# prd.json 校验与恢复
+# ─────────────────────────────────────────────
+def validate_prd(path: Path | None = None) -> bool:
+    """校验 prd.json 合法性：合法 JSON + userStories 列表 + 每项有 id"""
+    target = path or PRD_FILE
+    try:
+        data = json.loads(target.read_text(encoding="utf-8"))
+        stories = data.get("userStories", [])
+        if not isinstance(stories, list) or len(stories) == 0:
+            return False
+        return all(isinstance(s, dict) and "id" in s for s in stories)
+    except Exception:
+        return False
+
+
+def restore_prd() -> bool:
+    """从 backups/ 中找最新的合法备份恢复 prd.json，返回是否成功"""
+    if not BACKUP_DIR.exists():
+        return False
+    for bak in sorted(BACKUP_DIR.glob("prd.json.bak.*"),
+                      key=lambda p: p.stat().st_mtime, reverse=True):
+        if validate_prd(bak):
+            shutil.copy2(bak, PRD_FILE)
+            print(f"  🔧 prd.json 已从备份恢复: {bak.name}")
+            return True
+    print("  ❌ 无可用的合法备份，请从 git 手动恢复: git show <commit>:scripts/ralph/prd.json")
+    return False
+
+
+# ─────────────────────────────────────────────
 # prd.json 读写
 # ─────────────────────────────────────────────
 def read_prd() -> dict | None:
-    """安全读取 prd.json"""
+    """安全读取 prd.json，损坏时自动从备份恢复"""
     try:
-        return json.loads(PRD_FILE.read_text(encoding="utf-8"))
+        data = json.loads(PRD_FILE.read_text(encoding="utf-8"))
+        stories = data.get("userStories", [])
+        if isinstance(stories, list) and len(stories) > 0:
+            return data
+        raise ValueError("userStories 缺失或为空")
     except Exception as e:
-        print(f"⚠️  读取 prd.json 失败: {e}")
+        print(f"⚠️  prd.json 读取失败: {e}")
+        if restore_prd():
+            try:
+                return json.loads(PRD_FILE.read_text(encoding="utf-8"))
+            except Exception:
+                pass
         return None
 
 
@@ -145,6 +225,9 @@ def all_stories_resolved() -> bool:
 def backup_prd(iteration: int) -> None:
     """在每次 iteration 开始前备份 prd.json，保留最近 MAX_BACKUPS 个"""
     if not PRD_FILE.exists():
+        return
+    if not validate_prd():
+        print(f"  ⚠️  prd.json 不合法，跳过备份（防止污染 backups/）")
         return
 
     BACKUP_DIR.mkdir(exist_ok=True)
@@ -621,6 +704,9 @@ def build_validator_prompt(story_id: str | None) -> str:
 # ─────────────────────────────────────────────
 # Agent 执行
 # ─────────────────────────────────────────────
+AGENT_LOG_DIR = SCRIPT_DIR / "agent-logs"
+
+
 def run_agent(prompt: str, label: str, timeout: int) -> tuple[bool, int | None, float]:
     """
     通用 Agent 执行函数。
@@ -629,21 +715,62 @@ def run_agent(prompt: str, label: str, timeout: int) -> tuple[bool, int | None, 
     - 非零退出: (False, code, duration)
     - 超时终止: (True, None, duration)
     - 启动异常: (False, None, duration)
+
+    Prompt 通过 stdin 文件管道传递（解决 Windows CLI 参数长度限制 + 参数解析截断问题）。
+    Agent 的 stdout/stderr 输出保存到 agent-logs/ 目录用于诊断。
     """
-    cmd = build_process_cmd(prompt)
+    cmd = build_process_cmd()
+
+    # 为每次 agent 调用创建独立的日志文件和 prompt 文件
+    AGENT_LOG_DIR.mkdir(exist_ok=True)
+    ts = datetime.now().strftime("%Y%m%d-%H%M%S")
+    safe_label = label.replace(" ", "_")
+    agent_log_path = AGENT_LOG_DIR / f"{ts}_{safe_label}.log"
+
+    # 将 prompt 写入文件留存（用于调试），通过 subprocess.PIPE 传递给 agent
+    # 注意：Windows 上 stdin=open(file) 无法正确传递给 .cmd 批处理包装器，
+    # 必须用 subprocess.PIPE + 显式 write/close 来模拟 shell 管道行为
+    prompt_file_path = AGENT_LOG_DIR / f"{ts}_{safe_label}_prompt.md"
+    prompt_file_path.write_text(prompt, encoding="utf-8")
+    print(f"  📝 Prompt 已写入: {prompt_file_path} ({len(prompt)} 字符)")
 
     start_time = time.time()
     try:
-        process = subprocess.Popen(cmd, cwd=str(PROJECT_ROOT))
+        agent_log_file = open(agent_log_path, "w", encoding="utf-8")
+        process = subprocess.Popen(
+            cmd, cwd=str(PROJECT_ROOT),
+            stdin=subprocess.PIPE,
+            stdout=agent_log_file, stderr=subprocess.STDOUT,
+        )
+        # 写入 prompt 并关闭 stdin，触发 EOF 让 claude 开始处理
+        try:
+            process.stdin.write(prompt.encode("utf-8"))
+            process.stdin.close()
+        except Exception as e:
+            print(f"  ⚠️  写入 prompt 到 stdin 失败: {e}")
 
         while True:
             ret_code = process.poll()
             if ret_code is not None:
                 elapsed = time.time() - start_time
+                agent_log_file.close()
+                # 读取日志尾部用于诊断
+                try:
+                    log_tail = agent_log_path.read_text(encoding="utf-8", errors="replace")[-500:]
+                except Exception:
+                    log_tail = ""
                 if ret_code != 0:
                     print(f"\n⚠️  {label}非零退出码: {ret_code} (耗时: {format_duration(elapsed)})")
+                    if log_tail:
+                        print(f"   日志尾部: ...{log_tail[-200:]}")
                 else:
                     print(f"\n✓ {label}完成 (耗时: {format_duration(elapsed)})")
+                    # 如果完成太快（< 30s），输出警告 — 可能 agent 没有实际工作
+                    if elapsed < 30:
+                        print(f"   ⚠️  耗时异常短（{int(elapsed)}s），agent 可能未正常执行")
+                        if log_tail:
+                            print(f"   日志尾部: ...{log_tail[-300:]}")
+                print(f"   详细日志: {agent_log_path}")
                 return False, ret_code, elapsed
 
             elapsed = time.time() - start_time
@@ -655,10 +782,11 @@ def run_agent(prompt: str, label: str, timeout: int) -> tuple[bool, int | None, 
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
-                print(f"   进程已终止")
+                agent_log_file.close()
+                print(f"   进程已终止, 日志: {agent_log_path}")
                 return True, None, elapsed
 
-            time.sleep(60)
+            time.sleep(5)  # 5 秒轮询（之前 60s 太粗，导致无法及时检测异常退出）
 
     except Exception as e:
         elapsed = time.time() - start_time
@@ -731,14 +859,121 @@ def format_duration(seconds: float) -> str:
         return f"{s}秒"
 
 
+LOG_FILE = SCRIPT_DIR / "ralph-output.log"
+
+
+class _TeeWriter:
+    """同时写 stdout 和日志文件，任一端断裂不影响另一端"""
+
+    def __init__(self, original_stdout):
+        self._stdout = original_stdout
+        self._log = None
+        try:
+            self._log = open(LOG_FILE, "a", encoding="utf-8")
+        except Exception:
+            pass
+
+    def write(self, data):
+        # 写日志文件（始终可靠）
+        if self._log:
+            try:
+                self._log.write(data)
+                self._log.flush()
+            except Exception:
+                pass
+        # 写原始 stdout（管道断裂时静默忽略）
+        if self._stdout:
+            try:
+                self._stdout.write(data)
+                self._stdout.flush()
+            except (BrokenPipeError, OSError):
+                self._stdout = None  # 管道已断，后续不再尝试
+
+    def flush(self):
+        if self._log:
+            try:
+                self._log.flush()
+            except Exception:
+                pass
+        if self._stdout:
+            try:
+                self._stdout.flush()
+            except (BrokenPipeError, OSError):
+                self._stdout = None
+
+    def close(self):
+        if self._log:
+            try:
+                self._log.close()
+            except Exception:
+                pass
+
+
+# ─────────────────────────────────────────────
+# Daemon 模式：自守护进程（跨平台）
+# ─────────────────────────────────────────────
+def _daemon_relaunch():
+    """
+    --daemon 模式：以独立进程重新启动自身（去掉 --daemon 参数），
+    确保 Ralph 不会因父 shell 退出而被杀掉。
+    - Windows: CREATE_NEW_PROCESS_GROUP | DETACHED_PROCESS
+    - Unix: start_new_session=True (等效于 setsid)
+    """
+    import platform
+
+    # 构建子进程参数：去掉 --daemon，保留其他所有参数
+    child_args = [sys.executable, str(Path(__file__).resolve())]
+    child_args += [a for a in sys.argv[1:] if a != "--daemon"]
+
+    log_handle = open(LOG_FILE, "a", encoding="utf-8")
+
+    if platform.system() == "Windows":
+        DETACHED_PROCESS = 0x00000008
+        CREATE_NEW_PROCESS_GROUP = 0x00000200
+        proc = subprocess.Popen(
+            child_args,
+            cwd=str(PROJECT_ROOT),
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            creationflags=DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP,
+        )
+    else:
+        proc = subprocess.Popen(
+            child_args,
+            cwd=str(PROJECT_ROOT),
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            stdin=subprocess.DEVNULL,
+            start_new_session=True,
+        )
+
+    print(f"Ralph 已在后台启动 (PID: {proc.pid})")
+    print(f"  日志: {LOG_FILE}")
+    print(f"  进度: python scripts/ralph/ralph-tools.py status")
+    print(f"  停止: taskkill /PID {proc.pid} /T /F" if platform.system() == "Windows"
+          else f"  停止: kill {proc.pid}")
+    sys.exit(0)
+
+
 # ─────────────────────────────────────────────
 # 主循环
 # ─────────────────────────────────────────────
 def main():
     """主函数"""
+    # --daemon 模式：以独立进程重启自身后退出，确保进程不随父 shell 死亡
+    if DAEMON_MODE:
+        _daemon_relaunch()
+        return  # unreachable, _daemon_relaunch calls sys.exit(0)
+
+    # 管道断裂防护：stdout 同时写屏幕和日志文件，管道断了也不影响执行
+    tee = _TeeWriter(sys.stdout)
+    sys.stdout = tee
+    sys.stderr = _TeeWriter(sys.stderr)
+
     print(f"启动 Ralph v2 - 最大迭代次数: {MAX_ITERATIONS}")
     audit_label = "启用" if not NO_AUDIT_GATE else "禁用(--no-audit-gate)"
-    print(f"  Agent: {AGENT} | 开发超时: {TIMEOUT_SECONDS//60}min | 验证超时: {VALIDATOR_TIMEOUT_SECONDS//60}min | 审计门禁: {audit_label}")
+    print(f"  Agent: {AGENT} | Model: {MODEL} | 开发超时: {TIMEOUT_SECONDS//60}min | 验证超时: {VALIDATOR_TIMEOUT_SECONDS//60}min | 审计门禁: {audit_label}")
 
     # 崩溃恢复检查
     start_iteration = check_crash_recovery()

@@ -65,7 +65,7 @@
 
 - 优先复用**已经在运行且可访问**的本地服务；只有在确实无法访问时，才允许自行启动 dev server。
 - 如果需要启动 dev server，必须先检查目标端口是否已经可访问；可访问就直接复用，不要重复启动。
-- 启动 dev server 时必须使用**后台方式**，避免阻塞当前 agent。可使用项目已有的标准启动命令，例如 `nohup npm run dev > /tmp/ralph-dev.log 2>&1 &`。
+- 启动 dev server 时必须使用**后台方式**，避免阻塞当前 agent。Windows 使用 `start /b npm run dev > /tmp/ralph-dev.log 2>&1`，Unix 使用 `nohup npm run dev > /tmp/ralph-dev.log 2>&1 &`。
 - 启动后要先轮询确认服务可访问，再进行 agent-browser 验证。
 - 除非明确需要清理冲突进程，否则不要随意 `kill -9` 现有服务；不要每次迭代都重启 dev server。
 

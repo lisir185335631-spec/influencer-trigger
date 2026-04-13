@@ -37,6 +37,13 @@
 | Step 5.5 Opus 质量审查 | Opus 主对话 | 检测 audit-gate.json(pending) → 4 维度审查 → approve/reject |
 | `/goal-verify` 最终验证 | Opus 主对话 | 对比 PRD 与实际实现 |
 
+### Ralph 启动命令（必须用 --daemon）
+
+```bash
+python scripts/ralph/ralph.py --model sonnet --daemon              # 正式模式
+python scripts/ralph/ralph.py --model sonnet --no-audit-gate --daemon  # 调试模式
+```
+
 ### Audit Gate 操作命令
 
 ```bash

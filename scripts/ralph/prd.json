@@ -454,8 +454,8 @@
       ],
       "passes": true,
       "blocked": false,
-      "notes": "[验证失败 - 第1次] 2026-04-13 00:00\n- 失败项：AC2「设置修改后立即生效」未完全达标。`scrape_concurrency` 字段通过 PUT /api/settings 写入 DB，但 `server/app/agents/scraper.py` 从未读取该值（全文无 scrape_concurrency / Semaphore / 动态并发引用），scraper 在注释中写死「Per-platform: max 1 browser concurrent」，用户在 UI 调整并发数对实际抓取行为毫无效果。\n- 已通过项：AC1（UI 三大配置分区齐全）、AC3（webhook_service.py 正确实现飞书 card + Slack blocks，monitor.py 已接入）、AC4（start.bat/start.sh 正确启动 FastAPI + Redis）、AC5（nginx.conf 正确代理 API 并托管前端静态文件）、AC6（SQLite 持久化路径正确，启动脚本确保 data/ 目录存在）、S02 安全加固（SECRET_KEY ValueError、Redis token 黑名单、slowapi 限流均已实现）。\n- 建议修复方向：在 run_scraper_agent() 启动时读取 `get_or_create_system_settings(db).scrape_concurrency`，用 asyncio.Semaphore(concurrency) 控制跨平台并发，替换当前硬编码的顺序执行逻辑。",
-      "retryCount": 1
+      "notes": "",
+      "retryCount": 0
     }
   ]
 }

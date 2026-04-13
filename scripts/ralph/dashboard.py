@@ -5,11 +5,20 @@ Ralph Dashboard - 实时监控面板
 """
 
 import json
+import sys
 import threading
 import webbrowser
 import time
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
+
+# Windows 控制台默认 GBK 编码，无法输出 emoji → 强制 UTF-8
+if sys.stdout and hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        sys.stderr.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PRD_FILE = SCRIPT_DIR / "prd.json"
@@ -73,12 +82,20 @@ def _build_api_response() -> dict:
     except Exception:
         pass
 
+    # 如果所有 story 都已 resolved（passes 或 blocked），自动修正运行时状态为 done
+    # 防止 Ralph 退出后 phase/current_story 冻结在过期值
+    phase = s["phase"]
+    current_story = s["current_story"]
+    if stories and all(st.get("passes") or st.get("blocked") for st in stories):
+        phase = "done"
+        current_story = None
+
     return {
         "runtime": {
             "iteration": s["iteration"],
             "max_iterations": s["max_iterations"],
-            "phase": s["phase"],
-            "current_story": s["current_story"],
+            "phase": phase,
+            "current_story": current_story,
             "elapsed": elapsed,
         },
         "project": project,

@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from typing import Optional
 from pydantic import BaseModel, ConfigDict
 
 
@@ -7,15 +8,15 @@ class HolidayCreate(BaseModel):
     date: date
     is_recurring: bool = True
     is_active: bool = True
-    greeting_template: str | None = None
+    greeting_template: Optional[str] = None
 
 
 class HolidayUpdate(BaseModel):
-    name: str | None = None
-    date: date | None = None
-    is_recurring: bool | None = None
-    is_active: bool | None = None
-    greeting_template: str | None = None
+    name: Optional[str] = None
+    date: Optional[date] = None
+    is_recurring: Optional[bool] = None
+    is_active: Optional[bool] = None
+    greeting_template: Optional[str] = None
 
 
 class HolidayResponse(BaseModel):
