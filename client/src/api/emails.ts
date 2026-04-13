@@ -38,6 +38,45 @@ export interface EmailProgressEvent {
   current_email?: string
 }
 
+export interface EmailListItem {
+  id: number
+  influencer_id: number
+  influencer_name: string | null
+  influencer_email: string
+  influencer_platform: string | null
+  campaign_id: number | null
+  campaign_name: string | null
+  status: string
+  subject: string
+  sent_at: string | null
+  updated_at: string
+}
+
+export interface EmailStats {
+  total_sent: number
+  delivered: number
+  opened: number
+  replied: number
+  no_reply: number
+  bounced: number
+}
+
+export interface EmailListResponse {
+  items: EmailListItem[]
+  total: number
+  page: number
+  page_size: number
+  total_pages: number
+}
+
+export interface EmailListParams {
+  campaign_id?: number
+  platform?: string
+  status?: string
+  page?: number
+  page_size?: number
+}
+
 export const emailsApi = {
   sendBatch: (data: SendBatchRequest) =>
     apiClient.post<SendBatchResponse>('/emails/send-batch', data).then(r => r.data),
@@ -47,4 +86,10 @@ export const emailsApi = {
 
   getCampaign: (id: number) =>
     apiClient.get<Campaign>(`/emails/campaigns/${id}`).then(r => r.data),
+
+  getStats: () =>
+    apiClient.get<EmailStats>('/emails/stats').then(r => r.data),
+
+  listEmails: (params: EmailListParams = {}) =>
+    apiClient.get<EmailListResponse>('/emails', { params }).then(r => r.data),
 }

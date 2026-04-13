@@ -1,3 +1,4 @@
+import math
 from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel
@@ -47,3 +48,34 @@ class EmailOut(BaseModel):
     created_at: datetime
 
     model_config = {"from_attributes": True}
+
+
+class EmailListItem(BaseModel):
+    id: int
+    influencer_id: int
+    influencer_name: Optional[str] = None
+    influencer_email: str
+    influencer_platform: Optional[str] = None
+    campaign_id: Optional[int] = None
+    campaign_name: Optional[str] = None
+    status: str
+    subject: str
+    sent_at: Optional[datetime] = None
+    updated_at: datetime
+
+
+class EmailStats(BaseModel):
+    total_sent: int
+    delivered: int
+    opened: int
+    replied: int
+    no_reply: int
+    bounced: int
+
+
+class EmailListResponse(BaseModel):
+    items: list[EmailListItem]
+    total: int
+    page: int
+    page_size: int
+    total_pages: int
