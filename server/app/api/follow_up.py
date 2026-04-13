@@ -149,3 +149,15 @@ async def list_logs(
         page=page,
         page_size=page_size,
     )
+
+
+@router.post("/trigger", status_code=202)
+async def trigger_follow_up(
+    current_user: User = Depends(get_current_user),
+) -> dict:
+    """Manually trigger the follow-up check (runs in background)."""
+    import asyncio
+    from app.services.follow_up_service import monthly_follow_up_check
+
+    asyncio.create_task(monthly_follow_up_check())
+    return {"message": "Follow-up check triggered"}

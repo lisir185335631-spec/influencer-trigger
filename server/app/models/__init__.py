@@ -12,6 +12,7 @@ from app.models.holiday import Holiday
 from app.models.scrape_task import ScrapeTask
 from app.models.email_event import EmailEvent
 from app.models.notification import Notification
+from app.models.follow_up_settings import FollowUpSettings
 
 __all__ = [
     "User",
@@ -28,4 +29,5 @@ __all__ = [
     "ScrapeTask",
     "EmailEvent",
     "Notification",
+    "FollowUpSettings",
 ]
