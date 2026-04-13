@@ -45,4 +45,10 @@ scripts/ralph/cost-log.jsonl
 scripts/ralph/backups/
 scripts/ralph/agent-logs/
 scripts/ralph/ralph-output.log
+scripts/ralph/*.corrupted
 .gstack/
+
+# Screenshots (validator/debug)
+screenshots/
+client/screenshots/
+*.png
