@@ -23,6 +23,7 @@ from app.models.influencer import Influencer, InfluencerPlatform
 from app.models.scrape_task import ScrapeTask, ScrapeTaskStatus
 from app.models.scrape_task_influencer import ScrapeTaskInfluencer
 from app.services.scrape_service import update_task_status
+from app.services.settings_service import get_or_create_system_settings
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -319,6 +320,9 @@ async def run_scraper_agent(task_id: int) -> None:
     """
     Background coroutine executed after the API creates a ScrapeTask record.
     Manages its own DB session and pushes WebSocket progress.
+
+    Concurrency is controlled by the `scrape_concurrency` system setting: up to
+    that many platform scrapers run simultaneously via asyncio.Semaphore.
     """
     async with AsyncSessionLocal() as db:
         result = await db.execute(
@@ -328,6 +332,18 @@ async def run_scraper_agent(task_id: int) -> None:
         if not task:
             logger.error("ScrapeTask %d not found", task_id)
             return
+
+        # Read scrape_concurrency from system settings so the UI value takes effect.
+        sys_settings = await get_or_create_system_settings(db)
+        concurrency = max(1, sys_settings.scrape_concurrency)
+        semaphore = asyncio.Semaphore(concurrency)
+        # Serialise DB writes so concurrent platform tasks don't interleave flush/commit.
+        db_lock = asyncio.Lock()
+
+        logger.info(
+            "ScrapeTask %d: scrape_concurrency=%d (from system settings)",
+            task_id, concurrency,
+        )
 
         platforms: list[str] = json.loads(task.platforms)
         industry = task.industry
@@ -347,69 +363,92 @@ async def run_scraper_agent(task_id: int) -> None:
         # cross-platform dedup by email
         seen_emails: set[str] = set()
 
-        async def on_found(email: str, name: str, profile_url: str) -> None:
-            nonlocal found_total, valid_total
-            if email in seen_emails:
-                return
-            seen_emails.add(email)
-            found_total += 1
+        platform_map = {
+            "instagram": InfluencerPlatform.instagram,
+            "youtube": InfluencerPlatform.youtube,
+            "tiktok": InfluencerPlatform.tiktok,
+            "twitter": InfluencerPlatform.twitter,
+            "facebook": InfluencerPlatform.facebook,
+        }
 
-            # Write to influencers table (upsert by email)
-            platform_map = {
-                "instagram": InfluencerPlatform.instagram,
-                "youtube": InfluencerPlatform.youtube,
-                "tiktok": InfluencerPlatform.tiktok,
-                "twitter": InfluencerPlatform.twitter,
-                "facebook": InfluencerPlatform.facebook,
-            }
-            plat = platform_map.get(current_platform, InfluencerPlatform.other)
+        def make_on_found(platform: str):
+            """Return a platform-specific on_found callback (avoids shared mutable closure)."""
+            plat = platform_map.get(platform, InfluencerPlatform.other)
 
-            existing_result = await db.execute(
-                select(Influencer).where(Influencer.email == email)
-            )
-            existing = existing_result.scalar_one_or_none()
+            async def on_found(email: str, name: str, profile_url: str) -> None:
+                nonlocal found_total, valid_total
 
-            if existing is None:
-                inf = Influencer(
-                    email=email,
-                    nickname=name or None,
-                    platform=plat,
-                    profile_url=profile_url or None,
-                    industry=industry,
-                )
-                db.add(inf)
-                await db.flush()  # get inf.id without full commit
-                db.add(ScrapeTaskInfluencer(scrape_task_id=task_id, influencer_id=inf.id))
-                await db.commit()
-                valid_total += 1
-            else:
-                # already exists — link to this task if not already linked
-                link_result = await db.execute(
-                    select(ScrapeTaskInfluencer).where(
-                        ScrapeTaskInfluencer.scrape_task_id == task_id,
-                        ScrapeTaskInfluencer.influencer_id == existing.id,
+                async with db_lock:
+                    if email in seen_emails:
+                        return
+                    seen_emails.add(email)
+                    found_total += 1
+
+                    existing_result = await db.execute(
+                        select(Influencer).where(Influencer.email == email)
                     )
-                )
-                if link_result.scalar_one_or_none() is None:
-                    db.add(ScrapeTaskInfluencer(scrape_task_id=task_id, influencer_id=existing.id))
-                    await db.commit()
-                valid_total += 1
+                    existing = existing_result.scalar_one_or_none()
 
-            progress = min(99, int((valid_total / task.target_count) * 100))
-            await update_task_status(
-                db, task, ScrapeTaskStatus.running,
-                progress=progress,
-                found_count=found_total,
-                valid_count=valid_total,
-            )
-            await manager.broadcast("scrape:progress", {
-                "task_id": task_id,
-                "status": "running",
-                "progress": progress,
-                "found_count": found_total,
-                "valid_count": valid_total,
-                "latest_email": email,
-            })
+                    if existing is None:
+                        inf = Influencer(
+                            email=email,
+                            nickname=name or None,
+                            platform=plat,
+                            profile_url=profile_url or None,
+                            industry=industry,
+                        )
+                        db.add(inf)
+                        await db.flush()  # get inf.id without full commit
+                        db.add(ScrapeTaskInfluencer(scrape_task_id=task_id, influencer_id=inf.id))
+                        await db.commit()
+                        valid_total += 1
+                    else:
+                        # already exists — link to this task if not already linked
+                        link_result = await db.execute(
+                            select(ScrapeTaskInfluencer).where(
+                                ScrapeTaskInfluencer.scrape_task_id == task_id,
+                                ScrapeTaskInfluencer.influencer_id == existing.id,
+                            )
+                        )
+                        if link_result.scalar_one_or_none() is None:
+                            db.add(ScrapeTaskInfluencer(
+                                scrape_task_id=task_id, influencer_id=existing.id
+                            ))
+                            await db.commit()
+                        valid_total += 1
+
+                    progress = min(99, int((valid_total / task.target_count) * 100))
+                    await update_task_status(
+                        db, task, ScrapeTaskStatus.running,
+                        progress=progress,
+                        found_count=found_total,
+                        valid_count=valid_total,
+                    )
+                    await manager.broadcast("scrape:progress", {
+                        "task_id": task_id,
+                        "status": "running",
+                        "progress": progress,
+                        "found_count": found_total,
+                        "valid_count": valid_total,
+                        "latest_email": email,
+                    })
+
+            return on_found
+
+        async def run_platform(browser: Browser, platform: str) -> None:
+            """Run one platform scraper, gated by the concurrency semaphore."""
+            async with semaphore:
+                logger.info(
+                    "ScrapeTask %d: starting %s scrape (target=%d, concurrency=%d)",
+                    task_id, platform, target_per_platform, concurrency,
+                )
+                on_found = make_on_found(platform)
+                if platform == "youtube":
+                    await _scrape_youtube(browser, industry, target_per_platform, on_found)
+                elif platform == "instagram":
+                    await _scrape_instagram(browser, industry, target_per_platform, on_found)
+                else:
+                    await _scrape_stub(platform)
 
         try:
             async with async_playwright() as pw:
@@ -418,22 +457,11 @@ async def run_scraper_agent(task_id: int) -> None:
                     args=["--no-sandbox", "--disable-dev-shm-usage"],
                 )
                 try:
-                    for platform in platforms:
-                        current_platform = platform  # noqa: F841 — captured by closure
-                        logger.info(
-                            "ScrapeTask %d: starting %s scrape (target=%d)",
-                            task_id, platform, target_per_platform,
-                        )
-                        if platform == "youtube":
-                            await _scrape_youtube(browser, industry, target_per_platform, on_found)
-                        elif platform == "instagram":
-                            await _scrape_instagram(browser, industry, target_per_platform, on_found)
-                        else:
-                            await _scrape_stub(platform)
-
-                        if valid_total >= task.target_count:
-                            break
-
+                    # Run all platforms concurrently, limited by scrape_concurrency semaphore.
+                    await asyncio.gather(
+                        *[run_platform(browser, p) for p in platforms],
+                        return_exceptions=True,
+                    )
                 finally:
                     await browser.close()
 
