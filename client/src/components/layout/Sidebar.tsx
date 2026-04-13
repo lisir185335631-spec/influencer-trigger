@@ -16,6 +16,7 @@ import {
   FileUp,
   Gift,
 } from 'lucide-react'
+import { useAuthContext } from '../../stores/AuthContext'
 
 interface NavItem {
   label: string
@@ -35,10 +36,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Holidays', to: '/holidays', icon: Gift },
 ]
 
-const BOTTOM_NAV_ITEMS: NavItem[] = [
-  { label: 'Team', to: '/team', icon: Users2 },
-  { label: 'Settings', to: '/settings', icon: Settings },
-]
+const SETTINGS_NAV: NavItem = { label: 'Settings', to: '/settings', icon: Settings }
+const TEAM_NAV: NavItem = { label: 'Team', to: '/team', icon: Users2 }
 
 const ACTIVE_CLASS =
   'bg-gray-50 text-gray-900 font-medium border-l-2 border-gray-900'
@@ -65,6 +64,12 @@ function NavItemRow({ item, collapsed }: { item: NavItem; collapsed: boolean }) 
 
 export default function Sidebar() {
   const [collapsed, setCollapsed] = useState(false)
+  const { role } = useAuthContext()
+
+  const bottomNavItems: NavItem[] = [
+    ...(role === 'admin' ? [TEAM_NAV] : []),
+    SETTINGS_NAV,
+  ]
 
   return (
     <aside
@@ -93,7 +98,7 @@ export default function Sidebar() {
 
       {/* Divider + bottom nav */}
       <div className="border-t border-gray-100 py-3 space-y-0.5">
-        {BOTTOM_NAV_ITEMS.map((item) => (
+        {bottomNavItems.map((item) => (
           <NavItemRow key={item.to} item={item} collapsed={collapsed} />
         ))}
       </div>
