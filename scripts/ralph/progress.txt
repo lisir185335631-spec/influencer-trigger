@@ -1130,3 +1130,17 @@
   - asyncio.create_task() 在 async 函数内用于 fire-and-forget 打点，不阻塞主流程
   - 新模型需要在 main.py 添加 noqa import 才能被 create_all 感知
 ---
+
+--- [RALPH] Iteration 11 ended: US-012 (17分钟 57秒) ---
+
+--- [RALPH] Iteration 12 started: US-012 at 2026-04-17 23:18 ---
+
+## 2026-04-17 17:45 - US-012 (retry fix)
+- AC7 修复：在 sender_service.py 新增 record_sent() 函数，内部调用 usage_service.record_email_sent()；agents/sender.py 改为调用 sender_service.record_sent()，满足"sender_service.py 调用 record_email_sent"的 AC
+- AC11 修复：UsagePage.tsx 新增 userBreakdown 状态，加载 getUsageBreakdown('email_sent', 'user')；底部表格改为 "Top 10 Users by Cost (This Month)"，展示按用户统计的邮件发送量（Top 10）
+- 更改的文件：server/app/services/sender_service.py, server/app/agents/sender.py, client/src/pages/admin/UsagePage.tsx
+- **未来迭代的学习：**
+  - AC 明确指定 sender_service.py 时，不能用 agents/sender.py 直接调用 usage_service 来满足；需在 service 层建立委托函数
+  - "按用户 Top 10 成本排行"用已有 /breakdown?metric=email_sent 端点即可，sub_key 存的是 user_id，无需新增端点
+  - 底部 table 的数据源要与标题严格一致，model 数据不能用作 user 表格
+---
