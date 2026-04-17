@@ -18,7 +18,25 @@
 - get_current_user is now async and queries DB on every request to validate token_version (one extra query per auth'd request)
 - write_login_history() creates its own AsyncSession to avoid transaction rollback on login failures
 - ALT TABLE migrations in main.py lifespan use try/except silently (column may already exist)
+- Middleware directory: server/app/middleware/; register via app.add_middleware() in main.py AFTER CORSMiddleware
+- asyncio.create_task() inside BaseHTTPMiddleware.dispatch() for fire-and-forget background DB writes
+- Unit tests live in server/tests/; run from server/ directory with `python -m pytest tests/`
+- pytest + pytest-asyncio are in requirements.txt; asyncio mode=STRICT requires @pytest.mark.asyncio
 
+---
+
+## 2026-04-17 - US-004
+- 实现审计日志系统：模型、中间件、Admin API、单元测试
+- 新增 server/app/models/audit_log.py：AuditLog 模型，16 个字段，3 个复合索引
+- 新增 server/app/middleware/audit_middleware.py：写操作 100% 记录，GET 10% 采样，BackgroundTask 写入，敏感字段打码
+- 新增 server/app/api/admin/audit.py：GET /audit/logs（分页+筛选）、GET /audit/export（CSV）、GET /audit/stats（7天趋势）
+- 更新 server/app/main.py：注册 AuditMiddleware（CORS 之后）、admin_audit_router
+- 更新 server/app/models/__init__.py：import AuditLog
+- 新增 server/tests/test_audit_middleware.py：7 个单元测试（敏感字段打码×3、采样×1、DB写入×2、异常吞掉×1）
+- **未来迭代的学习：**
+  - BaseHTTPMiddleware 中读取 request.body() 会被 Starlette 缓存，路由处理器可以再次读取
+  - asyncio.create_task() 适合中间件内的 fire-and-forget 写入，不能用 BackgroundTasks（那是请求级的）
+  - SQLite strftime('%Y-%m-%d', col) 用于按天分组统计
 ---
 
 ## 2026-04-13 00:37 - S01
@@ -843,3 +861,7 @@
   - React state destructuring 中未使用的 state 变量直接删除，同时清除所有 setter 调用
   - Ternary expression as statement 需改为 if/else 块
 ---
+
+--- [RALPH] Iteration 2 ended: US-003 (40分钟 42秒) ---
+
+--- [RALPH] Iteration 3 started: US-004 at 2026-04-17 15:30 ---

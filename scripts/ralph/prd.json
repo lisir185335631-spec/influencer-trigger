@@ -106,8 +106,8 @@
       ],
       "priority": 3,
       "passes": true,
-      "notes": "[验证失败 - 第1次] 2026-04-17 14:40\n- 失败项1：GET /api/admin/overview/metrics 返回 HTTP 500。根因：server/app/api/admin/overview.py 第143行引用了 `NotificationLevel.error`，但 server/app/models/notification.py 中的 NotificationLevel 枚举只有 `info` 和 `warning` 两个值，不存在 `error` 属性，导致 AttributeError。\n- 失败项2：前端 AdminOverviewPage.tsx 因 metrics API 返回 500，Promise.all 抛出异常，catch 静默捕获后 loading 设为 false 但 metrics 仍为 null；组件执行 `const m = metrics!` 后访问 `m.emails_sent.today` 导致 TypeError，React 报错白屏无法渲染。\n- 失败项3：全项目 `npm run lint` 失败（7 errors）。虽然 US-003 新增文件（AdminOverviewPage.tsx、api/admin/overview.ts）自身 lint 通过，但项目中存在未提交的 i18n 修改（TeamPage.tsx、SettingsPage.tsx、InfluencerDetailPage.tsx）引入了未使用变量，以及 ImportPage.tsx 的预存转义字符问题，导致整体 lint 失败。\n- 建议修复方向：\n  1. 在 overview.py 中将 `NotificationLevel.error` 改为有效的枚举值（如 `NotificationLevel.warning`），或扩展 NotificationLevel 枚举添加 `error = 'error'` 值。\n  2. 修复 AdminOverviewPage.tsx 的空值防护：在 `loading=false` 且 `metrics=null` 时显示错误状态而非崩溃（例如添加 `if (!metrics || !health) return <ErrorState />`）。\n  3. 修复 lint 问题：清理 i18n 相关文件中未使用的 `Pencil` import 和 `settings` 变量。",
-      "retryCount": 1,
+      "notes": "",
+      "retryCount": 0,
       "blocked": false
     },
     {
@@ -129,7 +129,7 @@
         "US-001"
       ],
       "priority": 4,
-      "passes": false,
+      "passes": true,
       "notes": "",
       "retryCount": 0,
       "blocked": false
