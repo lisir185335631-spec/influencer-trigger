@@ -1,4 +1,9 @@
 ## Codebase Patterns
+- asyncio.create_task() works inside FastAPI endpoints for fire-and-forget background jobs; use dns.asyncresolver (not dns.resolver) for async DNS MX checks
+- Union-Find (path compression) is an efficient way to group similar items; use defaultdict(list) for grouping by root
+- difflib.SequenceMatcher(None, a, b).ratio() gives string similarity 0.0-1.0; group by platform first to reduce O(n²) comparisons
+- Admin influencers router prefix: /api/admin/influencers; registered in main.py after admin_mailboxes_router
+- Recharts PieChart with innerRadius creates donut charts; Cell order matches data array order
 - EmailStatus enum is VARCHAR in SQLite — new values (queued, blocked, cancelled) can be added to Python enum without ALTER TABLE
 - Admin emails API prefix: /api/admin/emails; blacklist sub-resource: /api/admin/emails/blacklist
 - sender_service.py is a new services file; actual send loop lives in agents/sender.py (Sender Agent)
@@ -930,4 +935,33 @@
   - imaplib.IMAP4_SSL 接受 timeout 参数（Python 3.9+），避免连接挂起
   - 健康评分在列表查询时内联计算，避免额外 API 调用
   - 历史 drawer 用 fixed 定位 + flex 实现侧边抽屉效果，无需额外库
+---
+
+--- [RALPH] Iteration 1 ended: US-007 (54分钟 27秒) ---
+
+--- [RALPH] Iteration 2 started: US-008 at 2026-04-17 18:29 ---
+
+## 2026-04-17 14:00 - US-008
+- 实现网红库治理 /admin/influencers（合并去重 + 数据质量）
+- 新增 server/app/api/admin/influencers_admin.py：
+  - GET /influencers（全量列表，含 email_count / task_ids / tags）
+  - GET /influencers/quality-report（4项指标：空邮箱/无效邮箱/缺followers/缺bio）
+  - GET /influencers/duplicates（Union-Find + SequenceMatcher 相似度>0.9 分组）
+  - POST /influencers/merge（迁移 emails/influencer_tags/scrape_task_influencers FK，删除次记录）
+  - POST /influencers/batch-verify-email（asyncio.create_task 后台 DNS MX 检查）
+  - GET /influencers/batch-verify-email/{task_id}（查询验证进度）
+- 更新 server/app/main.py：注册 admin_influencers_router
+- 新增 client/src/api/admin/influencers_admin.ts：完整 TypeScript 接口定义
+- 新增 client/src/pages/admin/InfluencersAdminPage.tsx：
+  - Tab 切换：All / Duplicates / Quality Report
+  - All Tab：分页表格，显示 email_count / task_ids / tags
+  - Duplicates Tab：Union-Find 分组，每组可选主记录，Merge 按钮，确认 modal 显示 FK 影响
+  - Quality Tab：4个 recharts donut 饼图 + 批量 MX 验证进度条
+- 更新 client/src/App.tsx：注册 /admin/influencers 路由
+- **未来迭代的学习：**
+  - asyncio.create_task() 在 FastAPI endpoint 内部可用于后台任务，不需要 BackgroundTasks
+  - dns.asyncresolver 是 dnspython 的异步 API，配合 resolver.lifetime 设置超时
+  - ScrapeTaskInfluencer 复合主键更新需先过滤冲突再 update，剩余用 delete 清除
+  - InfluencerTag 有 UniqueConstraint(influencer_id, tag_id)，merge 时需同样处理冲突
+  - recharts PieChart donut 图用 innerRadius + outerRadius 参数控制环宽
 ---
