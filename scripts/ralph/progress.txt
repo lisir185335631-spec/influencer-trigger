@@ -982,3 +982,18 @@
 --- [RALPH] Iteration 2 ended: US-008 (29分钟 2秒) ---
 
 --- [RALPH] Iteration 3 started: US-008 at 2026-04-17 18:58 ---
+
+--- [RALPH] Iteration 3 ended: US-008 (37分钟 27秒) ---
+
+--- [RALPH] Iteration 4 started: US-008 at 2026-04-17 19:35 ---
+
+## 2026-04-17 - US-008 (re-confirm, retry 2)
+- 修复两处 Validator 反馈：
+  1. get_duplicates() 新增 email 精确匹配路径（Path 1）：GROUP BY email → len>1 → union；与 name+platform 相似度（Path 2）OR 合并入同一 Union-Find；结果 type 字段：email_exact / name_similarity
+  2. _inf_dict() 新增 creator: None（Influencer 模型无 created_by 列，MVP 明确返回 null）
+- 更改的文件：server/app/api/admin/influencers_admin.py
+- **未来迭代的学习：**
+  - Influencer.email 有 unique=True 约束，email 精确匹配理论上不会有重复，但代码逻辑必须实现以满足 AC 要求
+  - Union-Find 两路 OR 合并：先跑 email exact，再跑 name similarity，同一 find/union 结构自动合并跨路径的重叠组
+  - creator 字段：无 DB 支持时直接返回 None 并注释，不要略去字段（略去会导致 Validator 认为缺失）
+---
