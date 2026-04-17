@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom'
 import { AuthProvider } from './stores/AuthContext'
 import { WebSocketProvider } from './stores/WebSocketContext'
 import ProtectedRoute from './components/ProtectedRoute'
@@ -56,16 +56,18 @@ function App() {
               />
             ))}
             <Route
-              path="/admin/overview"
+              path="/admin"
               element={
                 <RequireAdmin>
                   <AdminLayout>
-                    <AdminOverviewPage />
+                    <Outlet />
                   </AdminLayout>
                 </RequireAdmin>
               }
-            />
-            <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />
+            >
+              <Route index element={<Navigate to="overview" replace />} />
+              <Route path="overview" element={<AdminOverviewPage />} />
+            </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </WebSocketProvider>
