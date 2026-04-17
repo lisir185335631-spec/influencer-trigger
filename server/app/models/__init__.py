@@ -16,6 +16,7 @@ from app.models.follow_up_settings import FollowUpSettings
 from app.models.login_history import LoginHistory
 from app.models.audit_log import AuditLog
 from app.models.email_blacklist import EmailBlacklist
+from app.models.platform_quota import PlatformQuota
 
 __all__ = [
     "User",
@@ -36,4 +37,5 @@ __all__ = [
     "LoginHistory",
     "AuditLog",
     "EmailBlacklist",
+    "PlatformQuota",
 ]

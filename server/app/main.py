@@ -18,6 +18,7 @@ from app.api.health import router as health_router
 # noqa: F401 — import models so create_all sees them
 import app.models.scrape_task_influencer  # noqa: F401
 import app.models.system_settings  # noqa: F401
+import app.models.platform_quota  # noqa: F401
 from app.api.auth import router as auth_router
 from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router
@@ -37,6 +38,7 @@ from app.api.admin.audit import router as admin_audit_router
 from app.api.admin.emails_admin import router as admin_emails_router
 from app.api.admin.mailboxes_admin import router as admin_mailboxes_router
 from app.api.admin.influencers_admin import router as admin_influencers_router
+from app.api.admin.scrape_admin import router as admin_scrape_router
 from app.middleware.audit_middleware import AuditMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -174,6 +176,7 @@ app.include_router(admin_audit_router, prefix="/api/admin")
 app.include_router(admin_emails_router, prefix="/api/admin")
 app.include_router(admin_mailboxes_router, prefix="/api/admin")
 app.include_router(admin_influencers_router, prefix="/api/admin")
+app.include_router(admin_scrape_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")
