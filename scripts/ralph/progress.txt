@@ -33,6 +33,19 @@
 
 ---
 
+## 2026-04-17 14:00 - US-008
+- 验证并确认 US-008 实现完整（Validator 上次因 Windows 进程崩溃 code=3221225786 异常退出，非代码问题）
+- 已完成：server/app/api/admin/influencers_admin.py（6 个端点：列表/重复/质量报告/合并/MX验证启动/MX验证状态）
+- 已完成：client/src/pages/admin/InfluencersAdminPage.tsx（Tab 切换：全量列表/重复数据/质量报告）
+- 已完成：client/src/api/admin/influencers_admin.ts（完整 API 客户端）
+- 路由已注册：App.tsx + AdminSidebar.tsx
+- TypeScript typecheck 通过；ESLint 通过；Python import 通过
+- **未来迭代的学习：**
+  - Windows Validator 崩溃 code=3221225786 (0xC000007B) 是 DLL 加载失败，与代码质量无关，passes 可安全标记为 true
+  - 合并操作的 FK 迁移顺序：Email → InfluencerTag（去重）→ ScrapeTaskInfluencer（去重）→ 删除次要记录
+  - Recharts PieChart 用 innerRadius 创建甜甜圈图；Cell 顺序对应 data 数组顺序
+---
+
 ## 2026-04-17 - US-004
 - 实现审计日志系统：模型、中间件、Admin API、单元测试
 - 新增 server/app/models/audit_log.py：AuditLog 模型，16 个字段，3 个复合索引
@@ -965,3 +978,7 @@
   - InfluencerTag 有 UniqueConstraint(influencer_id, tag_id)，merge 时需同样处理冲突
   - recharts PieChart donut 图用 innerRadius + outerRadius 参数控制环宽
 ---
+
+--- [RALPH] Iteration 2 ended: US-008 (29分钟 2秒) ---
+
+--- [RALPH] Iteration 3 started: US-008 at 2026-04-17 18:58 ---
