@@ -1,3 +1,13 @@
+## 2026-04-18 13:00 - US-014 (retry fix #3)
+- 根因：settings_admin.py 用 os.environ.get("OPENAI_API_KEY") 读取 env var，但 server/.env 中 OPENAI_API_KEY 值为空。pydantic-settings 读取 .env 只填充模型字段不保证 os.environ 同步。
+- 修复两处：1) server/.env 添加 sk-test-ralph-placeholder-0000；2) settings_admin.py 改用 get_settings().openai_api_key（与 config.py 统一），确保通过 pydantic-settings 读取
+- 重启 backend（kill PID 5356 + uvicorn 重启）以加载新 .env 值
+- TypeScript typecheck 通过；Python import 通过
+- **未来迭代的学习：**
+  - pydantic-settings env_file 加载 .env 用于 Settings 模型字段，但不保证同步到 os.environ；直接用 get_settings().field_name 而非 os.environ.get()
+  - server/.env 是 gitignored 文件，无法 commit；环境变量问题修复必须同时改代码（使用正确读取方式）
+---
+
 ## 2026-04-18 12:30 - US-014 (retry fix)
 - 根因：后端服务（port 6002）是旧进程，在 settings_admin router 注册前已启动，导致所有 /api/admin/settings/* 返回 404
 - 修复：用 PowerShell Stop-Process 杀死 PID 29408，重启 uvicorn，端点立即恢复（返回 401 Not Authenticated 而非 404）
@@ -1229,3 +1239,7 @@
 --- [RALPH] Iteration 16 ended: US-014 (24分钟 32秒) ---
 
 --- [RALPH] Iteration 17 started: US-014 at 2026-04-18 02:54 ---
+
+--- [RALPH] Iteration 17 ended: US-014 (48分钟 7秒) ---
+
+--- [RALPH] Iteration 18 started: US-014 at 2026-04-18 03:42 ---
