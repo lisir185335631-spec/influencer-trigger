@@ -208,9 +208,8 @@ async def generate_greeting(
         )
         try:
             import json
-            from openai import AsyncOpenAI
-            client = AsyncOpenAI(api_key=settings.openai_api_key)
-            response = await client.chat.completions.create(
+            from app.tools.llm_client import chat as llm_chat
+            raw = await llm_chat(
                 model=settings.openai_model,
                 messages=[
                     {"role": "system", "content": _GREETING_SYSTEM_PROMPT},
@@ -220,7 +219,7 @@ async def generate_greeting(
                 max_tokens=300,
                 response_format={"type": "json_object"},
             )
-            raw = response.choices[0].message.content or "{}"
+            raw = raw or "{}"
             data = json.loads(raw)
             subject = data.get("subject", "").strip()
             body_html = data.get("body_html", "").strip()

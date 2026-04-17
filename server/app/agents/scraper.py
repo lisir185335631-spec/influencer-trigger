@@ -15,9 +15,11 @@ import re
 from datetime import datetime, timezone
 
 import dns.resolver
+import sqlalchemy as sa
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from sqlalchemy import select
 
+from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models.influencer import Influencer, InfluencerPlatform
 from app.models.scrape_task import ScrapeTask, ScrapeTaskStatus
@@ -145,6 +147,7 @@ async def _scrape_youtube(
     industry: str,
     target_count: int,
     on_found: "Callable[[str, str, str], Awaitable[None]]",
+    queries: list[str] | None = None,
 ) -> None:
     """
     Search YouTube for '{industry} influencer', extract channel About pages for emails.
@@ -153,30 +156,41 @@ async def _scrape_youtube(
     page = await ctx.new_page()
 
     try:
-        search_url = f"https://www.youtube.com/results?search_query={industry}+creator+contact+email"
-        logger.info("[YouTube] Navigating to search: %s", search_url)
-        await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
-        await _random_delay()
+        search_queries = queries or [f"{industry} creator contact email"]
+        all_channel_links: list[str] = []
 
-        # Collect channel links from search results
-        channel_links: list[str] = []
-        for _ in range(3):  # scroll up to 3 times to load more
-            links = await page.eval_on_selector_all(
-                "a#channel-name, a.yt-simple-endpoint[href*='/@'], a.yt-simple-endpoint[href*='/channel/']",
-                "els => els.map(e => e.href)",
-            )
-            for link in links:
-                if link not in channel_links:
-                    channel_links.append(link)
-            if len(channel_links) >= target_count * 2:
+        for query in search_queries:
+            search_url = f"https://www.youtube.com/results?search_query={query}"
+            logger.info("[YouTube] Navigating to search: %s", search_url)
+            await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+            await _random_delay()
+
+            # Collect channel links from search results
+            channel_links: list[str] = []
+            for _ in range(3):  # scroll up to 3 times to load more
+                links = await page.eval_on_selector_all(
+                    "a#channel-name, a.yt-simple-endpoint[href*='/@'], a.yt-simple-endpoint[href*='/channel/']",
+                    "els => els.map(e => e.href)",
+                )
+                for link in links:
+                    if link not in channel_links:
+                        channel_links.append(link)
+                if len(channel_links) >= target_count * 2:
+                    break
+                await page.evaluate("window.scrollBy(0, 1200)")
+                await asyncio.sleep(1.5)
+
+            for link in channel_links:
+                if link not in all_channel_links:
+                    all_channel_links.append(link)
+
+            if len(all_channel_links) >= target_count * 2:
                 break
-            await page.evaluate("window.scrollBy(0, 1200)")
-            await asyncio.sleep(1.5)
 
-        logger.info("[YouTube] Found %d channel links", len(channel_links))
+        logger.info("[YouTube] Found %d channel links (across %d queries)", len(all_channel_links), len(search_queries))
 
         found = 0
-        for ch_url in channel_links[:target_count * 2]:
+        for ch_url in all_channel_links[:target_count * 2]:
             if found >= target_count:
                 break
             try:
@@ -226,6 +240,7 @@ async def _scrape_instagram(
     industry: str,
     target_count: int,
     on_found: "Callable[[str, str, str], Awaitable[None]]",
+    queries: list[str] | None = None,
 ) -> None:
     """
     Search Instagram hashtag explore page for influencer profiles, extract bio emails.
@@ -235,31 +250,41 @@ async def _scrape_instagram(
     page = await ctx.new_page()
 
     try:
-        tag = industry.replace(" ", "").lower()
-        explore_url = f"https://www.instagram.com/explore/tags/{tag}/"
-        logger.info("[Instagram] Navigating to: %s", explore_url)
-        await page.goto(explore_url, wait_until="domcontentloaded", timeout=30000)
-        await _random_delay()
+        hashtags = queries or [industry.lower().replace(" ", "")]
+        all_post_hrefs: list[str] = []
 
-        # Collect post links
-        post_links: list[str] = []
-        for _ in range(3):
-            links = await page.eval_on_selector_all(
-                "a[href*='/p/']",
-                "els => [...new Set(els.map(e => e.href))]",
-            )
-            post_links.extend(l for l in links if l not in post_links)
-            if len(post_links) >= target_count * 3:
+        for hashtag in hashtags:
+            explore_url = f"https://www.instagram.com/explore/tags/{hashtag}/"
+            logger.info("[Instagram] Navigating to: %s", explore_url)
+            await page.goto(explore_url, wait_until="domcontentloaded", timeout=30000)
+            await _random_delay()
+
+            # Collect post links
+            post_links: list[str] = []
+            for _ in range(3):
+                links = await page.eval_on_selector_all(
+                    "a[href*='/p/']",
+                    "els => [...new Set(els.map(e => e.href))]",
+                )
+                post_links.extend(l for l in links if l not in post_links)
+                if len(post_links) >= target_count * 3:
+                    break
+                await page.evaluate("window.scrollBy(0, 1200)")
+                await asyncio.sleep(1.5)
+
+            for link in post_links:
+                if link not in all_post_hrefs:
+                    all_post_hrefs.append(link)
+
+            if len(all_post_hrefs) >= target_count * 3:
                 break
-            await page.evaluate("window.scrollBy(0, 1200)")
-            await asyncio.sleep(1.5)
 
-        logger.info("[Instagram] Found %d post links", len(post_links))
+        logger.info("[Instagram] Found %d post links (across %d hashtags)", len(all_post_hrefs), len(hashtags))
 
         visited_profiles: set[str] = set()
         found = 0
 
-        for post_url in post_links[:target_count * 3]:
+        for post_url in all_post_hrefs[:target_count * 3]:
             if found >= target_count:
                 break
             try:
@@ -314,6 +339,149 @@ async def _scrape_stub(platform: str) -> list[dict]:
     return []
 
 
+# ── LLM pre/post processing ──────────────────────────────────────────────────
+
+async def _generate_search_strategy(
+    industry: str,
+    platforms: list[str],
+    target_market: str | None = None,
+    competitor_brands: str | None = None,
+) -> dict[str, list[str]]:
+    """LLM pre-processing: expand industry keyword into platform-specific search queries."""
+    settings = get_settings()
+    if not settings.openai_api_key:
+        return _fallback_queries(industry, platforms)
+
+    market_hint = f"\nTarget market: {target_market}. Translate keywords to the local language of this market while keeping English brand names." if target_market else ""
+    competitor_hint = f"\nAlso find creators who mention these competitor brands: {competitor_brands}" if competitor_brands else ""
+
+    prompt = (
+        f'You are an expert at finding KOL/creators on social media.\n'
+        f'Industry keyword: "{industry}"{market_hint}{competitor_hint}\n'
+        f'Platforms: {", ".join(platforms)}\n\n'
+        f'Generate expanded search queries for each platform:\n'
+        f'1. Expand keywords into brand name variants (e.g. GPT -> GPT, ChatGPT, ChatGPT Plus)\n'
+        f'2. Add combination words: tutorial, review, recommendation, comparison, tips, guide, subscription, deals\n'
+        f'3. For YouTube: 3-5 search queries to find relevant creators\n'
+        f'4. For Instagram: 3-5 hashtags (without #) that creators in this niche use\n'
+        f'5. For other platforms: 3-5 general search keywords\n\n'
+        f'Output ONLY valid JSON, no markdown:\n'
+        f'{{"youtube": ["query1", "query2"], "instagram": ["hashtag1", "hashtag2"]}}'
+    )
+
+    try:
+        from app.tools.llm_client import chat as llm_chat
+        content = await llm_chat(
+            model=settings.openai_classifier_model,
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.7,
+            max_tokens=500,
+        )
+        content = content.strip()
+        if content.startswith("```"):
+            content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+        result = json.loads(content)
+        for p in platforms:
+            if p not in result:
+                result[p] = _fallback_queries(industry, [p])[p]
+        logger.info("LLM search strategy generated: %s", result)
+        return result
+    except Exception as e:
+        logger.warning("LLM search strategy failed, using fallback: %s", e)
+        return _fallback_queries(industry, platforms)
+
+
+def _fallback_queries(industry: str, platforms: list[str]) -> dict[str, list[str]]:
+    """Fallback search queries when LLM is unavailable."""
+    result: dict[str, list[str]] = {}
+    for p in platforms:
+        if p == "youtube":
+            result[p] = [f"{industry} creator contact email"]
+        elif p == "instagram":
+            result[p] = [industry.lower().replace(" ", "")]
+        else:
+            result[p] = [industry]
+    return result
+
+
+async def _enrich_results(
+    task_id: int,
+    industry: str,
+    target_market: str | None = None,
+) -> None:
+    """LLM post-processing: score each influencer's relevance and generate match reason."""
+    settings = get_settings()
+    if not settings.openai_api_key:
+        logger.info("No OpenAI API key, skipping result enrichment")
+        return
+
+    async with AsyncSessionLocal() as db:
+        from app.models.scrape_task_influencer import ScrapeTaskInfluencer
+        stmt = (
+            sa.select(Influencer)
+            .join(ScrapeTaskInfluencer, ScrapeTaskInfluencer.influencer_id == Influencer.id)
+            .where(ScrapeTaskInfluencer.scrape_task_id == task_id)
+        )
+        rows = await db.execute(stmt)
+        influencers = list(rows.scalars().all())
+
+        if not influencers:
+            return
+
+        from app.tools.llm_client import chat as llm_chat
+
+        batch_size = 10
+        for i in range(0, len(influencers), batch_size):
+            batch = influencers[i:i + batch_size]
+            profiles = [
+                {
+                    "id": inf.id,
+                    "nickname": inf.nickname or "Unknown",
+                    "platform": inf.platform.value if inf.platform else "unknown",
+                    "bio": (inf.bio or "")[:200],
+                    "industry": inf.industry or "",
+                }
+                for inf in batch
+            ]
+
+            market_ctx = f"Target market: {target_market}." if target_market else ""
+            prompt = (
+                f'Analyze these creators for relevance to "{industry}". {market_ctx}\n\n'
+                f'Creators:\n{json.dumps(profiles, ensure_ascii=False)}\n\n'
+                f'For each, output relevance_score (0.0-1.0) and match_reason (1-2 sentences).\n'
+                f'Output ONLY a JSON array, no markdown:\n'
+                f'[{{"id": 1, "relevance_score": 0.85, "match_reason": "..."}}]'
+            )
+
+            try:
+                content = await llm_chat(
+                    model=settings.openai_classifier_model,
+                    messages=[{"role": "user", "content": prompt}],
+                    temperature=0.3,
+                    max_tokens=1000,
+                )
+                content = content.strip()
+                if content.startswith("```"):
+                    content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
+                enrichments = json.loads(content)
+
+                for item in enrichments:
+                    inf_id = item.get("id")
+                    if inf_id is not None:
+                        for inf in batch:
+                            if inf.id == inf_id:
+                                score = item.get("relevance_score")
+                                inf.relevance_score = float(score) if score is not None else None
+                                inf.match_reason = item.get("match_reason")
+                                break
+                await db.commit()
+            except Exception as e:
+                logger.warning("LLM enrichment batch failed: %s", e)
+                await db.rollback()
+
+    logger.info("Result enrichment completed for task %d", task_id)
+
+
 # ── main agent entry point ───────────────────────────────────────────────────
 
 async def run_scraper_agent(task_id: int) -> None:
@@ -348,6 +516,13 @@ async def run_scraper_agent(task_id: int) -> None:
         platforms: list[str] = json.loads(task.platforms)
         industry = task.industry
         target_per_platform = max(1, task.target_count // max(1, len(platforms)))
+
+        # LLM: generate expanded search queries
+        search_queries = await _generate_search_strategy(
+            task.industry, platforms, task.target_market, task.competitor_brands
+        )
+        task.search_keywords = json.dumps(search_queries, ensure_ascii=False)
+        await db.commit()
 
         await update_task_status(db, task, ScrapeTaskStatus.running, progress=0)
         await manager.broadcast("scrape:progress", {
@@ -444,9 +619,9 @@ async def run_scraper_agent(task_id: int) -> None:
                 )
                 on_found = make_on_found(platform)
                 if platform == "youtube":
-                    await _scrape_youtube(browser, industry, target_per_platform, on_found)
+                    await _scrape_youtube(browser, industry, target_per_platform, on_found, queries=search_queries.get("youtube"))
                 elif platform == "instagram":
-                    await _scrape_instagram(browser, industry, target_per_platform, on_found)
+                    await _scrape_instagram(browser, industry, target_per_platform, on_found, queries=search_queries.get("instagram"))
                 else:
                     await _scrape_stub(platform)
 
@@ -464,6 +639,9 @@ async def run_scraper_agent(task_id: int) -> None:
                     )
                 finally:
                     await browser.close()
+
+            # LLM: enrich scraped results
+            await _enrich_results(task.id, task.industry, task.target_market)
 
             await update_task_status(
                 db, task, ScrapeTaskStatus.completed,

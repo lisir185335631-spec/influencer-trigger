@@ -19,6 +19,8 @@ from app.models.email_blacklist import EmailBlacklist
 from app.models.platform_quota import PlatformQuota
 from app.models.compliance_keywords import ComplianceKeyword
 from app.models.agent_run import AgentRun
+from app.models.usage_metric import UsageMetric
+from app.models.usage_budget import UsageBudget
 
 __all__ = [
     "User",
@@ -42,4 +44,6 @@ __all__ = [
     "PlatformQuota",
     "ComplianceKeyword",
     "AgentRun",
+    "UsageMetric",
+    "UsageBudget",
 ]

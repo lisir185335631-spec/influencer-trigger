@@ -103,10 +103,9 @@ async def generate_templates(industry: str) -> list[GeneratedTemplate]:
         return _placeholder_templates(industry)
 
     try:
-        from openai import AsyncOpenAI
-        client = AsyncOpenAI(api_key=settings.openai_api_key)
+        from app.tools.llm_client import chat as llm_chat
 
-        response = await client.chat.completions.create(
+        raw = await llm_chat(
             model=settings.openai_model,
             messages=[
                 {"role": "system", "content": _SYSTEM_PROMPT},
@@ -118,8 +117,7 @@ async def generate_templates(industry: str) -> list[GeneratedTemplate]:
             temperature=0.7,
             max_tokens=2000,
         )
-
-        raw = response.choices[0].message.content or "[]"
+        raw = raw or "[]"
         data = json.loads(raw)
         return [GeneratedTemplate(**item) for item in data]
 

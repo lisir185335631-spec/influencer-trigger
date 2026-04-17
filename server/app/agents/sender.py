@@ -217,6 +217,8 @@ async def run_sender_agent(
 
             if success:
                 success_count += 1
+                from app.services.admin.usage_service import record_email_sent as _rec_email
+                asyncio.create_task(_rec_email(user_id=None, count=1))
                 # Increment mailbox counters in DB and locally
                 await db.execute(
                     update(Mailbox)
