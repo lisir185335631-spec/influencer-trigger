@@ -22,6 +22,7 @@ from app.models.agent_run import AgentRun
 from app.models.usage_metric import UsageMetric
 from app.models.usage_budget import UsageBudget
 from app.models.feature_flag import FeatureFlag
+from app.models.security_alert import SecurityAlert, KeyRotationHistory
 
 __all__ = [
     "User",
@@ -48,4 +49,6 @@ __all__ = [
     "UsageMetric",
     "UsageBudget",
     "FeatureFlag",
+    "SecurityAlert",
+    "KeyRotationHistory",
 ]

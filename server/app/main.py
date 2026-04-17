@@ -24,6 +24,7 @@ import app.models.agent_run  # noqa: F401
 import app.models.usage_metric  # noqa: F401
 import app.models.usage_budget  # noqa: F401
 import app.models.feature_flag  # noqa: F401
+import app.models.security_alert  # noqa: F401
 from app.api.auth import router as auth_router
 from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router
@@ -50,6 +51,7 @@ from app.api.admin.usage import router as admin_usage_router
 from app.api.admin.followup_admin import router as admin_followup_router
 from app.api.admin.holidays_admin import router as admin_holidays_router
 from app.api.admin.settings_admin import router as admin_settings_router
+from app.api.admin.security import router as admin_security_router
 from app.middleware.audit_middleware import AuditMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -94,6 +96,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "ALTER TABLE system_settings ADD COLUMN default_daily_quota INTEGER DEFAULT 100 NOT NULL",
             "CREATE TABLE IF NOT EXISTS feature_flags (id INTEGER PRIMARY KEY AUTOINCREMENT, flag_key VARCHAR(128) NOT NULL UNIQUE, enabled BOOLEAN NOT NULL DEFAULT 0, description VARCHAR(512) NOT NULL DEFAULT '', rollout_percentage INTEGER NOT NULL DEFAULT 100, target_roles VARCHAR(256) NOT NULL DEFAULT '', updated_by_user_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
             "CREATE UNIQUE INDEX IF NOT EXISTS ix_feature_flags_key ON feature_flags (flag_key)",
+            "CREATE TABLE IF NOT EXISTS security_alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, alert_type VARCHAR(64) NOT NULL, user_id INTEGER, details_json TEXT, acknowledged BOOLEAN NOT NULL DEFAULT 0, acknowledged_by INTEGER, acknowledged_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+            "CREATE INDEX IF NOT EXISTS ix_security_alerts_user_id ON security_alerts (user_id)",
+            "CREATE INDEX IF NOT EXISTS ix_security_alerts_created_at ON security_alerts (created_at)",
+            "CREATE TABLE IF NOT EXISTS key_rotation_history (id INTEGER PRIMARY KEY AUTOINCREMENT, rotated_by_user_id INTEGER NOT NULL, rotated_by_username VARCHAR(128) NOT NULL, note VARCHAR(512), created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+            "CREATE INDEX IF NOT EXISTS ix_key_rotation_created_at ON key_rotation_history (created_at)",
+            "ALTER TABLE system_settings ADD COLUMN security_config TEXT",
         ]:
             try:
                 await _mig_db.execute(sa_text(stmt))
@@ -207,6 +215,7 @@ app.include_router(admin_usage_router, prefix="/api/admin")
 app.include_router(admin_followup_router, prefix="/api/admin")
 app.include_router(admin_holidays_router, prefix="/api/admin")
 app.include_router(admin_settings_router, prefix="/api/admin")
+app.include_router(admin_security_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")
