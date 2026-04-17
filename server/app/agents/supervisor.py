@@ -6,7 +6,6 @@ is persisted to the agent_runs table. The 5 Executor Agent files are
 untouched; only this file coordinates their invocation.
 """
 import logging
-from typing import Any
 
 from app.agents._tracking import track_agent_run
 
