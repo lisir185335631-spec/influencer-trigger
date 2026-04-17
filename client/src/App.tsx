@@ -22,6 +22,7 @@ import HolidaysPage from './pages/HolidaysPage'
 import AdminOverviewPage from './pages/admin/AdminOverviewPage'
 import UsersAdminPage from './pages/admin/UsersAdminPage'
 import AuditLogPage from './pages/admin/AuditLogPage'
+import EmailsAdminPage from './pages/admin/EmailsAdminPage'
 
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
@@ -71,6 +72,7 @@ function App() {
               <Route path="overview" element={<AdminOverviewPage />} />
               <Route path="users" element={<UsersAdminPage />} />
               <Route path="audit" element={<AuditLogPage />} />
+              <Route path="emails" element={<EmailsAdminPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

@@ -8,6 +8,7 @@ from app.database import Base
 
 class EmailStatus(str, enum.Enum):
     pending = "pending"
+    queued = "queued"
     sent = "sent"
     delivered = "delivered"
     opened = "opened"
@@ -15,6 +16,8 @@ class EmailStatus(str, enum.Enum):
     replied = "replied"
     bounced = "bounced"
     failed = "failed"
+    blocked = "blocked"
+    cancelled = "cancelled"
 
 
 class EmailType(str, enum.Enum):

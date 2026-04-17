@@ -34,6 +34,7 @@ from app.api.settings import router as settings_router
 from app.api.admin.overview import router as admin_overview_router
 from app.api.admin.users_admin import router as admin_users_router
 from app.api.admin.audit import router as admin_audit_router
+from app.api.admin.emails_admin import router as admin_emails_router
 from app.middleware.audit_middleware import AuditMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -168,6 +169,7 @@ app.include_router(settings_router, prefix="/api")
 app.include_router(admin_overview_router, prefix="/api/admin")
 app.include_router(admin_users_router, prefix="/api/admin")
 app.include_router(admin_audit_router, prefix="/api/admin")
+app.include_router(admin_emails_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")

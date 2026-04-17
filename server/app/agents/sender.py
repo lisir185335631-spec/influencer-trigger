@@ -20,6 +20,7 @@ from app.models.influencer import Influencer, InfluencerStatus
 from app.models.mailbox import Mailbox, MailboxStatus
 from app.models.template import Template
 from app.services.mailbox_service import decrypt_password
+from app.services.sender_service import is_blacklisted
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
@@ -163,6 +164,25 @@ async def run_sender_agent(
                 remaining = total - i
                 failed_count += remaining
                 break
+
+            # Skip blacklisted recipients
+            if await is_blacklisted(influencer.email, db):
+                blocked_record = Email(
+                    influencer_id=inf_id,
+                    campaign_id=campaign_id,
+                    mailbox_id=mailbox.id,
+                    template_id=template_id,
+                    email_type=EmailType.initial,
+                    subject="",
+                    body_html="",
+                    message_id=None,
+                    status=EmailStatus.blocked,
+                    sent_at=None,
+                )
+                db.add(blocked_record)
+                failed_count += 1
+                await db.commit()
+                continue
 
             rendered_subject, rendered_body = _render_template(tmpl.body_html, tmpl.subject, influencer)
 
