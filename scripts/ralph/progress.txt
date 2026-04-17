@@ -828,3 +828,18 @@
   - monitor_agent task name 为 "monitor_agent"，可用 asyncio.all_tasks() + task.get_name() 检测
   - SQLite 不支持 func.now() 的时区偏移，datetime.combine + date.today() 是更可靠的时间范围计算方式
 ---
+
+--- [RALPH] Iteration 1 ended: US-003 (46分钟 7秒) ---
+
+--- [RALPH] Iteration 2 started: US-003 at 2026-04-17 14:49 ---
+
+## 2026-04-17 15:10 - US-003
+- 修复 NotificationLevel.error → NotificationLevel.urgent（enum 无 error 值）
+- 修复 AdminOverviewPage 空值崩溃：在 loading=false 且 metrics/health=null 时显示错误+重试状态
+- 修复 7 个 lint errors：TeamPage(Pencil unused import)、ImportPage(regex 不必要转义)、SettingsPage(settings state unused)、CRMPage(REPLY_INTENT_LABELS unused + ternary expression as statement)、InfluencerDetailPage(STATUS_LABELS unused)
+- 更改文件：server/app/api/admin/overview.py、client/src/pages/admin/AdminOverviewPage.tsx、TeamPage.tsx、ImportPage.tsx、SettingsPage.tsx、CRMPage.tsx、InfluencerDetailPage.tsx
+- **未来迭代的学习：**
+  - NotificationLevel enum 只有 info/warning/urgent，没有 error，最高级别是 urgent
+  - React state destructuring 中未使用的 state 变量直接删除，同时清除所有 setter 调用
+  - Ternary expression as statement 需改为 if/else 块
+---
