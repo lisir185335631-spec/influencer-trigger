@@ -1,4 +1,8 @@
 ## Codebase Patterns
+- Unified LLM client at server/app/tools/llm_client.py — all OpenAI calls must go through llm_client.chat(); auto-records token usage via asyncio.create_task() fire-and-forget
+- SQLite UPSERT pattern: use `from sqlalchemy.dialects.sqlite import insert as sqlite_insert` with `.on_conflict_do_update(index_elements=[...], set_={...})`
+- Admin services live in server/app/services/admin/ (separate subpackage from main services/)
+- New model noqa imports must be added to main.py for create_all to discover them (pattern: `import app.models.X  # noqa: F401`)
 - asyncio.create_task() works inside FastAPI endpoints for fire-and-forget background jobs; use dns.asyncresolver (not dns.resolver) for async DNS MX checks
 - Union-Find (path compression) is an efficient way to group similar items; use defaultdict(list) for grouping by root
 - difflib.SequenceMatcher(None, a, b).ratio() gives string similarity 0.0-1.0; group by platform first to reduce O(n²) comparisons
@@ -1100,4 +1104,29 @@
   - eval 命令接受文件路径，不支持内联 JS 字符串
   - POST 请求对已经超过 rate limit 的端点会挂起，需用 --max-time 避免卡死
   - rate limit "5 per 15 minute" 是全局 IP-based，新实例仍会继承 in-memory 计数
+---
+
+--- [RALPH] Iteration 10 ended: US-011 (26分钟 12秒) ---
+
+--- [RALPH] Iteration 11 started: US-012 at 2026-04-17 23:00 ---
+
+## 2026-04-17 18:00 - US-012
+- 新增 server/app/models/usage_metric.py：UsageMetric（metric_date, metric_type, sub_key, value, cost_usd）+ 复合唯一索引
+- 新增 server/app/models/usage_budget.py：UsageBudget（month unique, budget_usd, alert_threshold_pct）
+- 更新 server/app/models/__init__.py：import 两个新模型
+- 新增 server/app/services/admin/usage_service.py：record_llm_usage()（UPSERT按模型计算cost）+ record_email_sent()（UPSERT累加）
+- 新增 server/app/tools/llm_client.py：统一 LLM 入口，封装 chat()/embed()，自动 fire-and-forget 打点 record_llm_usage
+- 重构 6 处直接 AsyncOpenAI 调用到 llm_client.chat：agents/scraper.py（2处）、agents/responder.py、agents/holiday_agent.py、services/template_service.py、services/holiday_service.py
+- 在 agents/sender.py 成功发送后新增 asyncio.create_task(record_email_sent(...)) 调用
+- 新增 server/app/api/admin/usage.py：5 个端点（summary/trend/breakdown/alerts/budget）
+- 更新 server/app/main.py：注册 usage router + noqa import 两个新模型 + 新增两张表的 CREATE TABLE IF NOT EXISTS 迁移
+- 新增 client/src/api/admin/usage.ts：TypeScript API 客户端
+- 新增 client/src/pages/admin/UsagePage.tsx：4 指标卡 + 30天折线图 + 模型分布环形图 + 成本排行表 + 预算设置 modal
+- 更新 client/src/App.tsx：添加 /admin/usage 路由
+- TypeScript typecheck 通过；ESLint（新文件）通过；Python import 验证通过；Validator grep 验证通过
+- **未来迭代的学习：**
+  - 统一 LLM 客户端是收敛 AsyncOpenAI 散落调用的关键；Validator 会 grep AsyncOpenAI|client.chat.completions，必须全部收敛
+  - SQLite UPSERT 用 sqlalchemy.dialects.sqlite.insert + on_conflict_do_update，index_elements 用列名字符串
+  - asyncio.create_task() 在 async 函数内用于 fire-and-forget 打点，不阻塞主流程
+  - 新模型需要在 main.py 添加 noqa import 才能被 create_all 感知
 ---
