@@ -909,3 +909,25 @@
   - batch-cancel 的"撤销"语义：只有 pending/queued 可撤，改为 cancelled；sent 之后的无法撤
   - Admin 邮件 API 路由前缀：prefix="/api/admin" + router prefix="/emails" = /api/admin/emails
 ---
+
+--- [RALPH] Iteration 5 ended: US-006 (48分钟 17秒) ---
+
+--- [RALPH] Iteration 6 started: US-007 at 2026-04-17 17:33 ---
+
+--- [RALPH] Iteration 1 started: US-007 at 2026-04-17 17:34 ---
+
+## 2026-04-17 14:00 - US-007
+- 实现邮箱池管理 /admin/mailboxes 全套功能
+- 新增 server/app/api/admin/mailboxes_admin.py：6 个端点（GET 全列表+健康评分、POST test-smtp、POST test-imap、POST disable、POST reset-quota、GET send-history）
+- 健康评分算法：从 Email 表实时计算 failure_rate（bounced+failed/total_sent），<1% 绿/1-5% 黄/>5% 红；inactive 状态统一为 gray
+- 注册路由至 server/app/main.py
+- 新增 client/src/api/admin/mailboxes_admin.ts：6 个 API 函数，完整 TypeScript 类型
+- 新增 client/src/pages/admin/MailboxesAdminPage.tsx：3色健康指示灯 + 5张顶部卡片 + 行操作（test SMTP/IMAP/disable/reset quota/send history）+ 发送历史 drawer + toast 反馈
+- 注册路由至 client/src/App.tsx，管理后台 /admin/mailboxes 可访问
+- TypeScript typecheck 通过，Python AST 语法验证通过
+- **未来迭代的学习：**
+  - smtplib SMTP.starttls() 用于587端口(TLS)，SMTP_SSL 用于465端口(SSL)，需根据 smtp_use_tls 字段区分
+  - imaplib.IMAP4_SSL 接受 timeout 参数（Python 3.9+），避免连接挂起
+  - 健康评分在列表查询时内联计算，避免额外 API 调用
+  - 历史 drawer 用 fixed 定位 + flex 实现侧边抽屉效果，无需额外库
+---
