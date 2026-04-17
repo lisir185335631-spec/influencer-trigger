@@ -1078,3 +1078,26 @@
   - CREATE TABLE IF NOT EXISTS + CREATE INDEX IF NOT EXISTS 用于 SQLite migration，比 ALTER TABLE 更稳定（新表不存在 "column already exists" 问题）
   - agent_runs 表的 state 字段是 VARCHAR 而非 Enum，未来新增 state 值无需 DB migration
 ---
+
+--- [RALPH] Iteration 8 ended: US-011 (50分钟 7秒) ---
+
+--- [RALPH] Iteration 9 started: US-011 at 2026-04-17 22:04 ---
+
+--- [RALPH] Iteration 10 started: US-011 at 2026-04-17 22:34 ---
+
+## 2026-04-17 22:35 - US-011 (retry fix)
+- 修复上次验证失败的问题：后端进程运行的是旧版本代码
+- 重启后端服务（port 6002），加载包含 agents_monitor 路由的新代码
+- 修复 flake8 lint 问题：supervisor.py 移除未用 `Any` import，agents_monitor.py 移除未用 `timezone` import
+- 浏览器验证：/admin/agents 显示 6 个 Agent 卡片，插入 scraper 测试 run 后新记录出现在表格中
+- 更改的文件：
+  - server/app/agents/supervisor.py (lint fix)
+  - server/app/api/admin/agents_monitor.py (lint fix)
+  - scripts/ralph/prd.json (passes=true)
+- **未来迭代的学习：**
+  - 后端服务重启后需等待几秒让新进程绑定端口
+  - 浏览器 eval 命令需要先导航到目标 origin 才能访问 localStorage
+  - eval 命令接受文件路径，不支持内联 JS 字符串
+  - POST 请求对已经超过 rate limit 的端点会挂起，需用 --max-time 避免卡死
+  - rate limit "5 per 15 minute" 是全局 IP-based，新实例仍会继承 in-memory 计数
+---
