@@ -1,3 +1,20 @@
+## 2026-04-18 14:00 - US-015
+- 新增 server/app/models/security_alert.py：SecurityAlert 模型（id, alert_type, user_id, details_json, acknowledged, acknowledged_by, acknowledged_at, created_at）+ KeyRotationHistory 模型（同文件）
+- 更新 server/app/models/system_settings.py：新增 security_config TEXT 字段（JSON 存储 2FA 配置）
+- 更新 server/app/models/__init__.py：import SecurityAlert, KeyRotationHistory
+- 新增 server/app/api/admin/security.py：GET /alerts（触发异常检测后返回告警列表）；POST /alerts/{id}/acknowledge；GET/PATCH /2fa-config（JSON 存于 system_settings.security_config）；POST /rotate-keys（验证 admin 密码 → 生成新 JWT/Fernet key → 更新 .env → 所有用户 token_version+1 → 写 audit_log）；GET /key-rotation-history
+- 更新 server/app/main.py：noqa import security_alert；5 条迁移 SQL（security_alerts + key_rotation_history 表 + 索引 + security_config 列）；注册 admin_security_router
+- 新增 client/src/api/admin/security_admin.ts：TypeScript API 客户端
+- 新增 client/src/pages/admin/SecurityPage.tsx：Tab（Alerts/2FA Config/Key Rotation）；告警时间轴红/灰色差异化 + 展开详情 + Mark handled；2FA 开关（toggle 直接 PATCH）；密钥轮换：age badge（>90天警告）+ confirm modal + admin 密码二次确认
+- 更新 client/src/App.tsx：添加 /admin/security 路由
+- TypeScript typecheck 通过；ESLint 通过；Python import 通过
+- **未来迭代的学习：**
+  - KeyRotationHistory 与 SecurityAlert 可以共用同一个 model 文件（同领域放一起减少文件数）
+  - 密钥轮换用 _update_env_key() 直接写 .env 文件；需要服务重启才能真正生效（MVP 接受这个局限）
+  - 异常检测逻辑（_detect_anomalies）在 GET /alerts 时惰性触发，避免后台定时任务复杂度；大规模场景应改为 login_history 写入后的事件钩子
+  - security_config 存为 JSON TEXT 字段（单行，避免 schema 变动）；getattr(row, 'security_config', None) 防 ALT TABLE 前的兼容
+---
+
 ## 2026-04-18 13:00 - US-014 (retry fix #3)
 - 根因：settings_admin.py 用 os.environ.get("OPENAI_API_KEY") 读取 env var，但 server/.env 中 OPENAI_API_KEY 值为空。pydantic-settings 读取 .env 只填充模型字段不保证 os.environ 同步。
 - 修复两处：1) server/.env 添加 sk-test-ralph-placeholder-0000；2) settings_admin.py 改用 get_settings().openai_api_key（与 config.py 统一），确保通过 pydantic-settings 读取
@@ -1243,3 +1260,7 @@
 --- [RALPH] Iteration 17 ended: US-014 (48分钟 7秒) ---
 
 --- [RALPH] Iteration 18 started: US-014 at 2026-04-18 03:42 ---
+
+--- [RALPH] Iteration 18 ended: US-014 (32分钟 17秒) ---
+
+--- [RALPH] Iteration 19 started: US-015 at 2026-04-18 04:15 ---
