@@ -32,6 +32,7 @@ from app.api.dashboard import router as dashboard_router
 from app.api.users import router as users_router
 from app.api.settings import router as settings_router
 from app.api.admin.overview import router as admin_overview_router
+from app.api.admin.users_admin import router as admin_users_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -62,6 +63,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "ALTER TABLE scrape_tasks ADD COLUMN competitor_brands VARCHAR(256)",
             "ALTER TABLE influencers ADD COLUMN relevance_score FLOAT",
             "ALTER TABLE influencers ADD COLUMN match_reason TEXT",
+            "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0",
         ]:
             try:
                 await _mig_db.execute(sa_text(stmt))
@@ -161,6 +163,7 @@ app.include_router(dashboard_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(admin_overview_router, prefix="/api/admin")
+app.include_router(admin_users_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")

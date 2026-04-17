@@ -27,3 +27,4 @@ class TokenData(BaseModel):
     user_id: int
     username: str
     role: str
+    token_version: int = 0

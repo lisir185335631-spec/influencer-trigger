@@ -20,6 +20,7 @@ import ImportPage from './pages/ImportPage'
 import InfluencerDetailPage from './pages/InfluencerDetailPage'
 import HolidaysPage from './pages/HolidaysPage'
 import AdminOverviewPage from './pages/admin/AdminOverviewPage'
+import UsersAdminPage from './pages/admin/UsersAdminPage'
 
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
@@ -56,7 +57,7 @@ function App() {
               />
             ))}
             <Route
-              path="/admin"
+              path="/admin/*"
               element={
                 <RequireAdmin>
                   <AdminLayout>
@@ -67,6 +68,7 @@ function App() {
             >
               <Route index element={<Navigate to="overview" replace />} />
               <Route path="overview" element={<AdminOverviewPage />} />
+              <Route path="users" element={<UsersAdminPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

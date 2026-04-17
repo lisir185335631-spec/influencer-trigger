@@ -30,18 +30,18 @@ def _create_token(data: dict, expires_delta: timedelta) -> str:
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
-def create_access_token(user_id: int, username: str, role: str) -> str:
+def create_access_token(user_id: int, username: str, role: str, token_version: int = 0) -> str:
     settings = get_settings()
     return _create_token(
-        {"sub": str(user_id), "username": username, "role": role, "type": "access"},
+        {"sub": str(user_id), "username": username, "role": role, "tv": token_version, "type": "access"},
         timedelta(minutes=settings.access_token_expire_minutes),
     )
 
 
-def create_refresh_token(user_id: int, username: str, role: str) -> str:
+def create_refresh_token(user_id: int, username: str, role: str, token_version: int = 0) -> str:
     settings = get_settings()
     return _create_token(
-        {"sub": str(user_id), "username": username, "role": role, "type": "refresh"},
+        {"sub": str(user_id), "username": username, "role": role, "tv": token_version, "type": "refresh"},
         timedelta(days=settings.refresh_token_expire_days),
     )
 
@@ -55,9 +55,34 @@ def decode_token(token: str) -> Optional[TokenData]:
         role = payload.get("role")
         if user_id is None or username is None or role is None:
             return None
-        return TokenData(user_id=int(user_id), username=username, role=role)
+        token_version = payload.get("tv", 0)
+        return TokenData(user_id=int(user_id), username=username, role=role, token_version=token_version)
     except JWTError:
         return None
+
+
+async def write_login_history(
+    user_id: int | None,
+    ip: str | None,
+    user_agent: str | None,
+    success: bool,
+    failed_reason: str | None = None,
+) -> None:
+    from app.models.login_history import LoginHistory
+    from app.database import AsyncSessionLocal
+    try:
+        async with AsyncSessionLocal() as session:
+            entry = LoginHistory(
+                user_id=user_id,
+                ip=ip,
+                user_agent=user_agent,
+                success=success,
+                failed_reason=failed_reason,
+            )
+            session.add(entry)
+            await session.commit()
+    except Exception as exc:
+        logger.warning("Failed to write login history: %s", exc)
 
 
 def _token_hash(token: str) -> str:
