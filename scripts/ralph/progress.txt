@@ -997,3 +997,15 @@
   - Union-Find 两路 OR 合并：先跑 email exact，再跑 name similarity，同一 find/union 结构自动合并跨路径的重叠组
   - creator 字段：无 DB 支持时直接返回 None 并注释，不要略去字段（略去会导致 Validator 认为缺失）
 ---
+
+--- [RALPH] Iteration 4 ended: US-008 (6分钟 2秒) ---
+
+--- [RALPH] Iteration 5 started: US-008 at 2026-04-17 19:41 ---
+
+## 2026-04-17 12:00 - US-008
+- 修复 InfluencersAdminPage.tsx:72 Recharts Tooltip formatter 参数类型错误
+- 更改的文件：client/src/pages/admin/InfluencersAdminPage.tsx
+- **未来迭代的学习：**
+  - Recharts Tooltip formatter 签名：(value: ValueType, name: string) → ValueType 来自 recharts；最简修复是去掉显式类型注解让 TS 自动推断
+  - TypeScript 严格模式下，第三方库的 callback 参数类型必须与库定义一致，不能随意缩窄为 number
+---
