@@ -1,461 +1,430 @@
 {
   "project": "influencer-trigger",
-  "description": "国外社交媒体平台网红自动触发系统 - 自动抓取网红邮箱、批量发送邮件、实时监控状态、智能分流、CRM管理",
-  "tech_stack": "FastAPI + LangGraph + SQLAlchemy async + React 18 + TypeScript + TailwindCSS + Playwright + Redis",
-  "working_directory": "C:/Users/Administrator/Desktop/Ai_Agent/influencer-trigger",
-  "branchName": "main",
+  "branchName": "ralph/admin-panel",
+  "baseBranch": "main",
+  "description": "Admin 管理后台 - 管理员专属管理界面，前台 11 业务模块的上帝视角镜像 + 5 个平台治理新模块（审计/Agent监控/成本用量/安全/诊断）",
+  "prdFile": "tasks/prd-admin-panel.md",
+  "modelStrategy": {
+    "planning": "opus-4.7-max",
+    "execution": "sonnet-4.6-max",
+    "note": "Opus 写 PRD/审查/approve-reject；Sonnet 经 ralph.py 执行 + Validator 验证"
+  },
+  "lockedDecisions": [
+    "D-01: 前端复用 client/ 工程，子路由 /admin/*，不新建工程",
+    "D-02: 共用 /login，按 role 自动跳转（admin → /admin/overview）",
+    "D-03: 后端 API 前缀 /api/admin/**，现有 /api/** 零破坏",
+    "D-04: 审计颗粒度：写操作 100% + 读操作 10% 采样",
+    "D-05: 单租户架构不变，不引入 tenant_id",
+    "D-06: 复用现有 server/app/deps.py 中的 require_admin 依赖",
+    "D-07: 深色侧栏 slate-900 + 白色主内容区做视觉分离",
+    "D-08: 破坏性操作强制 confirm modal，极度敏感操作二次输入密码",
+    "D-09: 新增 10 张表均通过 SQLAlchemy 自动创建；每个新模型必须在 server/app/models/__init__.py 中 import",
+    "D-10: LLM Key 本 PRD 不入库，继续走环境变量 OPENAI_API_KEY，Admin UI 仅只读展示状态",
+    "D-11: JWT 携带 token_version 支持强制下线",
+    "D-12: 审计中间件使用 BackgroundTask 异步写入；中间件内部异常必须 try/except 静默，不阻塞业务",
+    "D-13: 模型选择：Opus 4.7 max 负责规划/审查；Sonnet 4.6 max 负责执行（Ralph + Validator）",
+    "D-14: Feature Flag 作为 Admin 侧框架，本 PRD 不接入现有业务代码",
+    "D-15: A11 Agent tracking 用 async context manager，仅修改 supervisor.py + monitor 启动处；5 个 Executor Agent 文件零修改",
+    "D-16: A12 所有 LLM 调用必须收敛到 server/app/tools/llm_client.py 统一入口；原生 OpenAI 调用只能出现在此文件内部",
+    "D-17: Overview 性能问题 MVP 直接聚合查询，性能不够单独开 story 处理（不在本 PRD 范围）"
+  ],
+  "openQuestions": [
+    "OQ-1: 审计日志保留策略（建议 90 天热存储 + 归档冷存储，MVP 省略归档）",
+    "OQ-2: 是否需要 webhook 推送 admin 关键告警（本 PRD 不做）",
+    "OQ-3: LangGraph 可视化状态机图（A11 仅做表格，后续 story 处理）",
+    "OQ-4: LLM Key DB 存储 + Fernet 加密（A14 暂走 env 只读，UI 修改功能待后续 story）",
+    "OQ-5: 前台 TeamPage / SettingsPage 权限收敛（本 PRD 保留前台入口，后续决定是否隐藏）"
+  ],
   "userStories": [
     {
-      "id": "S01",
-      "title": "项目脚手架与数据库初始化",
-      "priority": "high",
-      "description": "搭建 FastAPI 后端框架 + React 前端框架 + SQLAlchemy 数据库 Schema。后端：创建 server/app/main.py 入口（含 CORS、路由注册、startup/shutdown 事件）、config.py 配置管理（从 .env 读取）、database.py（async SQLAlchemy engine + session）。前端：Vite + React 18 + TypeScript + TailwindCSS 脚手架，配置 proxy 到后端 8000 端口。数据库：实现全部 13 张表的 SQLAlchemy ORM 模型（influencers, emails, mailboxes, campaigns, templates, tags, influencer_tags, notes, collaborations, holidays, scrape_tasks, users, email_events, notifications），含关键索引。创建 .env.example 示例文件。",
+      "id": "US-001",
+      "title": "Admin 路由地基 + AdminLayout + 权限守卫（前后端基础）",
+      "description": "作为管理员，我需要一个独立的 Admin 路由体系，以便访问管理员专属页面而不与业务前台混淆。",
       "acceptanceCriteria": [
-        "FastAPI 服务在 8000 端口启动，GET /api/health 返回 200",
-        "React 开发服务在 3000 端口启动，显示首页",
-        "全部 13 张表的 ORM 模型定义完整，字段类型和约束与 plan 文档一致",
-        "数据库自动建表（SQLAlchemy create_all），SQLite 文件在 data/ 目录",
-        ".env.example 包含所有必要环境变量"
+        "后端新增 server/app/api/admin/ 目录，创建 __init__.py 和 deps.py",
+        "新增 server/app/api/admin/overview.py 占位 router，注册 GET /api/admin/overview/ping 测试端点，使用 Depends(require_admin)",
+        "server/app/main.py 注册 admin router，前缀 /api/admin",
+        "非 admin 用户访问 /api/admin/overview/ping 返回 403",
+        "前端新增 client/src/components/admin/AdminLayout.tsx（深色侧栏 bg-slate-900 + 白色主内容区 + 顶部 'ADMIN CONSOLE' 标识）",
+        "前端新增 client/src/components/admin/AdminSidebar.tsx（列 16 个菜单项占位，点击切换路由）",
+        "前端新增 client/src/components/admin/RequireAdmin.tsx 路由守卫（非 admin 角色重定向到 /dashboard）",
+        "client/src/App.tsx 新增 /admin/* 路由，默认子路由 /admin/overview",
+        "登录成功后：role=admin 自动跳转 /admin/overview；其他角色仍跳转 /dashboard",
+        "新增 client/src/api/admin/client.ts：axios 实例，baseURL=/api/admin，共享 JWT token 拦截器",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 账号登录自动进入 /admin/overview；operator 账号访问 /admin/overview 跳转回 /dashboard"
       ],
       "depends_on": [],
+      "priority": 1,
       "passes": true,
-      "blocked": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S02",
-      "title": "用户认证系统（JWT）",
-      "priority": "high",
-      "description": "实现用户注册、登录、JWT 认证中间件。POST /api/auth/register（管理员创建用户，bcrypt 哈希密码），POST /api/auth/login（验证密码，返回 access_token + refresh_token），POST /api/auth/refresh。JWT middleware 保护所有 /api/* 路由。角色枚举：admin/manager/operator。前端：登录页面 + token 存储（localStorage）+ axios 拦截器自动附加 Authorization header + 401 自动跳转登录。",
+      "id": "US-002",
+      "title": "用户与权限中心 /admin/users",
+      "description": "作为管理员，我需要管理全平台用户账号、角色、冻结状态，并能查看登录历史。",
       "acceptanceCriteria": [
-        "注册接口创建用户，密码 bcrypt 哈希存储",
-        "登录接口返回 JWT access_token（30min 过期）和 refresh_token（7d）",
-        "未携带或过期 token 访问受保护接口返回 401",
-        "前端登录页面可正常登录并跳转到仪表盘",
-        "用户角色信息包含在 JWT payload 中"
+        "后端新增 server/app/api/admin/users_admin.py，提供：GET /api/admin/users 列表（分页 + 搜索用户名/邮箱 + 按角色筛选）；POST /api/admin/users 创建用户（username/email/password/role）；PATCH /api/admin/users/{id} 修改角色/激活状态；POST /api/admin/users/{id}/reset-password 重置密码（管理员填写新密码）；POST /api/admin/users/{id}/force-logout 强制下线（通过 token_version 字段累加）；GET /api/admin/users/{id}/login-history 最近 50 条登录记录",
+        "User 模型新增 token_version: int = 0 字段；JWT payload 携带 token_version，get_current_user 校验不匹配则 401",
+        "新增 server/app/models/login_history.py：id, user_id, ip, user_agent, success, failed_reason, created_at",
+        "在 server/app/models/__init__.py 中 import login_history（否则 create_tables() 不会建表）",
+        "/api/auth/login 每次登录写 login_history（成功/失败都写）",
+        "前端新增 client/src/pages/admin/UsersAdminPage.tsx：表格显示所有用户（用户名/邮箱/角色/激活状态/创建时间/最后登录时间）；顶部搜索框 + 角色筛选下拉；每行操作：编辑、重置密码、冻结/解冻、强制下线、查看登录历史（modal）；新建用户按钮（modal 表单）",
+        "所有破坏性操作（重置密码/强制下线/删除）必须弹 confirm modal，且需管理员再次输入自己密码",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：登录 admin 进入 /admin/users 能看到所有用户，创建新用户、修改角色、强制下线测试账号"
       ],
       "depends_on": [
-        "S01"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 2,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S03",
-      "title": "前端布局框架与路由",
-      "priority": "high",
-      "description": "搭建前端整体布局：左侧导航栏（Logo + 9 个页面入口）+ 右侧内容区 + 顶部面包屑。React Router v6 配置 9 个路由。纯白背景 #ffffff，克制高级风格，TailwindCSS utility-first。导航栏支持折叠。响应式适配（最小 1280px 宽度）。全局 WebSocket 连接管理（自动重连）。通知铃铛组件（右上角，显示未读数）。",
+      "id": "US-003",
+      "title": "平台总览大屏 /admin/overview",
+      "description": "作为管理员，我需要一个首屏看到的全系统仪表盘，快速了解当前平台整体健康度和关键指标。",
       "acceptanceCriteria": [
-        "左侧导航栏包含 Dashboard/Scrape/Emails/CRM/Templates/Mailboxes/Follow-up/Team/Settings 共 9 项",
-        "点击导航项正确切换路由和内容",
-        "纯白背景 #ffffff，无多余装饰，UI 风格克制高级",
-        "WebSocket 连接建立成功，断线自动重连",
-        "右上角通知铃铛显示未读通知数量"
+        "后端新增 server/app/api/admin/overview.py，提供：GET /api/admin/overview/metrics 返回核心指标聚合（用户总数/活跃用户/今日、本周、本月：抓取任务数、邮件发送数、邮件回复数、网红数量、Agent 运行任务数、异常数）；GET /api/admin/overview/health 返回系统健康状态（DB 连接/Scheduler 运行/Monitor Agent 运行/WebSocket 活跃连接数）；GET /api/admin/overview/recent-events 返回最近 20 条系统事件",
+        "前端新增 client/src/pages/admin/OverviewPage.tsx：顶部 4 个大数字 Metric Card（今日邮件发送/今日新增网红/今日回复数/活跃 Agent 数）；中部 3 个图表（邮件发送 7 天趋势折线图、抓取任务 7 天堆叠柱状图、各平台网红数量环形图）；底部系统健康面板（5 个指示灯：DB/Scheduler/Monitor/WebSocket/邮箱池）；右侧 Recent Events 事件流时间轴（最近 20 条）",
+        "邮箱池健康指示灯算法：至少 1 个 mailbox 健康评分 > 70 为绿；全部 ≤ 70 但有 > 30 为黄；全部 ≤ 30 或无可用 mailbox 为红",
+        "图表使用 recharts（若未使用则加入 package.json）",
+        "30 秒自动刷新（轮询），可手动刷新",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 进入 /admin/overview，所有数字和图表正常渲染，事件流显示最近操作"
       ],
       "depends_on": [
-        "S01",
-        "S02"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 3,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S04",
-      "title": "发送邮箱管理（CRUD + SMTP 测试）",
-      "priority": "high",
-      "description": "实现发送邮箱的增删改查和连接测试功能。后端：POST /api/mailboxes（添加邮箱，SMTP 密码用 Fernet 加密存储），GET /api/mailboxes（列表），PUT /api/mailboxes/{id}，DELETE /api/mailboxes/{id}，POST /api/mailboxes/{id}/test（发送测试邮件验证 SMTP 配置）。每个邮箱可配置 daily_limit 和 hourly_limit。每日 00:00 UTC 重置 today_sent 计数（APScheduler job）。前端：邮箱管理页面，表格展示所有邮箱（邮箱地址/状态/今日已发/日限额/退信率），添加邮箱表单（邮箱+SMTP host+port+密码+IMAP host+port），测试连接按钮。",
+      "id": "US-004",
+      "title": "审计日志系统（模型 + 中间件 + API）",
+      "description": "作为管理员，我需要系统自动记录所有关键操作，以便合规审计和问题追溯。",
       "acceptanceCriteria": [
-        "添加邮箱后，密码以 Fernet 加密形式存储在数据库",
-        "测试连接按钮发送测试邮件到指定邮箱并返回成功/失败",
-        "邮箱列表页正确展示状态、今日已发、日限额",
-        "支持编辑和删除邮箱",
-        "每日 00:00 UTC 自动重置 today_sent 为 0"
+        "新增 server/app/models/audit_log.py：字段 id, user_id, username, role, action, resource_type, resource_id, request_method, request_path, ip, user_agent, status_code, request_body_snippet (max 2KB), response_snippet (max 2KB), duration_ms, created_at；索引 user_id + created_at、resource_type + resource_id、created_at",
+        "在 server/app/models/__init__.py 中 import audit_log",
+        "新增 server/app/middleware/audit_middleware.py：写操作（POST/PUT/PATCH/DELETE）100% 写审计；读操作（GET）10% 采样写审计；写入走 BackgroundTask，不阻塞响应；敏感字段（password、token、api_key）在写入前打码为 ***",
+        "异常容错：中间件内部任何异常都必须 try/except 静默吞掉，绝不阻塞业务请求",
+        "server/app/main.py 注册 audit middleware，放在 CORS 之后",
+        "新增 server/app/api/admin/audit.py：GET /api/admin/audit/logs 支持筛选（user_id / username / action / resource_type / method / status_code / created_at 区间）+ 分页 + 按时间倒序；GET /api/admin/audit/export 导出 CSV（限制最多 10000 条）；GET /api/admin/audit/stats 返回 7 天操作趋势（按 action 分组）",
+        "单元测试（至少 3 条）：验证中间件能正确写入 log、敏感字段打码、读操作采样",
+        "Typecheck 通过",
+        "Lint 通过"
       ],
       "depends_on": [
-        "S01",
-        "S02"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 4,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S05",
-      "title": "邮件模板管理（CRUD + LLM 生成）",
-      "priority": "high",
-      "description": "实现邮件模板的增删改查和 AI 自动生成。后端：GET /api/templates，POST /api/templates，PUT /api/templates/{id}，DELETE /api/templates/{id}，POST /api/templates/generate（输入行业关键词，GPT-4o 生成 3 套风格模板：formal/casual/direct）。模板支持 Jinja2 变量：{{influencer_name}}, {{platform}}, {{followers}}, {{industry}}。仅英文模板。前端：模板管理页面，模板列表（名称/行业/风格/创建时间），创建/编辑表单（富文本编辑器，HTML 支持），AI 生成按钮（输入行业 → 生成 3 套 → 用户选择保存），模板预览（填入示例变量值渲染预览）。",
+      "id": "US-005",
+      "title": "审计日志 UI + 多维过滤 + 导出 /admin/audit",
+      "description": "作为管理员，我需要一个可视化的审计日志查询界面，能按用户/操作/资源过滤并导出证据。",
       "acceptanceCriteria": [
-        "POST /api/templates/generate 输入行业关键词返回 3 套英文邮件模板",
-        "模板支持 {{influencer_name}} 等变量，预览时正确替换",
-        "模板库页面可 CRUD 操作，按行业分类筛选",
-        "支持 HTML 富文本格式编辑",
-        "模板预览正确渲染 HTML 和变量替换效果"
+        "前端新增 client/src/pages/admin/AuditLogPage.tsx：顶部过滤器面板（用户下拉、action 下拉、resource_type 下拉、method 下拉、日期范围选择器、关键字搜索）；表格列：时间/用户/角色/方法/路径/资源/状态码/IP/耗时；支持点击行展开看完整 request/response snippet",
+        "分页 + 每页 50 条",
+        "右上角导出 CSV 按钮（调用 /api/admin/audit/export）",
+        "顶部小图表：7 天操作趋势（调用 /api/admin/audit/stats）",
+        "请求体/响应体 snippet 用等宽字体 font-mono，并做 JSON 高亮（react-syntax-highlighter 或原生 pre）",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 在平台操作几次后进入 /admin/audit 能看到自己的操作，按用户筛选能过滤，导出 CSV 能下载"
       ],
       "depends_on": [
-        "S01",
-        "S02"
+        "US-001",
+        "US-004"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 5,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S06",
-      "title": "网红邮箱抓取引擎（Scraper Agent + Playwright）",
-      "priority": "high",
-      "description": "实现 Scraper Agent，使用 Playwright 从 5 大平台抓取网红公开邮箱。后端：POST /api/scrape/tasks（创建抓取任务：platforms[], industry, target_count），GET /api/scrape/tasks，GET /api/scrape/tasks/{id}。Scraper Agent 实现：启动 Playwright Chromium headless + stealth 插件，按平台搜索行业关键词，滚动加载网红列表，逐一访问主页提取邮箱（正则 + 反混淆），MX 记录验证，跨平台邮箱去重，结果写入 influencers 表。每平台最多 1 个浏览器并发，操作间隔 2-5 秒随机。WebSocket 实时推送抓取进度。前端：抓取任务页面，创建任务表单（选平台+输行业+设数量），任务列表（状态/进度/有效邮箱数），进度条实时更新。",
+      "id": "US-006",
+      "title": "邮件全局流 /admin/emails（批量撤销 + 黑名单）",
+      "description": "作为管理员，我需要看到全量邮件流水，能批量撤销异常发送并管理收件人黑名单。",
       "acceptanceCriteria": [
-        "创建抓取任务后 Playwright 自动启动抓取流程",
-        "至少支持 Instagram 和 YouTube 的邮箱提取（其他平台可降级为手动输入提示）",
-        "邮箱反混淆处理：[at]→@，(dot)→. 等",
-        "MX 记录验证过滤无效邮箱域名",
-        "WebSocket 实时推送抓取进度到前端",
-        "抓取结果正确写入 influencers 表"
+        "后端新增 server/app/api/admin/emails_admin.py：GET /api/admin/emails 全量邮件列表（筛选：状态/发送者邮箱/收件人/时间段/模板）+ 分页；POST /api/admin/emails/batch-cancel 批量撤销（仅 status=pending/queued 的可撤销）；GET /api/admin/emails/stats 退信率、打开率、回复率按时间/按邮箱维度",
+        "黑名单：新增 server/app/models/email_blacklist.py（id, email, reason, added_by_user_id, created_at）",
+        "在 server/app/models/__init__.py 中 import email_blacklist",
+        "GET/POST/DELETE /api/admin/emails/blacklist",
+        "在 server/app/services/sender_service.py 发送前调用 is_blacklisted(email) 函数，命中则跳过该条并记录为 status=blocked（仅新增一次函数调用，不改现有发送逻辑）",
+        "前端新增 client/src/pages/admin/EmailsAdminPage.tsx：Tab 切换：邮件流水 / 黑名单管理；流水 Tab：表格（时间/收件人/发件邮箱/状态/模板/打开/回复），行可多选，顶部按钮批量撤销选中；顶部 4 个指标卡（今日发送/退信率/打开率/回复率）；黑名单 Tab：列表 + 新增黑名单表单（邮箱 + 原因）+ 删除",
+        "批量撤销前弹 confirm modal，显示撤销条数和影响的收件人",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 进入 /admin/emails 能看到全量邮件，多选后批量撤销，新增黑名单项，发送邮件时该地址被拦截"
       ],
       "depends_on": [
-        "S01",
-        "S03"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 6,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S07",
-      "title": "抓取结果预览与确认",
-      "priority": "medium",
-      "description": "抓取完成后展示结果列表，用户确认后一键进入发送流程。前端：抓取任务详情页增加结果预览表格（网红名/平台/邮箱/粉丝数/简介摘要），支持按粉丝数排序，支持勾选/取消勾选（手动移除不想联系的），底部'全部发送'按钮跳转到批量发送页面（携带选中的网红 ID 列表）。后端：GET /api/scrape/tasks/{id}/results 返回抓取到的网红列表。",
+      "id": "US-007",
+      "title": "邮箱池管理 /admin/mailboxes",
+      "description": "作为管理员，我需要监控全平台所有 SMTP 发送邮箱的健康度和 IMAP 监控状态，能强制踢出异常邮箱。",
       "acceptanceCriteria": [
-        "抓取结果表格正确展示网红信息",
-        "支持按粉丝数排序",
-        "支持勾选/取消勾选移除不想联系的网红",
-        "'全部发送'按钮跳转到发送页面并携带选中网红 ID"
+        "后端新增 server/app/api/admin/mailboxes_admin.py：GET /api/admin/mailboxes 全邮箱列表（展示：地址/SMTP 连接状态/IMAP 连接状态/今日已发/今日额度/最后成功时间/最后失败时间/失败率/健康评分）；POST /api/admin/mailboxes/{id}/test-smtp 实时测试 SMTP 连接；POST /api/admin/mailboxes/{id}/test-imap 实时测试 IMAP 连接；POST /api/admin/mailboxes/{id}/disable 强制停用；POST /api/admin/mailboxes/{id}/reset-quota 重置今日额度；GET /api/admin/mailboxes/{id}/send-history 该邮箱最近 100 条发送记录",
+        "健康评分算法：基于失败率（<1% 健康 / 1-5% 预警 / >5% 异常）、额度使用率、最后失败时间",
+        "前端新增 client/src/pages/admin/MailboxesAdminPage.tsx：表格每行左侧显示 3 色健康指示灯（绿/黄/红）+ 文字评分；行操作：测试 SMTP / 测试 IMAP / 强制停用 / 重置额度 / 查看发送历史（drawer）；顶部卡片：总邮箱数 / 健康数 / 预警数 / 异常数",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 进入 /admin/mailboxes 看到健康灯，测试 SMTP，强制停用，查看发送历史"
       ],
       "depends_on": [
-        "S06"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 7,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S08",
-      "title": "CSV/Excel 网红名单导入",
-      "priority": "high",
-      "description": "支持导入已有网红名单。后端：POST /api/influencers/import（接收文件上传，解析 .xlsx/.csv），POST /api/influencers/import/preview（预览前 10 行 + 列映射），POST /api/influencers/import/confirm（确认导入）。列名自动映射（中英文映射表：email/邮箱, nickname/昵称, platform/平台, followers/粉丝数, profile_url/主页链接, industry/行业）。必填列：email；选填列其余。邮箱格式正则校验 + MX 验证。与已有网红邮箱去重，重复项标记。前端：导入页面，拖拽上传文件，预览表格（前 10 行），列映射确认（下拉选择），无效邮箱标红，去重提示，确认导入按钮。",
+      "id": "US-008",
+      "title": "网红库治理 /admin/influencers（合并去重 + 数据质量）",
+      "description": "作为管理员，我需要清理重复网红数据、查看数据质量报告、批量回刷邮箱验证。",
       "acceptanceCriteria": [
-        "支持 .xlsx 和 .csv 格式上传",
-        "列名自动映射中英文（email=邮箱 等）",
-        "预览展示前 10 行 + 列映射确认界面",
-        "无效邮箱标红提示",
-        "与已有网红邮箱去重，重复项可选跳过或覆盖",
-        "导入完成后数据正确写入 influencers 表"
+        "后端新增 server/app/api/admin/influencers_admin.py：GET /api/admin/influencers/duplicates 查询疑似重复（按 email 精确匹配 + 按 name+platform 相似度 > 0.9）；POST /api/admin/influencers/merge 合并多条记录到一条（保留主记录 ID，其他记录的外键关系迁移到主 ID 后删除）；GET /api/admin/influencers/quality-report 数据质量报告（空邮箱比例/无效邮箱比例/粉丝数缺失比例/bio 缺失比例）；POST /api/admin/influencers/batch-verify-email 批量 MX 验证（后台任务，返回 task_id）；GET /api/admin/influencers/batch-verify-email/{task_id} 查询验证进度；GET /api/admin/influencers 管理员视角的全量列表（比前台多显示：创建者、创建时间、所有关联 task_id、邮件发送次数）",
+        "前端新增 client/src/pages/admin/InfluencersAdminPage.tsx：Tab 切换：全量列表 / 重复数据 / 质量报告；重复数据 Tab：分组展示疑似重复，每组可选主记录后点合并；质量报告 Tab：4 个饼图 + 一键批量 MX 验证按钮，启动后显示进度条",
+        "合并操作前弹 confirm modal 并显示影响的所有外键数据（邮件记录、标签等）",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 进入 /admin/influencers 看到重复列表，合并一组，查看质量报告"
       ],
       "depends_on": [
-        "S01",
-        "S03"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 8,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S09",
-      "title": "批量邮件发送引擎（Sender Agent + 多邮箱轮换）",
-      "priority": "high",
-      "description": "实现 Sender Agent，支持批量发送邮件和多邮箱自动轮换。后端：POST /api/emails/send-batch（接收 influencer_ids[] + template_id，创建 campaign，启动异步发送任务）。MailboxRotator 类：查询 status=active 且 today_sent < daily_limit 的邮箱，按 today_sent 升序选择（均匀分配），达到限额自动跳过。发送流程：解密 SMTP 密码 → aiosmtplib 连接 → Jinja2 渲染模板变量 → 生成 MIME 邮件（HTML）→ 发送 → 记录 message_id → 更新 today_sent → 写入 emails 表。发送间隔 30-60 秒随机。失败重试 1 次。WebSocket 推送发送进度。前端：发送页面，选择网红列表 + 模板 → 确认发送，进度面板（已发送/成功/失败/总数），实时更新。",
+      "id": "US-009",
+      "title": "抓取任务治理 /admin/scrape",
+      "description": "作为管理员，我需要监控所有抓取任务、强制终止异常任务、查看 Playwright 资源占用。",
       "acceptanceCriteria": [
-        "批量发送正确使用多邮箱轮换，均匀分配",
-        "单邮箱达到日限额自动切换下一个",
-        "邮件模板变量正确替换（网红名、平台、粉丝数、行业）",
-        "发送间隔 30-60 秒随机",
-        "发送失败自动重试 1 次",
-        "WebSocket 实时推送发送进度",
-        "发送记录正确写入 emails 表（含 message_id）",
-        "campaign 记录更新发送统计"
+        "后端新增 server/app/api/admin/scrape_admin.py：GET /api/admin/scrape/tasks 全量抓取任务（含所有用户创建的，显示创建者）；POST /api/admin/scrape/tasks/{id}/force-terminate 强制终止（释放 Playwright 资源）；POST /api/admin/scrape/tasks/{id}/retry 失败重试；GET /api/admin/scrape/platform-quota 各平台今日抓取配额使用情况；PATCH /api/admin/scrape/platform-quota 调整配额（admin 可调）",
+        "新增 server/app/models/platform_quota.py：platform (unique), daily_limit, today_used, last_reset_at",
+        "在 server/app/models/__init__.py 中 import platform_quota",
+        "前端新增 client/src/pages/admin/ScrapeAdminPage.tsx：Tab 切换：任务列表 / 平台配额；任务列表：全量任务（含创建者列），运行中行高亮，支持强制终止/重试；平台配额 Tab：5 个平台进度条（已用/上限），可点击进度条修改上限",
+        "强制终止前弹 confirm modal",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 进入 /admin/scrape 看到全量任务，强制终止一个，修改 TikTok 配额"
       ],
       "depends_on": [
-        "S04",
-        "S05"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 9,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S10",
-      "title": "IMAP 24/7 邮件回复监控（Monitor）",
-      "priority": "high",
-      "description": "实现 24/7 IMAP 轮询后台任务，检测网红回复邮件。后台 asyncio task 在 FastAPI startup 启动，每 5 分钟轮询所有 active 邮箱的收件箱。回复匹配逻辑：优先匹配 In-Reply-To header → emails.message_id，回退匹配发件人邮箱 → influencers.email，再回退匹配邮件主题。检测到回复后：更新 emails.status=replied + reply_content + replied_at，更新 influencers.status=replied，写入 email_events 表。退信检测：解析 DSN 通知，5.x.x 永久失败标记退信，更新 mailbox.bounce_rate。异常处理：连接断开指数退避重试（5s→10s→30s→60s），错误日志记录。WebSocket 推送状态变更。",
+      "id": "US-010",
+      "title": "模板审核库 /admin/templates",
+      "description": "作为管理员，我需要审核所有邮件模板，执行上下架、合规关键词扫描、查看使用排行。",
       "acceptanceCriteria": [
-        "FastAPI 启动后 IMAP 监控后台任务自动运行",
-        "每 5 分钟检查一次所有活跃邮箱的收件箱",
-        "正确匹配回复邮件与原始发送邮件（In-Reply-To 优先）",
-        "检测到回复后更新 emails 和 influencers 状态",
-        "退信正确检测并更新邮箱退信率",
-        "IMAP 连接断开后自动重连（指数退避）",
-        "WebSocket 推送新回复和状态变更事件"
+        "Template 模型新增字段：is_published: bool = true、compliance_flags: str = ''（逗号分隔的违规关键词命中）",
+        "后端新增 server/app/api/admin/templates_admin.py：GET /api/admin/templates 全量（显示创建者、使用次数、发送成功率、is_published 状态）；POST /api/admin/templates/{id}/publish 上架；POST /api/admin/templates/{id}/unpublish 下架（下架后前台用户无法选用）；POST /api/admin/templates/{id}/compliance-scan 运行合规扫描（关键词库命中）；GET /api/admin/templates/ranking 使用次数排行 top 20",
+        "新增 server/app/models/compliance_keywords.py（管理员维护的敏感词库）：id, keyword, category, severity, created_at",
+        "在 server/app/models/__init__.py 中 import compliance_keywords",
+        "GET/POST/DELETE /api/admin/templates/keywords CRUD 关键词库",
+        "前台兼容改造（显式文件清单）：server/app/api/templates.py GET 端点添加可选参数 include_unpublished: bool = False（仅 admin 生效）；server/app/services/template_service.py list 函数接受 include_unpublished 参数，默认过滤 is_published=true；client/src/api/templates.ts 不变（默认行为：只拿 published）；前台使用模板的页面（EmailsPage / TemplatesPage / FollowUpPage）不需修改",
+        "回归测试：operator 用户在前台创建邮件时能选模板，且只能选 is_published=true 的模板",
+        "前端新增 client/src/pages/admin/TemplatesAdminPage.tsx：Tab 切换：模板审核 / 使用排行 / 关键词库；模板审核：表格（标题/创建者/使用次数/成功率/合规标志/状态），行操作：上架/下架/合规扫描/查看内容；使用排行：top 20 柱状图 + 表格；关键词库：增删改敏感词（字段：keyword / category: 政治/暴力/色情/其他 / severity: low/medium/high）",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 进入 /admin/templates 下架一个模板，前台 operator 用户创建邮件时看不到该模板，扫描合规"
       ],
       "depends_on": [
-        "S04",
-        "S09"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 10,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S11",
-      "title": "邮件状态看板",
-      "priority": "medium",
-      "description": "前端邮件中心页面，展示所有邮件的实时状态。顶部状态汇总卡片：总发送数 / 已送达 / 已打开 / 已回复 / 未回复 / 退信（调用 GET /api/emails/stats）。下方邮件列表表格：网红名 / 邮箱 / 发送时间 / 当前状态 / 最后更新时间。筛选：按批次、平台、状态。状态标签色：sent=蓝 / delivered=青 / replied=绿 / bounced=红 / pending=灰。WebSocket 监听 email_status_change 事件，实时更新表格和统计卡片。后端：GET /api/emails（分页+筛选），GET /api/emails/stats。",
+      "id": "US-011",
+      "title": "Agent 运行监控 /admin/agents",
+      "description": "作为管理员，我需要实时监控 5 个 Agent 的运行状态、历史任务、错误日志。",
       "acceptanceCriteria": [
-        "顶部 6 个状态汇总卡片数值正确",
-        "邮件列表支持按批次、平台、状态筛选",
-        "状态标签颜色正确对应",
-        "WebSocket 实时更新状态变更，无需手动刷新",
-        "列表支持分页（每页 20 条）"
+        "新增 server/app/models/agent_run.py：字段 id, agent_name, task_id, state (pending/running/success/failed/cancelled), input_snapshot, output_snapshot, error_message, error_stack, started_at, finished_at, duration_ms, token_cost_usd, llm_calls_count；索引 agent_name + started_at、state + started_at",
+        "在 server/app/models/__init__.py 中 import agent_run",
+        "新增 server/app/agents/_tracking.py 提供一个 async context manager track_agent_run(agent_name, task_id, input_data)，在 with 块内部执行 Agent 逻辑，自动记录 run 的 started_at / finished_at / state / error / duration",
+        "最小侵入改造：仅修改 server/app/agents/supervisor.py 一个文件——在 Supervisor 调用各 Executor Agent 的地方用 async with track_agent_run(...) 包裹",
+        "5 个 Executor Agent 文件保持不变（scraper.py / sender.py / monitor.py / responder.py / classifier.py 零修改）",
+        "若 Supervisor 未覆盖某个 Agent 调用路径（如 monitor 是独立 lifespan task），单独在 monitor 启动处手动调用 track_agent_run 包裹 loop body",
+        "后端新增 server/app/api/admin/agents_monitor.py：GET /api/admin/agents/status 6 个 Agent 当前状态（最近 N 个 run 的 success/failed 比例 + 平均耗时 + 当前运行中的任务数）；GET /api/admin/agents/runs 历史运行记录（按 agent/状态/时间段筛选）；GET /api/admin/agents/runs/{id} 单次运行详情（含完整 input/output/error）；POST /api/admin/agents/runs/{id}/retry 手动重试失败的 run（构造同样 input 重新调用）",
+        "前端新增 client/src/pages/admin/AgentsMonitorPage.tsx：顶部 6 个 Agent 卡片（名称/状态灯/最近成功率/平均耗时/运行中任务数）；中部表格：历史 run 列表（筛选 agent + 状态 + 日期），展开看 input/output/error；失败 run 行提供重试按钮",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 进入 /admin/agents 看到 6 个 Agent 卡片，触发一次抓取后能看到新 run 出现"
       ],
       "depends_on": [
-        "S09",
-        "S10"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 11,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S12",
-      "title": "回复意图分类（Classifier Agent）",
-      "priority": "high",
-      "description": "实现 Classifier Agent，对网红回复邮件进行意图分类。Monitor 检测到回复后触发 Classifier。调用 GPT-4o-mini 分析回复内容，分类为 5 种意图：interested / pricing / declined / auto_reply / irrelevant。返回 JSON {intent, confidence, summary}。分类结果写入 influencers.reply_intent。auto_reply 不触发人工通知。其他意图触发通知。更新 influencers.priority：interested/pricing → high，declined → low，irrelevant → low。后端：分类逻辑封装在 agents/classifier.py，通过 LangGraph State 接收回复内容。",
+      "id": "US-012",
+      "title": "成本与用量 /admin/usage",
+      "description": "作为管理员，我需要聚合查看 LLM Token 消耗、邮件发送量、Playwright 运行时长、存储占用，按日/周/月趋势分析。",
       "acceptanceCriteria": [
-        "回复邮件自动触发意图分类",
-        "GPT-4o-mini 正确分类 5 种意图",
-        "分类结果写入 influencers.reply_intent",
-        "auto_reply 类型不触发人工通知",
-        "优先级自动更新：interested/pricing → high"
+        "新增 server/app/models/usage_metric.py：字段 id, metric_date (date), metric_type (llm_token/email_sent/scrape_run/storage_mb), sub_key (model_name/user_id/agent_name/nullable), value (float), cost_usd (float, nullable), created_at；复合唯一索引 metric_date + metric_type + sub_key",
+        "在 server/app/models/__init__.py 中 import usage_metric",
+        "新增 server/app/services/admin/usage_service.py：record_llm_usage(model, prompt_tokens, completion_tokens, user_id) 原子累加当天记录（UPSERT），cost 自动按模型单价计算；record_email_sent(user_id, count) 同上",
+        "新增统一 LLM 客户端入口 server/app/tools/llm_client.py（本 story 的核心架构收敛）：封装 async def chat(model, messages, user_id=None, agent_name=None, **kwargs) -> str 统一调用 OpenAI；所有 LLM 调用必须走此入口，客户端内部自动调用 record_llm_usage 打点；提供 async def embed(...) 等其他调用入口",
+        "重构现有 LLM 调用点（收敛到 llm_client）：server/app/services/scraper_service.py、classifier_service.py、responder_service.py、template_service.py 中所有 openai 原生调用改为走 llm_client.chat(...)",
+        "Validator 校验标准：使用 Grep 工具以 pattern='AsyncOpenAI|openai\\.ChatCompletion|client\\.chat\\.completions' glob='server/app/**/*.py' 搜索，结果中的所有文件路径必须只是 server/app/tools/llm_client.py",
+        "在 server/app/services/sender_service.py 成功发送后调用 record_email_sent（仅新增 1 处调用）",
+        "后端新增 server/app/api/admin/usage.py：GET /api/admin/usage/summary?period=day|week|month 总成本 + 4 个指标；GET /api/admin/usage/trend?metric=llm_token&period=30d 时间序列（按天）；GET /api/admin/usage/breakdown?metric=llm_token&dimension=model|user 分组汇总；GET /api/admin/usage/alerts 当前成本预警（当日成本 > 阈值）；POST /api/admin/usage/budget 设置月度预算阈值",
+        "新增 server/app/models/usage_budget.py：id, month (YYYY-MM), budget_usd, alert_threshold_pct, created_at",
+        "在 server/app/models/__init__.py 中 import usage_budget",
+        "前端新增 client/src/pages/admin/UsagePage.tsx：顶部 4 个指标卡（当月总成本/今日 Token/本月邮件量/存储）；中部 2 个图表（30 天成本趋势折线图、模型分布环形图）；底部表格：按用户 Top 10 成本排行；右侧预算预警面板 + 设置预算按钮",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：触发一次 LLM 调用后 admin 进入 /admin/usage 看到数字累加，设置月度预算"
       ],
       "depends_on": [
-        "S10"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 12,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S13",
-      "title": "人工介入通知系统",
-      "priority": "high",
-      "description": "检测到非 auto_reply 回复后，立即通知 BD 运营人工介入。后端：POST /api/notifications（创建通知），GET /api/notifications（列表，支持 is_read 筛选），PATCH /api/notifications/{id}/read（标为已读），POST /api/notifications/read-all。通知内容：网红名 / 平台 / 回复意图分类 / 回复内容摘要 / '请前往您的邮箱回复'提示。WebSocket 实时推送 notification 事件。前端：通知铃铛点击展开通知列表，按意图优先级排序（interested > pricing > declined > irrelevant），未读通知高亮，点击跳转到网红详情。可选：飞书/Slack Webhook 推送（系统设置中配置 Webhook URL）。",
+      "id": "US-013",
+      "title": "追发策略中心 + 节假日治理 /admin/followup + /admin/holidays",
+      "description": "作为管理员，我需要配置全局追发策略、查看 Responder Agent 行为审计、管理节假日邮件规则。",
       "acceptanceCriteria": [
-        "非 auto_reply 回复触发系统通知",
-        "通知包含网红名、平台、意图、摘要、'请前往您的邮箱回复'",
-        "WebSocket 实时推送通知到前端",
-        "通知铃铛显示未读数，点击展开列表",
-        "按意图优先级排序",
-        "支持标记已读和全部已读"
+        "追发部分：后端新增 server/app/api/admin/followup_admin.py：GET/PATCH /api/admin/followup/settings 管理员级策略（最大追发次数、时间间隔、启用/禁用）；GET /api/admin/followup/responder-logs Responder Agent 回复生成历史（原始回复 → 意图分类 → 生成的跟进邮件）；POST /api/admin/followup/pause-all 紧急暂停全部追发；POST /api/admin/followup/resume-all 恢复",
+        "追发部分：前端新增 client/src/pages/admin/FollowupAdminPage.tsx：策略配置表单（最大次数/间隔天数/总开关）；紧急暂停按钮（红色 danger 按钮 + confirm modal）；下方 Responder 行为审计表格",
+        "追发部分：agent-browser 验证：admin 配置策略 → 紧急暂停 → 策略立即生效（Scheduler 的 follow_up job 停运）",
+        "节假日部分：后端新增 server/app/api/admin/holidays_admin.py：GET /api/admin/holidays 管理员视角（全量节日 + 每个节日历史投放统计）；POST/PATCH/DELETE /api/admin/holidays CRUD；GET /api/admin/holidays/{id}/investment-report 该节日历年发送报告（发送数/打开率/回复率）；POST /api/admin/holidays/sensitive-regions 敏感地区名单（该地区用户不发该节日）",
+        "节假日部分：Holiday 模型新增 sensitive_regions: str = '' 字段（逗号分隔 region code）",
+        "节假日部分：前端新增 client/src/pages/admin/HolidaysAdminPage.tsx：日历视图 + 列表切换；每个节日行可展开查看历年投放报告（柱状图）；敏感地区配置",
+        "节假日部分：agent-browser 验证：admin 新增节日 → 配置敏感地区 → 查看投放报告",
+        "Typecheck 通过",
+        "Lint 通过"
       ],
       "depends_on": [
-        "S03",
-        "S12"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 13,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S14",
-      "title": "CRM 网红档案与详情页",
-      "priority": "medium",
-      "description": "实现 CRM 式网红管理的档案和详情功能。后端：GET /api/influencers/{id}（返回完整档案：基础信息 + 邮件历史 + 标签 + 备注 + 合作历史），PATCH /api/influencers/{id}（更新信息），GET /api/influencers/{id}/emails（邮件往来时间线），POST /api/influencers/{id}/notes（添加备注），GET /api/tags, POST /api/tags, DELETE /api/tags/{id}（标签 CRUD），POST /api/influencers/{id}/tags（关联标签）。前端：网红详情页 — 左侧基础信息卡片（头像/昵称/平台/邮箱/粉丝/状态/优先级），右侧 Tab 切换（邮件历史时间线 / 标签管理 / 备注列表 / 合作历史）。标签支持多选和新建。备注支持添加，按时间倒序。",
+      "id": "US-014",
+      "title": "系统配置中心 + Feature Flag /admin/settings",
+      "description": "作为管理员，我需要管理平台级参数（LLM Key 状态/Webhook/分级配额）和 Feature Flag（控制新功能灰度发布）。",
       "acceptanceCriteria": [
-        "网红详情页展示完整基础信息",
-        "邮件历史时间线正确展示所有往来邮件",
-        "支持创建和分配标签（多选）",
-        "支持添加备注，按时间倒序展示",
-        "合作历史 Tab 展示合作记录"
+        "新增 server/app/models/feature_flag.py：字段 id, flag_key (unique), enabled (bool), description, rollout_percentage (0-100), target_roles (逗号分隔), updated_by_user_id, created_at, updated_at",
+        "在 server/app/models/__init__.py 中 import feature_flag",
+        "后端新增 server/app/api/admin/settings_admin.py：GET /api/admin/settings/system 系统级参数（LLM Key 只读状态：configured/not_configured + 最后 4 位 / Webhook URL / 默认分级配额）；PATCH /api/admin/settings/system 更新 Webhook 和默认配额（不包含 LLM Key）；GET /api/admin/settings/flags 所有 feature flag；POST/PATCH/DELETE /api/admin/settings/flags CRUD；GET /api/admin/settings/flags/{key}/check?user_id=X 查询某用户某 flag 是否开启（用于业务调用）",
+        "System Settings 扩展：现有 system_settings 表新增 webhook_default_url、default_daily_quota 字段（不加 LLM Key 字段）",
+        "LLM Key 保持走环境变量 OPENAI_API_KEY，不入库。Admin UI 仅只读展示：从 os.environ 读 Key，返回 configured 状态和最后 4 位，绝不返回真值",
+        "DB 存储 + Fernet 加密功能列入 Open Questions（OQ-4），后续 story 处理",
+        "前端新增 client/src/pages/admin/SettingsAdminPage.tsx：Tab 切换：系统参数 / Feature Flag；系统参数：LLM Key 区域只读 badge 显示 Configured: sk-...xxxx 或 Not Configured，下方灰色提示文字：LLM Key 通过环境变量 OPENAI_API_KEY 配置，UI 修改功能待后续 story；Webhook URL / 默认配额：普通表单（可编辑）；Feature Flag：表格（key/enabled/rollout/目标角色），行可编辑；新建 Flag：key、desc、rollout_percentage 滑块、角色多选",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 进入 /admin/settings 看到 LLM Key 状态为 Configured，更新 Webhook，创建一个 feature flag，调整 rollout percentage"
       ],
       "depends_on": [
-        "S01",
-        "S03"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 14,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S15",
-      "title": "CRM 网红列表与多维筛选",
-      "priority": "medium",
-      "description": "实现网红列表页面，支持多维筛选、搜索、批量操作。后端：GET /api/influencers（分页+多维筛选：platform, status, tag_ids, followers_min, followers_max, industry, reply_intent, keyword），POST /api/influencers/export（导出 CSV），PATCH /api/influencers/batch（批量操作：打标签/归档）。前端：网红列表页 — 顶部筛选栏（平台下拉/状态下拉/标签多选/粉丝数区间/行业/关键词搜索），表格（勾选框/网红名/平台/邮箱/粉丝数/状态/标签/优先级/最后联系时间），底部批量操作栏（批量打标签/批量归档/导出CSV），分页。点击网红名跳转详情页。",
+      "id": "US-015",
+      "title": "安全与合规 /admin/security",
+      "description": "作为管理员，我需要查看异常登录告警、启用敏感操作二次认证、轮换系统密钥。",
       "acceptanceCriteria": [
-        "支持按平台/状态/标签/粉丝数/行业/关键词多维筛选",
-        "筛选结果正确且支持组合筛选",
-        "批量打标签和批量归档功能正常",
-        "导出 CSV 包含正确的字段",
-        "表格分页，每页 20 条",
-        "点击网红名跳转详情页"
+        "后端新增 server/app/api/admin/security.py：GET /api/admin/security/alerts 异常登录事件（新 IP / 新设备 / 10 分钟内失败 > 5 次）；POST /api/admin/security/alerts/{id}/acknowledge 标记已处理；GET /api/admin/security/2fa-config 二次认证配置（目前支持：敏感操作要求再次输入密码 + TOTP 可选）；PATCH /api/admin/security/2fa-config 修改；POST /api/admin/security/rotate-keys 轮换系统加密密钥（JWT SECRET + Fernet KEY），自动使所有 JWT 失效；GET /api/admin/security/key-rotation-history 密钥轮换历史",
+        "异常登录检测规则（在 login_history 写入后触发）：新 IP（该用户过去 30 天未出现过的 IP）；10 分钟内同一用户 ≥5 次失败触发告警；不同地区（MVP 可省略地理信息仅检测新 IP）",
+        "新增 server/app/models/security_alert.py：id, alert_type, user_id, details_json, acknowledged, acknowledged_by, acknowledged_at, created_at",
+        "在 server/app/models/__init__.py 中 import security_alert",
+        "前端新增 client/src/pages/admin/SecurityPage.tsx：Tab：告警 / 2FA 配置 / 密钥轮换；告警：时间轴（红色 = 未处理，灰色 = 已处理），点击可展开详情；2FA：开关 + 配置说明；密钥轮换：当前密钥年龄（>90 天显示警告）+ 轮换按钮（confirm modal + 管理员密码二次确认）",
+        "密钥轮换操作必须写入 audit_log",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：5 次错误登录后 admin 进入 /admin/security 看到告警，标记已处理，查看密钥轮换历史"
       ],
       "depends_on": [
-        "S14"
+        "US-001",
+        "US-002"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 15,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     },
     {
-      "id": "S16",
-      "title": "回复网红筛选与优先级排序",
-      "priority": "medium",
-      "description": "对已回复网红进行质量评估和优先级排序。后端：GET /api/influencers?status=replied（筛选已回复网红），优先级评分逻辑：合作意向（来自 Classifier Agent 的 intent + confidence）+ 粉丝量级（分档：<10K/10K-100K/100K-1M/>1M）+ 内容匹配度（可选，后续迭代 LLM 分析）。综合评分 → priority: high/medium/low。BD 主管可手动调整 priority。前端：已回复网红筛选视图 — 默认按 priority 排序（high→medium→low），每行展示：网红名/平台/粉丝/回复意图/回复摘要/优先级徽章，支持手动调整优先级下拉。",
+      "id": "US-016",
+      "title": "系统诊断 /admin/diagnostics",
+      "description": "作为管理员，我需要一键检查系统各组件的健康状态（DB/Redis/WS/Scheduler/磁盘/内存），定位异常。",
       "acceptanceCriteria": [
-        "已回复网红列表按优先级排序",
-        "优先级评分综合考虑意图和粉丝量级",
-        "BD 主管可手动调整优先级",
-        "回复摘要正确展示",
-        "优先级徽章颜色区分（high=红/medium=黄/low=灰）"
+        "后端新增 server/app/api/admin/diagnostics.py：GET /api/admin/diagnostics/db DB 健康（连接池用量、当前活动连接、最近慢查询 top 10）；GET /api/admin/diagnostics/redis Redis 健康（连接、队列深度、key 数量）——如未使用 Redis 则返回 not_configured；GET /api/admin/diagnostics/websocket WS 活跃连接数、分通道统计；GET /api/admin/diagnostics/scheduler APScheduler 所有 job 状态（id/下次执行时间/最近执行结果）；GET /api/admin/diagnostics/system 磁盘使用率、内存使用率、Python 进程信息（使用 psutil）；POST /api/admin/diagnostics/healthcheck 一键全量自检（并行调用上述 5 个端点，返回汇总报告）",
+        "将 psutil 加入 requirements.txt",
+        "psutil 降级处理：diagnostics.py 中 import psutil 用 try/except ImportError 包裹；失败时 GET /api/admin/diagnostics/system 返回 status=not_available、reason=psutil not installed",
+        "前端 System 卡片检测到 status=not_available 时显示灰色提示：系统指标不可用（请联系运维安装 psutil），其他卡片按正常逻辑返回对应响应",
+        "前端新增 client/src/pages/admin/DiagnosticsPage.tsx：顶部运行完整自检大按钮，点击后并行检查 5 项，每项用卡片显示结果（绿/黄/红）；5 个诊断卡片：DB / Redis / WebSocket / Scheduler / System；每个卡片可展开看详情；Scheduler 卡片列出所有 job；System 卡片显示磁盘/内存进度条",
+        "Typecheck 通过",
+        "Lint 通过",
+        "使用 agent-browser 验证：admin 进入 /admin/diagnostics 点击一键自检，所有卡片显示状态，展开 Scheduler 卡片能看到 job"
       ],
       "depends_on": [
-        "S12",
-        "S15"
+        "US-001"
       ],
-      "passes": true,
-      "blocked": false,
+      "priority": 16,
+      "passes": false,
       "notes": "",
-      "retryCount": 0
-    },
-    {
-      "id": "S17",
-      "title": "月度自动追发（Responder Agent + APScheduler）",
-      "priority": "medium",
-      "description": "对未回复网红每月自动追发 1 封差异化邮件。后端：APScheduler CronTrigger 每日 10:00 UTC 执行 monthly_follow_up_check()：查询 influencers WHERE status='contacted' AND last_email_sent_at < now()-30d AND follow_up_count < max(默认6) AND 本月未发送。对每个网红：GPT-4o 生成差异化追发内容（传入 follow_up_count 确保每次角度不同），调用 Sender Agent 发送，follow_up_count += 1，超过 max → status=archived。如果中途网红回复，自动停止追发。前端：追发设置页 — 配置追发间隔天数（默认30）、最大追发次数（默认6）、追发时间（UTC时区）。追发日志列表。",
-      "acceptanceCriteria": [
-        "APScheduler 每日 10:00 UTC 执行追发检查",
-        "满足条件的未回复网红自动追发",
-        "每次追发内容差异化（GPT-4o 生成）",
-        "追发计数正确递增",
-        "超过最大次数自动归档",
-        "网红回复后自动停止追发",
-        "前端可配置追发策略参数"
-      ],
-      "depends_on": [
-        "S09",
-        "S10"
-      ],
-      "passes": true,
-      "blocked": false,
-      "notes": "",
-      "retryCount": 0
-    },
-    {
-      "id": "S18",
-      "title": "节假日祝福邮件",
-      "priority": "medium",
-      "description": "在国际节假日自动向所有活跃网红发送祝福邮件。后端：holidays 表预置节日数据（圣诞/新年/感恩节/情人节/万圣节/复活节），支持用户自定义添加。APScheduler CronTrigger 每日 08:00 UTC 检查今天是否节假日，是则：查询所有 status != archived 的网红，排除本月已收到追发/祝福的，GPT-4o 根据节日+行业生成个性化祝福，批量发送（不计入 follow_up_count）。前端：节假日管理页面 — 日历视图展示节日，支持添加/编辑/删除自定义节日。祝福发送日志。GET /api/holidays, POST /api/holidays, PUT /api/holidays/{id}, DELETE /api/holidays/{id}。",
-      "acceptanceCriteria": [
-        "预置 6 个国际节假日",
-        "节假日当天自动发送祝福邮件",
-        "祝福内容个性化（结合节日+行业）",
-        "不重复发送（本月已有追发/祝福的跳过）",
-        "祝福不计入追发次数",
-        "前端日历视图展示节日",
-        "支持用户自定义添加节日"
-      ],
-      "depends_on": [
-        "S09",
-        "S17"
-      ],
-      "passes": true,
-      "blocked": false,
-      "notes": "",
-      "retryCount": 0
-    },
-    {
-      "id": "S19",
-      "title": "数据仪表盘",
-      "priority": "medium",
-      "description": "首页数据仪表盘，展示核心运营指标。后端：GET /api/dashboard/stats（核心指标：总网红数/本周新增/总发送/本周发送/回复率/有效回复率/合作转化率），GET /api/dashboard/trends（近30天每日发送量+回复量折线数据），GET /api/dashboard/platform-distribution（各平台网红数量），GET /api/dashboard/mailbox-health（各邮箱使用量/限额/退信率）。前端：Dashboard 页面 — 顶部 5 个核心指标卡片，中部折线图（Recharts，近30天趋势），左下平台分布饼图，右下邮箱健康度表格（进度条展示使用率，退信率>10%标红告警）。",
-      "acceptanceCriteria": [
-        "5 个核心指标卡片数据正确",
-        "折线图展示近 30 天每日发送量和回复量",
-        "平台分布饼图正确展示",
-        "邮箱健康度表格展示使用率和退信率",
-        "退信率 > 10% 红色告警标识",
-        "页面加载时间 < 2 秒"
-      ],
-      "depends_on": [
-        "S09",
-        "S10",
-        "S11"
-      ],
-      "passes": true,
-      "blocked": false,
-      "notes": "",
-      "retryCount": 0
-    },
-    {
-      "id": "S20",
-      "title": "团队管理与权限控制",
-      "priority": "low",
-      "description": "管理员管理团队成员账号和权限。后端：GET /api/users, POST /api/users（管理员创建），PUT /api/users/{id}（修改角色/信息），DELETE /api/users/{id}（禁用）。权限中间件：admin 全部权限，manager 查看仪表盘+管理网红+配置模板，operator 创建任务+查看网红+处理回复。最多 10 个成员。前端：团队管理页面（仅 admin 可见）— 成员列表（用户名/角色/邮箱/状态），添加成员表单，编辑角色下拉，禁用/启用开关。非 admin 用户不显示团队管理导航项。",
-      "acceptanceCriteria": [
-        "管理员可创建/编辑/禁用团队成员",
-        "三种角色权限正确隔离",
-        "operator 无法访问团队管理和系统设置",
-        "manager 无法创建用户",
-        "最多 10 个团队成员限制",
-        "非 admin 不显示团队管理导航"
-      ],
-      "depends_on": [
-        "S02",
-        "S03"
-      ],
-      "passes": true,
-      "blocked": false,
-      "notes": "",
-      "retryCount": 0
-    },
-    {
-      "id": "S21",
-      "title": "系统设置与原生进程部署",
-      "priority": "low",
-      "description": "系统级配置页面 + 原生进程部署（不使用 Docker）。后端：GET /api/settings, PUT /api/settings（追发间隔天数/最大追发次数/抓取并发数/通知 Webhook URL）。设置存储在 JSON 配置文件或数据库。通知 Webhook：飞书/Slack 推送（POST 到用户配置的 Webhook URL）。部署：start.bat/start.sh 一键启动脚本（启动 FastAPI + Redis），nginx.conf 反向代理配置（API 代理 + 前端静态文件托管），PM2 ecosystem.config.js 进程管理配置（可选）。前端 build 产物由 nginx 托管。",
-      "acceptanceCriteria": [
-        "系统设置页面可配置追发策略、抓取并发数、Webhook URL",
-        "设置修改后立即生效",
-        "飞书/Slack Webhook 通知正确推送",
-        "start.bat/start.sh 一键启动所有服务（FastAPI + Redis）",
-        "nginx.conf 正确配置反向代理 API 和托管前端静态文件",
-        "服务重启后数据不丢失（SQLite 文件持久化）"
-      ],
-      "depends_on": [
-        "S17",
-        "S18",
-        "S19",
-        "S20"
-      ],
-      "passes": true,
-      "blocked": false,
-      "notes": "",
-      "retryCount": 0
+      "retryCount": 0,
+      "blocked": false
     }
   ]
 }

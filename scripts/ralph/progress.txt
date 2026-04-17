@@ -9,6 +9,11 @@
 - Pydantic v2: use model_validate() (not from_orm()), model_dump(exclude_unset=True) for PATCH
 - Enum fields on SQLAlchemy models: read .value for str output (e.g. inf.status.value)
 - New API router: add import + app.include_router() in main.py; prefix="/api" at register site
+- Admin API routers nested under server/app/api/admin/; registered in main.py with prefix="/api/admin"
+- require_admin dependency already exists in server/app/deps.py (checks role == "admin", raises 403)
+- Frontend admin components in client/src/components/admin/; pages in client/src/pages/admin/
+- Role-based post-login redirect: parse JWT from localStorage after login(), check role field
+- prd.json top-level key is "userStories" (not "stories")
 
 ---
 
@@ -737,4 +742,24 @@
 
 **未来迭代的学习：**
 - 模块顶部 docstring 应与实际行为保持同步，过时的注释会在验证时被标记为实现不一致
+---
+
+--- [RALPH] Iteration 1 started: US-001 at 2026-04-17 10:43 ---
+
+## 2026-04-17 - US-001
+- 实现了 Admin 路由地基（后端 + 前端）
+- 后端：server/app/api/admin/__init__.py, deps.py（re-export require_admin）, overview.py（GET /api/admin/overview/ping, Depends(require_admin)）
+- server/app/main.py：注册 admin_overview_router，prefix="/api/admin"
+- 前端：client/src/components/admin/AdminLayout.tsx（bg-slate-900 侧栏 + ADMIN CONSOLE 标题 + 白色主内容区）
+- 前端：client/src/components/admin/AdminSidebar.tsx（16 个菜单项，NavLink 高亮当前路由）
+- 前端：client/src/components/admin/RequireAdmin.tsx（非 admin role 重定向 /dashboard）
+- 前端：client/src/pages/admin/AdminOverviewPage.tsx（占位页面）
+- 前端：client/src/api/admin/client.ts（axios 实例，baseURL=/api/admin，共享 JWT 拦截器）
+- 更新 client/src/App.tsx：新增 /admin/overview 路由 + /admin 重定向
+- 更新 client/src/pages/LoginPage.tsx：登录后解析 JWT role，admin 跳 /admin/overview，其余跳 /dashboard
+
+**未来迭代的学习：**
+- authStore 的 login() 在 resolve 后 localStorage 已含新 token，LoginPage 可直接解析 localStorage 获取 role，无需从 AuthContext state 读（state 更新有异步延迟）
+- 前端 eslint 有 7 个 pre-existing error（不在 admin 相关文件），新建文件 lint 全部干净
+- git status 使用 ??(untracked) 查找新文件；新目录需手动 mkdir 后 Write
 ---
