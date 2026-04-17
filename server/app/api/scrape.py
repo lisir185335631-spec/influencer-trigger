@@ -14,7 +14,7 @@ from app.services.scrape_service import (
     get_task_influencers,
     list_scrape_tasks,
 )
-from app.agents.scraper import run_scraper_agent
+from app.agents.supervisor import run_scraper_with_tracking
 
 logger = logging.getLogger(__name__)
 
@@ -49,7 +49,7 @@ async def create_task(
 async def _launch_scraper(task_id: int) -> None:
     """Wrapper to run the scraper coroutine in the background."""
     try:
-        await run_scraper_agent(task_id)
+        await run_scraper_with_tracking(task_id)
     except Exception:
         logger.exception("Background scraper for task %d raised unexpectedly", task_id)
 

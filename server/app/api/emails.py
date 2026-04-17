@@ -22,7 +22,7 @@ from app.services.email_service import (
     list_campaigns,
     list_emails,
 )
-from app.agents.sender import run_sender_agent
+from app.agents.supervisor import run_sender_with_tracking
 
 logger = logging.getLogger(__name__)
 
@@ -63,7 +63,7 @@ async def send_batch(
 
 async def _launch_sender(campaign_id: int, influencer_ids: list[int], template_id: int) -> None:
     try:
-        await run_sender_agent(campaign_id, influencer_ids, template_id)
+        await run_sender_with_tracking(campaign_id, influencer_ids, template_id)
     except Exception:
         logger.exception("Sender agent for campaign %d raised unexpectedly", campaign_id)
 

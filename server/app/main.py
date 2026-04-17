@@ -20,6 +20,7 @@ import app.models.scrape_task_influencer  # noqa: F401
 import app.models.system_settings  # noqa: F401
 import app.models.platform_quota  # noqa: F401
 import app.models.compliance_keywords  # noqa: F401
+import app.models.agent_run  # noqa: F401
 from app.api.auth import router as auth_router
 from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router
@@ -41,6 +42,7 @@ from app.api.admin.mailboxes_admin import router as admin_mailboxes_router
 from app.api.admin.influencers_admin import router as admin_influencers_router
 from app.api.admin.scrape_admin import router as admin_scrape_router
 from app.api.admin.templates_admin import router as admin_templates_router
+from app.api.admin.agents_monitor import router as admin_agents_router
 from app.middleware.audit_middleware import AuditMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -75,6 +77,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0",
             "ALTER TABLE templates ADD COLUMN is_published BOOLEAN DEFAULT 1 NOT NULL",
             "ALTER TABLE templates ADD COLUMN compliance_flags VARCHAR(1024) DEFAULT '' NOT NULL",
+            "CREATE TABLE IF NOT EXISTS agent_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_name VARCHAR(64) NOT NULL, task_id VARCHAR(128), state VARCHAR(16) NOT NULL DEFAULT 'pending', input_snapshot TEXT, output_snapshot TEXT, error_message TEXT, error_stack TEXT, started_at DATETIME, finished_at DATETIME, duration_ms INTEGER, token_cost_usd REAL, llm_calls_count INTEGER DEFAULT 0)",
+            "CREATE INDEX IF NOT EXISTS ix_agent_runs_agent_started ON agent_runs (agent_name, started_at)",
+            "CREATE INDEX IF NOT EXISTS ix_agent_runs_state_started ON agent_runs (state, started_at)",
         ]:
             try:
                 await _mig_db.execute(sa_text(stmt))
@@ -107,8 +112,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     async with AsyncSessionLocal() as db:
         await seed_default_holidays(db)
 
+    from app.agents.supervisor import run_holiday_with_tracking
     scheduler.add_job(
-        holiday_greeting_check,
+        run_holiday_with_tracking,
         CronTrigger(hour=8, minute=0, timezone="UTC"),
         id="holiday_greeting",
         replace_existing=True,
@@ -118,10 +124,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     scheduler.start()
     logger.info("Scheduler started.")
 
-    # Start IMAP monitor background task
-    from app.agents.monitor import run_monitor_agent
+    # Start IMAP monitor background task (wrapped with tracking)
+    from app.agents.supervisor import run_monitor_with_tracking
     monitor_task: asyncio.Task = asyncio.create_task(
-        run_monitor_agent(), name="monitor_agent"
+        run_monitor_with_tracking(), name="monitor_agent"
     )
     logger.info("Monitor Agent background task started.")
 
@@ -182,6 +188,7 @@ app.include_router(admin_mailboxes_router, prefix="/api/admin")
 app.include_router(admin_influencers_router, prefix="/api/admin")
 app.include_router(admin_scrape_router, prefix="/api/admin")
 app.include_router(admin_templates_router, prefix="/api/admin")
+app.include_router(admin_agents_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")
