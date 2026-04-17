@@ -1,7 +1,6 @@
 """
 Admin Settings API — system config + Feature Flag CRUD.
 """
-import os
 from typing import List, Optional
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -9,6 +8,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy import delete, select
 
 from app.api.admin.deps import require_admin
+from app.config import get_settings
 from app.database import AsyncSessionLocal
 from app.models.feature_flag import FeatureFlag
 from app.models.system_settings import SystemSettings
@@ -88,7 +88,7 @@ async def _get_or_create_system_settings(db) -> SystemSettings:
 
 
 def _llm_key_status() -> LLMKeyStatus:
-    key = os.environ.get("OPENAI_API_KEY", "")
+    key = get_settings().openai_api_key
     if key:
         return LLMKeyStatus(status="configured", last_four=key[-4:])
     return LLMKeyStatus(status="not_configured", last_four=None)
