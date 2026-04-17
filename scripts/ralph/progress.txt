@@ -802,3 +802,29 @@
   - freeze 操作同时递增 token_version，保证冻结用户的现有 token 立即失效
   - 破坏性操作（reset-password/force-logout）需在后端验证管理员自身密码，不能只靠前端 confirm modal
 ---
+
+--- [RALPH] Iteration 1 started: US-003 at 2026-04-17 14:03 ---
+
+## 2026-04-17 - US-003
+- 实现了平台总览大屏 /admin/overview
+- 后端：server/app/api/admin/overview.py 新增 3 个端点（/metrics、/health、/recent-events）
+  - /metrics：用户数、7天邮件/抓取趋势、平台分布环形图数据
+  - /health：DB/Scheduler/Monitor Agent/WebSocket/Mailbox Pool 5项健康状态
+  - /recent-events：最近20条 Notification 记录
+- 前端：client/src/pages/admin/AdminOverviewPage.tsx 完整仪表盘
+  - 顶部4个大数字 MetricCard（今日邮件/新增网红/回复/活跃Agent）
+  - 中部3个 recharts 图表（邮件趋势折线/抓取任务柱状/平台环形图）
+  - 系统健康面板（5个指示灯 DB/Scheduler/Monitor/WebSocket/邮箱池）
+  - 右侧事件流时间轴（最近20条 Recent Events）
+- 前端 API：client/src/api/admin/overview.ts
+- 30秒自动轮询 + 手动刷新按钮
+- 变更文件：
+  - server/app/api/admin/overview.py
+  - client/src/api/admin/overview.ts
+  - client/src/pages/admin/AdminOverviewPage.tsx
+- **未来迭代的学习：**
+  - recharts 已在 package.json 中（^3.8.1），无需重新安装
+  - mailbox 健康评分：active-100*(bounce_rate), inactive-30, error-0；依此判断邮箱池绿/黄/红
+  - monitor_agent task name 为 "monitor_agent"，可用 asyncio.all_tasks() + task.get_name() 检测
+  - SQLite 不支持 func.now() 的时区偏移，datetime.combine + date.today() 是更可靠的时间范围计算方式
+---
