@@ -221,8 +221,8 @@
       ],
       "priority": 8,
       "passes": true,
-      "notes": "",
-      "retryCount": 0,
+      "notes": "[验证失败 - 第1次] 2026-04-17 19:30\n- 失败项1：GET /api/admin/influencers/duplicates 仅实现了 name+platform 相似度 > 0.9 的检测，未实现 AC 明确要求的 email 精确匹配分组（两条路径：email exact match OR name+platform sim > 0.9 应 OR 合并入同一 Union-Find 结构）\n- 失败项2：GET /api/admin/influencers 管理员列表返回的字段缺少「创建者」（creator）。AC 要求「比前台多显示：创建者、创建时间、所有关联 task_id、邮件发送次数」，其中 created_at、task_ids、email_count 已有，但 creator 字段缺失。Influencer 模型无 created_by 列，需新增外键或通过 scrape_task → user 关联推断创建者（或为 MVP 返回 null/未知）\n- 建议修复方向：(1) 在 get_duplicates() 中增加 email 精确匹配分组逻辑：按 email GROUP BY 找出 count > 1 的 email，将同 email 的 influencer union 在一起；(2) 为 creator 字段：最简方案是在 _inf_dict 中返回 created_by: null（明确标记 model 未支持），或在 Influencer 模型新增 nullable 的 created_by_user_id 外键",
+      "retryCount": 1,
       "blocked": false
     },
     {
