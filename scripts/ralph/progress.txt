@@ -1,3 +1,11 @@
+## 2026-04-18 11:00 - US-013 (fix retry)
+- 修复 server/app/api/admin/holidays_admin.py：添加 `from sqlalchemy import case`，将两处 func.case(..., else_=0) 改为 case(..., else_=0)
+- TypeScript typecheck 通过；ESLint 通过；Python import 通过
+- **未来迭代的学习：**
+  - SQLAlchemy case() 必须直接从 sqlalchemy import，不能通过 func.case() 调用（func 只包装 DB 原生函数）
+  - 修复前务必用 python -c "import app.xxx" 验证 Python import 无误
+---
+
 ## 2026-04-18 10:30 - US-013
 - 新增 server/app/models/holiday.py：添加 sensitive_regions 字段（VARCHAR(512) 逗号分隔 region code）
 - 新增 server/app/api/admin/followup_admin.py：GET/PATCH /followup/settings；GET /followup/responder-logs；POST /followup/pause-all；POST /followup/resume-all
@@ -1181,3 +1189,7 @@
 --- [RALPH] Iteration 13 ended: US-012 (1小时 5分钟 22秒) ---
 
 --- [RALPH] Iteration 14 started: US-013 at 2026-04-18 01:00 ---
+
+--- [RALPH] Iteration 14 ended: US-013 (26分钟 22秒) ---
+
+--- [RALPH] Iteration 15 started: US-013 at 2026-04-18 01:26 ---
