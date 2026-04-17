@@ -14,6 +14,10 @@
 - Frontend admin components in client/src/components/admin/; pages in client/src/pages/admin/
 - Role-based post-login redirect: parse JWT from localStorage after login(), check role field
 - prd.json top-level key is "userStories" (not "stories")
+- token_version field in User model + JWT payload ("tv" claim) enables force-logout by incrementing DB value
+- get_current_user is now async and queries DB on every request to validate token_version (one extra query per auth'd request)
+- write_login_history() creates its own AsyncSession to avoid transaction rollback on login failures
+- ALT TABLE migrations in main.py lifespan use try/except silently (column may already exist)
 
 ---
 
@@ -775,4 +779,26 @@
   - Admin 嵌套路由：`<Route path="/admin" element={<RequireAdmin><AdminLayout><Outlet /></AdminLayout></RequireAdmin>}>` 包裹子路由
   - 子路由无需写完整路径（`path="overview"` 非 `path="/admin/overview"`）
   - `<Route index element={<Navigate to="overview" replace />} />` 处理 /admin 默认跳转
+---
+
+--- [RALPH] Iteration 1 started: US-002 at 2026-04-17 12:47 ---
+
+## 2026-04-17 - US-002
+- 实现用户与权限中心 /admin/users
+- 新增 server/app/models/login_history.py (id, user_id, ip, user_agent, success, failed_reason, created_at)
+- User 模型新增 token_version 字段（SQLAlchemy mapped_column + lifespan ALTER TABLE 迁移）
+- server/app/models/__init__.py 导入 LoginHistory（使 create_tables 建表）
+- JWT payload 新增 "tv" 字段携带 token_version；decode_token 解出并填入 TokenData
+- get_current_user 升级为 async + DB 查询，验证 token_version 不匹配则 401
+- auth_service.py 新增 write_login_history()，使用独立 AsyncSession，登录成功/失败都写
+- auth.py login 写登录历史 + 传入 token_version；refresh 也验证 token_version
+- server/app/api/admin/users_admin.py：GET /api/admin/users（分页+搜索+角色筛选）、POST /create、PATCH /{id}、POST reset-password/force-logout/GET login-history
+- client/src/api/admin/users.ts：管理员用户 API 客户端
+- client/src/pages/admin/UsersAdminPage.tsx：完整用户管理页（表格+搜索+模态框+破坏性操作密码确认）
+- App.tsx 新增 /admin/users 路由
+**未来迭代的学习：**
+  - write_login_history 必须用独立 Session，不能复用 get_db session（因为 login 失败会 rollback 整个事务）
+  - get_current_user 变为 async 后所有使用 Depends(get_current_user) 的路由自动适配，无需修改
+  - freeze 操作同时递增 token_version，保证冻结用户的现有 token 立即失效
+  - 破坏性操作（reset-password/force-logout）需在后端验证管理员自身密码，不能只靠前端 confirm modal
 ---
