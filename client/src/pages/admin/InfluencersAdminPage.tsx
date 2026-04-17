@@ -69,7 +69,7 @@ function QualityPie({
           <Cell fill="#e5e7eb" />
         </Pie>
         <Tooltip
-          formatter={(value: number, name: string) => [value, name]}
+          formatter={(value, name) => [value, name]}
         />
       </PieChart>
       <div className="text-center">
