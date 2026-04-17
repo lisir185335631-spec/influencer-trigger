@@ -865,3 +865,21 @@
 --- [RALPH] Iteration 2 ended: US-003 (40分钟 42秒) ---
 
 --- [RALPH] Iteration 3 started: US-004 at 2026-04-17 15:30 ---
+
+--- [RALPH] Iteration 3 ended: US-004 (26分钟 47秒) ---
+
+--- [RALPH] Iteration 4 started: US-005 at 2026-04-17 15:57 ---
+
+## 2026-04-17 15:00 - US-005
+- 实现审计日志 UI 完整功能页面
+- 新增 client/src/api/admin/audit.ts：listAuditLogs/getAuditStats/downloadAuditCsv 三个 API 函数
+- 新增 client/src/pages/admin/AuditLogPage.tsx：过滤面板（用户/action/resource_type/method/日期范围/关键字）、7天趋势堆叠 BarChart、分页表格（50条/页）、行展开看 request/response snippet、Export CSV 按钮
+- 更新 client/src/App.tsx：注册 /admin/audit 路由
+- **未来迭代的学习：**
+  - 在 tbody 内映射多行（tr + 展开 tr）需要用 Fragment with key，不能用 <> shorthand
+  - axios responseType: 'blob' 返回 Blob，用 URL.createObjectURL 触发下载；auth header 由 adminClient interceptor 自动附加
+  - recharts 堆叠柱状图：给每个 Bar 设置相同 stackId，radius 只设置在最顶层 Bar
+  - 过滤分为 draftFilters（本地编辑状态）和 filters（已提交状态），Apply 按钮触发同步，避免每次输入都触发请求
+  - 日期过滤从 HTML date input (YYYY-MM-DD) 转为后端 datetime（T00:00:00 / T23:59:59）
+  - browser 测试：无 agent-browser 工具，需手动验证
+---
