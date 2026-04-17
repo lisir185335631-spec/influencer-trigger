@@ -3,6 +3,8 @@ import { AuthProvider } from './stores/AuthContext'
 import { WebSocketProvider } from './stores/WebSocketContext'
 import ProtectedRoute from './components/ProtectedRoute'
 import MainLayout from './components/layout/MainLayout'
+import AdminLayout from './components/admin/AdminLayout'
+import RequireAdmin from './components/admin/RequireAdmin'
 import LoginPage from './pages/LoginPage'
 import DashboardPage from './pages/DashboardPage'
 import ScrapePage from './pages/ScrapePage'
@@ -17,6 +19,7 @@ import SettingsPage from './pages/SettingsPage'
 import ImportPage from './pages/ImportPage'
 import InfluencerDetailPage from './pages/InfluencerDetailPage'
 import HolidaysPage from './pages/HolidaysPage'
+import AdminOverviewPage from './pages/admin/AdminOverviewPage'
 
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
@@ -52,6 +55,17 @@ function App() {
                 }
               />
             ))}
+            <Route
+              path="/admin/overview"
+              element={
+                <RequireAdmin>
+                  <AdminLayout>
+                    <AdminOverviewPage />
+                  </AdminLayout>
+                </RequireAdmin>
+              }
+            />
+            <Route path="/admin" element={<Navigate to="/admin/overview" replace />} />
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
         </WebSocketProvider>

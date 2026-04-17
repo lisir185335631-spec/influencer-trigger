@@ -31,6 +31,7 @@ from app.api.holidays import router as holidays_router
 from app.api.dashboard import router as dashboard_router
 from app.api.users import router as users_router
 from app.api.settings import router as settings_router
+from app.api.admin.overview import router as admin_overview_router
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -51,6 +52,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting up Influencer Trigger service...")
     await create_tables()
     logger.info("Database tables created/verified.")
+
+    # Migrate: add new columns to existing tables (SQLite)
+    from sqlalchemy import text as sa_text
+    async with AsyncSessionLocal() as _mig_db:
+        for stmt in [
+            "ALTER TABLE scrape_tasks ADD COLUMN target_market VARCHAR(64)",
+            "ALTER TABLE scrape_tasks ADD COLUMN search_keywords TEXT",
+            "ALTER TABLE scrape_tasks ADD COLUMN competitor_brands VARCHAR(256)",
+            "ALTER TABLE influencers ADD COLUMN relevance_score FLOAT",
+            "ALTER TABLE influencers ADD COLUMN match_reason TEXT",
+        ]:
+            try:
+                await _mig_db.execute(sa_text(stmt))
+                await _mig_db.commit()
+            except Exception:
+                await _mig_db.rollback()
 
     scheduler.add_job(
         _reset_today_sent_job,
@@ -143,6 +160,7 @@ app.include_router(holidays_router, prefix="/api")
 app.include_router(dashboard_router, prefix="/api")
 app.include_router(users_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
+app.include_router(admin_overview_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")
