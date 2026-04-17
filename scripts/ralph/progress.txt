@@ -1,3 +1,14 @@
+## 2026-04-18 00:10 - US-012
+- 修复：重启 uvicorn 服务（ports 6009, 6002）以加载新增的 usage router
+- 验证所有 API 端点工作正常：/api/admin/usage/summary、/trend、/breakdown、/alerts、/budget
+- 浏览器验证：/admin/usage 页面加载，4 个指标卡显示（$0.0125 cost, 1500 tokens, 5 emails）
+- 浏览器验证：设置月度预算 $500 通过
+- **未来迭代的学习：**
+  - uvicorn 无 --reload 时新增路由需要手动重启；验证失败时先检查 server restart
+  - gstack browse chain 中必须在 goto + wait 后才能访问 localStorage；每次新 chain 调用都是独立上下文
+  - 生成 admin token 绕过 rate limit 用：cd server && .venv/Scripts/python -c "from app.services.auth_service import create_access_token; print(create_access_token(1,'admin','admin',0))"
+---
+
 ## Codebase Patterns
 - Unified LLM client at server/app/tools/llm_client.py — all OpenAI calls must go through llm_client.chat(); auto-records token usage via asyncio.create_task() fire-and-forget
 - SQLite UPSERT pattern: use `from sqlalchemy.dialects.sqlite import insert as sqlite_insert` with `.on_conflict_do_update(index_elements=[...], set_={...})`
@@ -1144,3 +1155,7 @@
   - "按用户 Top 10 成本排行"用已有 /breakdown?metric=email_sent 端点即可，sub_key 存的是 user_id，无需新增端点
   - 底部 table 的数据源要与标题严格一致，model 数据不能用作 user 表格
 ---
+
+--- [RALPH] Iteration 12 ended: US-012 (36分钟 2秒) ---
+
+--- [RALPH] Iteration 13 started: US-012 at 2026-04-17 23:54 ---
