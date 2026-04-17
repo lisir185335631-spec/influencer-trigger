@@ -7,7 +7,7 @@ from typing import Optional
 from fastapi import APIRouter, HTTPException
 from fastapi.params import Depends
 from pydantic import BaseModel
-from sqlalchemy import func, select
+from sqlalchemy import case, func, select
 
 from app.api.admin.deps import require_admin
 from app.database import AsyncSessionLocal
@@ -203,7 +203,7 @@ async def get_investment_report(
                 func.strftime('%Y', Email.sent_at).label("year"),
                 func.count(Email.id).label("total"),
                 func.sum(
-                    func.case(
+                    case(
                         (Email.status.in_([
                             EmailStatus.opened.value, EmailStatus.clicked.value, EmailStatus.replied.value
                         ]), 1),
@@ -211,7 +211,7 @@ async def get_investment_report(
                     )
                 ).label("opened"),
                 func.sum(
-                    func.case(
+                    case(
                         (Email.status == EmailStatus.replied.value, 1),
                         else_=0,
                     )
