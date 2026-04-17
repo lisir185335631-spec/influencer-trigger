@@ -33,6 +33,23 @@
 
 ---
 
+## 2026-04-17 15:30 - US-009
+- 新增 server/app/models/platform_quota.py：PlatformQuota 模型（platform unique, daily_limit, today_used, last_reset_at）
+- 新增 server/app/api/admin/scrape_admin.py：5 个端点（GET /tasks 全量任务含创建者；POST /tasks/{id}/force-terminate 强制终止；POST /tasks/{id}/retry 重试；GET /platform-quota；PATCH /platform-quota）
+- 更新 server/app/models/__init__.py：import PlatformQuota
+- 更新 server/app/main.py：import platform_quota model + 注册 admin_scrape_router
+- 新增 client/src/api/admin/scrape_admin.ts：TypeScript API 客户端
+- 新增 client/src/pages/admin/ScrapeAdminPage.tsx：Tab 切换（任务列表/平台配额），运行中行高亮，force-terminate confirm modal，平台进度条点击编辑
+- 更新 client/src/App.tsx：添加 /admin/scrape 路由
+- TypeScript typecheck 通过；ESLint 通过；Python import 通过
+- **未来迭代的学习：**
+  - PlatformQuota 用 _ensure_quota() 懒加载模式，首次访问时自动创建 5 个平台记录
+  - main.py 需要显式 `import app.models.platform_quota  # noqa: F401` 才能让 create_all 感知到新模型
+  - force-terminate 通过在 DB 更新 status=cancelled 实现；scraper 不感知取消信号，但 DB 状态已正确反映
+  - BackgroundTasks 在 FastAPI handler 中用于重试时重新启动 scraper，需要 background_tasks 参数
+  - 强制终止 confirm modal 用 setConfirmTaskId(taskId) 触发，onConfirm 传入具体 taskId 避免闭包问题
+---
+
 ## 2026-04-17 14:00 - US-008
 - 验证并确认 US-008 实现完整（Validator 上次因 Windows 进程崩溃 code=3221225786 异常退出，非代码问题）
 - 已完成：server/app/api/admin/influencers_admin.py（6 个端点：列表/重复/质量报告/合并/MX验证启动/MX验证状态）
@@ -1009,3 +1026,7 @@
   - Recharts Tooltip formatter 签名：(value: ValueType, name: string) → ValueType 来自 recharts；最简修复是去掉显式类型注解让 TS 自动推断
   - TypeScript 严格模式下，第三方库的 callback 参数类型必须与库定义一致，不能随意缩窄为 number
 ---
+
+--- [RALPH] Iteration 5 ended: US-008 (22分钟 17秒) ---
+
+--- [RALPH] Iteration 6 started: US-009 at 2026-04-17 20:03 ---
