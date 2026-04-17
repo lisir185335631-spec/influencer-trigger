@@ -24,6 +24,7 @@ import UsersAdminPage from './pages/admin/UsersAdminPage'
 import AuditLogPage from './pages/admin/AuditLogPage'
 import EmailsAdminPage from './pages/admin/EmailsAdminPage'
 import MailboxesAdminPage from './pages/admin/MailboxesAdminPage'
+import InfluencersAdminPage from './pages/admin/InfluencersAdminPage'
 
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
@@ -75,6 +76,7 @@ function App() {
               <Route path="audit" element={<AuditLogPage />} />
               <Route path="emails" element={<EmailsAdminPage />} />
               <Route path="mailboxes" element={<MailboxesAdminPage />} />
+              <Route path="influencers" element={<InfluencersAdminPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
