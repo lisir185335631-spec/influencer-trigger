@@ -26,6 +26,7 @@ import EmailsAdminPage from './pages/admin/EmailsAdminPage'
 import MailboxesAdminPage from './pages/admin/MailboxesAdminPage'
 import InfluencersAdminPage from './pages/admin/InfluencersAdminPage'
 import ScrapeAdminPage from './pages/admin/ScrapeAdminPage'
+import TemplatesAdminPage from './pages/admin/TemplatesAdminPage'
 
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
@@ -79,6 +80,7 @@ function App() {
               <Route path="mailboxes" element={<MailboxesAdminPage />} />
               <Route path="influencers" element={<InfluencersAdminPage />} />
               <Route path="scrape" element={<ScrapeAdminPage />} />
+              <Route path="templates" element={<TemplatesAdminPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>

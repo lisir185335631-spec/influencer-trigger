@@ -17,6 +17,7 @@ from app.models.login_history import LoginHistory
 from app.models.audit_log import AuditLog
 from app.models.email_blacklist import EmailBlacklist
 from app.models.platform_quota import PlatformQuota
+from app.models.compliance_keywords import ComplianceKeyword
 
 __all__ = [
     "User",
@@ -38,4 +39,5 @@ __all__ = [
     "AuditLog",
     "EmailBlacklist",
     "PlatformQuota",
+    "ComplianceKeyword",
 ]

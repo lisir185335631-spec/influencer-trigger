@@ -19,6 +19,7 @@ from app.api.health import router as health_router
 import app.models.scrape_task_influencer  # noqa: F401
 import app.models.system_settings  # noqa: F401
 import app.models.platform_quota  # noqa: F401
+import app.models.compliance_keywords  # noqa: F401
 from app.api.auth import router as auth_router
 from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router
@@ -39,6 +40,7 @@ from app.api.admin.emails_admin import router as admin_emails_router
 from app.api.admin.mailboxes_admin import router as admin_mailboxes_router
 from app.api.admin.influencers_admin import router as admin_influencers_router
 from app.api.admin.scrape_admin import router as admin_scrape_router
+from app.api.admin.templates_admin import router as admin_templates_router
 from app.middleware.audit_middleware import AuditMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -71,6 +73,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "ALTER TABLE influencers ADD COLUMN relevance_score FLOAT",
             "ALTER TABLE influencers ADD COLUMN match_reason TEXT",
             "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0",
+            "ALTER TABLE templates ADD COLUMN is_published BOOLEAN DEFAULT 1 NOT NULL",
+            "ALTER TABLE templates ADD COLUMN compliance_flags VARCHAR(1024) DEFAULT '' NOT NULL",
         ]:
             try:
                 await _mig_db.execute(sa_text(stmt))
@@ -177,6 +181,7 @@ app.include_router(admin_emails_router, prefix="/api/admin")
 app.include_router(admin_mailboxes_router, prefix="/api/admin")
 app.include_router(admin_influencers_router, prefix="/api/admin")
 app.include_router(admin_scrape_router, prefix="/api/admin")
+app.include_router(admin_templates_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")

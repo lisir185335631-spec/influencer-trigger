@@ -26,10 +26,12 @@ router = APIRouter(prefix="/templates", tags=["templates"])
 @router.get("/", response_model=list[TemplateResponse])
 async def get_templates(
     industry: str | None = Query(None, description="Filter by industry"),
+    include_unpublished: bool = Query(False, description="Include unpublished templates (admin only)"),
     db: AsyncSession = Depends(get_db),
-    _: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(get_current_user),
 ):
-    return await list_templates(db, industry=industry)
+    admin_include = include_unpublished and current_user.role == "admin"
+    return await list_templates(db, industry=industry, include_unpublished=admin_include)
 
 
 @router.post("/", response_model=TemplateResponse, status_code=status.HTTP_201_CREATED)

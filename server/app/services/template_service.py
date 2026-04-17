@@ -13,10 +13,16 @@ logger = logging.getLogger(__name__)
 # ─── CRUD ─────────────────────────────────────────────────────────────────────
 
 
-async def list_templates(db: AsyncSession, industry: str | None = None) -> list[Template]:
+async def list_templates(
+    db: AsyncSession,
+    industry: str | None = None,
+    include_unpublished: bool = False,
+) -> list[Template]:
     stmt = select(Template).order_by(Template.created_at.desc())
     if industry:
         stmt = stmt.where(Template.industry == industry)
+    if not include_unpublished:
+        stmt = stmt.where(Template.is_published == True)  # noqa: E712
     result = await db.execute(stmt)
     return list(result.scalars().all())
 
