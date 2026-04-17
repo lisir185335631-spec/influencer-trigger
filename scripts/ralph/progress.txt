@@ -1,3 +1,20 @@
+## 2026-04-18 12:00 - US-014
+- 新增 server/app/models/feature_flag.py：FeatureFlag 模型（id, flag_key unique, enabled, description, rollout_percentage, target_roles, updated_by_user_id, created_at, updated_at）
+- 更新 server/app/models/system_settings.py：新增 webhook_default_url、default_daily_quota 字段
+- 更新 server/app/models/__init__.py：import FeatureFlag
+- 新增 server/app/api/admin/settings_admin.py：GET/PATCH /settings/system（含 LLM Key 只读状态从 os.environ 读取）；GET/POST/PATCH/DELETE /settings/flags CRUD；GET /settings/flags/{key}/check
+- 更新 server/app/main.py：noqa import feature_flag；迁移 system_settings 两列 + CREATE TABLE feature_flags；注册 admin_settings_router
+- 新增 client/src/api/admin/settings_admin.ts：TypeScript API 客户端
+- 新增 client/src/pages/admin/SettingsAdminPage.tsx：Tab 切换系统参数/Feature Flag；LLM Key 只读 badge；Webhook/配额表单；Flag 表格（行展开详情+行内编辑）；New Flag modal（key/desc/rollout滑块/角色多选）
+- 更新 client/src/App.tsx：添加 /admin/settings 路由
+- TypeScript typecheck 通过；ESLint 通过；Python import 通过
+- **未来迭代的学习：**
+  - LLM Key 状态通过 os.environ.get("OPENAI_API_KEY", "") 读取，返回 configured + last_four，绝不存库
+  - SystemSettings 新增字段要同时更新模型类和 main.py 迁移语句，用 getattr(row, 'field', default) 防兼容问题
+  - Feature Flag 的 rollout 检查：user_id % 100 < rollout_percentage（用户 ID 模 100 做分桶）
+  - 行内编辑用 Record<string, FeatureFlagOut> state，key 为 flag_key，保存后 delete 该 key 退出编辑模式
+---
+
 ## 2026-04-18 11:00 - US-013 (fix retry)
 - 修复 server/app/api/admin/holidays_admin.py：添加 `from sqlalchemy import case`，将两处 func.case(..., else_=0) 改为 case(..., else_=0)
 - TypeScript typecheck 通过；ESLint 通过；Python import 通过
@@ -1193,3 +1210,7 @@
 --- [RALPH] Iteration 14 ended: US-013 (26分钟 22秒) ---
 
 --- [RALPH] Iteration 15 started: US-013 at 2026-04-18 01:26 ---
+
+--- [RALPH] Iteration 15 ended: US-013 (1小时 3分钟 32秒) ---
+
+--- [RALPH] Iteration 16 started: US-014 at 2026-04-18 02:30 ---
