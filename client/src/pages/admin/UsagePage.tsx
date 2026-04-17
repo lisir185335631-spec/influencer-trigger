@@ -55,6 +55,7 @@ export default function UsagePage() {
   const [summary, setSummary] = useState<UsageSummary | null>(null)
   const [trend, setTrend] = useState<TrendPoint[]>([])
   const [breakdown, setBreakdown] = useState<BreakdownItem[]>([])
+  const [userBreakdown, setUserBreakdown] = useState<BreakdownItem[]>([])
   const [alerts, setAlerts] = useState<UsageAlerts | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -66,15 +67,17 @@ export default function UsagePage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      const [s, t, b, a] = await Promise.all([
+      const [s, t, b, ub, a] = await Promise.all([
         getUsageSummary(period),
         getUsageTrend('llm_token', '30d'),
         getUsageBreakdown('llm_token', 'model'),
+        getUsageBreakdown('email_sent', 'user'),
         getUsageAlerts(),
       ])
       setSummary(s)
       setTrend(t.data)
       setBreakdown(b.data)
+      setUserBreakdown(ub.data)
       setAlerts(a)
     } finally {
       setLoading(false)
@@ -270,28 +273,26 @@ export default function UsagePage() {
       {/* Top users table */}
       <div className="bg-white border border-gray-100 rounded-lg p-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-4">
-          Top Cost by Model (This Month)
+          Top 10 Users by Cost (This Month)
         </h2>
-        {breakdown.length === 0 ? (
+        {userBreakdown.length === 0 ? (
           <p className="text-sm text-gray-400">No usage data recorded yet.</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="text-left py-2 text-xs text-gray-400 font-medium">Model</th>
-                <th className="text-right py-2 text-xs text-gray-400 font-medium">Tokens</th>
-                <th className="text-right py-2 text-xs text-gray-400 font-medium">Cost (USD)</th>
+                <th className="text-left py-2 text-xs text-gray-400 font-medium">#</th>
+                <th className="text-left py-2 text-xs text-gray-400 font-medium">User</th>
+                <th className="text-right py-2 text-xs text-gray-400 font-medium">Emails Sent</th>
               </tr>
             </thead>
             <tbody>
-              {breakdown.map((row, i) => (
+              {userBreakdown.slice(0, 10).map((row, i) => (
                 <tr key={i} className="border-b border-gray-50 hover:bg-gray-50">
+                  <td className="py-2.5 text-gray-400 w-8">{i + 1}</td>
                   <td className="py-2.5 text-gray-700">{row.key}</td>
                   <td className="py-2.5 text-right text-gray-600">
                     {row.value.toLocaleString()}
-                  </td>
-                  <td className="py-2.5 text-right font-mono text-gray-700">
-                    ${row.cost_usd.toFixed(4)}
                   </td>
                 </tr>
               ))}
