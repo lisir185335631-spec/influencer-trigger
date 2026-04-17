@@ -33,6 +33,25 @@
 
 ---
 
+## 2026-04-17 16:30 - US-010
+- 新增 server/app/models/compliance_keywords.py：ComplianceKeyword 模型（id, keyword, category, severity, created_at）
+- 修改 server/app/models/template.py：新增 is_published (bool=true) 和 compliance_flags (str='') 字段
+- 更新 server/app/models/__init__.py：import ComplianceKeyword
+- 新增 server/app/api/admin/templates_admin.py：5 个模板端点（GET /templates 全量含创建者/用量/成功率；POST /{id}/publish；POST /{id}/unpublish；POST /{id}/compliance-scan；GET /templates/ranking top20）+ 3 个关键词端点（GET/POST/DELETE /templates/keywords）
+- 修改 server/app/services/template_service.py：list_templates 新增 include_unpublished 参数，默认过滤 is_published=true
+- 修改 server/app/api/templates.py：GET 端点新增 include_unpublished 参数（仅 admin role 生效）
+- 更新 server/app/main.py：import compliance_keywords noqa + 注册 admin_templates_router + 添加 templates 表的两条 ALTER TABLE 迁移
+- 新增 client/src/api/admin/templates_admin.ts：完整 TypeScript API 客户端
+- 新增 client/src/pages/admin/TemplatesAdminPage.tsx：Tab 切换（模板审核/使用排行/关键词库）；排行 BarChart 柱状图；关键词 CRUD
+- 更新 client/src/App.tsx：添加 /admin/templates 路由
+- TypeScript typecheck 通过；ESLint 通过；Python import 通过
+- **未来迭代的学习：**
+  - SQLAlchemy IN 查询对 Enum 字段：用 .in_([s.value for s in enum_set]) 传字符串列表而非枚举集合
+  - compliance_flags 设计为逗号分隔字符串（varchar 而非关联表），方便直接展示，适合低频扫描场景
+  - Recharts BarChart 长标签用 angle=-35 + textAnchor="end" + margin.bottom 扩大防截断
+  - 前台 list_templates 默认 include_unpublished=false，只需在服务层加 where 条件，无需修改前台页面
+---
+
 ## 2026-04-17 15:30 - US-009
 - 新增 server/app/models/platform_quota.py：PlatformQuota 模型（platform unique, daily_limit, today_used, last_reset_at）
 - 新增 server/app/api/admin/scrape_admin.py：5 个端点（GET /tasks 全量任务含创建者；POST /tasks/{id}/force-terminate 强制终止；POST /tasks/{id}/retry 重试；GET /platform-quota；PATCH /platform-quota）
@@ -1030,3 +1049,7 @@
 --- [RALPH] Iteration 5 ended: US-008 (22分钟 17秒) ---
 
 --- [RALPH] Iteration 6 started: US-009 at 2026-04-17 20:03 ---
+
+--- [RALPH] Iteration 6 ended: US-009 (43分钟 2秒) ---
+
+--- [RALPH] Iteration 7 started: US-010 at 2026-04-17 20:46 ---
