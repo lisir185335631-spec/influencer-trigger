@@ -91,6 +91,7 @@ def _inf_dict(
         "priority": inf.priority.value,
         "follow_up_count": inf.follow_up_count,
         "created_at": inf.created_at.isoformat(),
+        "creator": None,  # model has no created_by column; MVP returns null
         "email_count": email_count,
         "tags": tags,
         "task_ids": task_ids,
@@ -258,7 +259,7 @@ async def get_duplicates(
         ids = [inf.id for inf in influencers]
         email_counts, tags_map, task_ids_map = await _fetch_related(db, ids)
 
-    # Union-Find for grouping
+    # Union-Find for grouping (both email exact and name similarity paths)
     parent: dict[int, int] = {}
 
     def find(x: int) -> int:
@@ -273,12 +274,30 @@ async def get_duplicates(
         if px != py:
             parent[px] = py
 
+    linked: set[int] = set()
+    email_linked: set[int] = set()  # IDs grouped via email exact match
+
+    # Path 1: Email exact match — group influencers sharing the same non-empty email
+    email_map: dict[str, list[Influencer]] = {}
+    for inf in influencers:
+        if inf.email:
+            email_map.setdefault(inf.email, []).append(inf)
+
+    for group in email_map.values():
+        if len(group) > 1:
+            for other in group[1:]:
+                union(group[0].id, other.id)
+                email_linked.add(group[0].id)
+                email_linked.add(other.id)
+                linked.add(group[0].id)
+                linked.add(other.id)
+
+    # Path 2: Name + platform similarity > 0.9
     platform_map: dict[str, list[Influencer]] = {}
     for inf in influencers:
         if inf.nickname and inf.platform:
             platform_map.setdefault(inf.platform.value, []).append(inf)
 
-    linked: set[int] = set()
     for platform_infs in platform_map.values():
         n = len(platform_infs)
         for i in range(n):
@@ -299,7 +318,11 @@ async def get_duplicates(
 
     return [
         {
-            "type": "name_similarity",
+            "type": (
+                "email_exact"
+                if any(inf.id in email_linked for inf in group_infs)
+                else "name_similarity"
+            ),
             "influencers": [
                 _inf_dict(
                     g,
