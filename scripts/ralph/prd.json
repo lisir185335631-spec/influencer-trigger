@@ -178,7 +178,7 @@
         "US-001"
       ],
       "priority": 6,
-      "passes": false,
+      "passes": true,
       "notes": "",
       "retryCount": 0,
       "blocked": false

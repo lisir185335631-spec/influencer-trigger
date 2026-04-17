@@ -1,4 +1,7 @@
 ## Codebase Patterns
+- EmailStatus enum is VARCHAR in SQLite — new values (queued, blocked, cancelled) can be added to Python enum without ALTER TABLE
+- Admin emails API prefix: /api/admin/emails; blacklist sub-resource: /api/admin/emails/blacklist
+- sender_service.py is a new services file; actual send loop lives in agents/sender.py (Sender Agent)
 - Backend runs from server/ directory; database URL uses relative path ./data/influencer.db, so data/ must exist under server/
 - All models import Base from app.database, not from sqlalchemy directly
 - Config uses pydantic-settings BaseSettings with @lru_cache; import via get_settings()
@@ -882,4 +885,27 @@
   - 过滤分为 draftFilters（本地编辑状态）和 filters（已提交状态），Apply 按钮触发同步，避免每次输入都触发请求
   - 日期过滤从 HTML date input (YYYY-MM-DD) 转为后端 datetime（T00:00:00 / T23:59:59）
   - browser 测试：无 agent-browser 工具，需手动验证
+---
+
+--- [RALPH] Iteration 4 ended: US-005 (48分钟 7秒) ---
+
+--- [RALPH] Iteration 5 started: US-006 at 2026-04-17 16:45 ---
+
+## 2026-04-17 14:00 - US-006
+- 实现邮件全局流管理后台（/admin/emails）+ 黑名单系统
+- 新增 server/app/models/email_blacklist.py：EmailBlacklist 模型（id, email, reason, added_by_user_id, created_at）
+- 更新 server/app/models/email.py：EmailStatus 新增 queued/blocked/cancelled 三个状态
+- 更新 server/app/models/__init__.py：import EmailBlacklist
+- 新增 server/app/services/sender_service.py：is_blacklisted(email, db) 函数
+- 更新 server/app/agents/sender.py：发送前调用 is_blacklisted()，命中则写 status=blocked 记录并 continue
+- 新增 server/app/api/admin/emails_admin.py：GET /emails（全量列表+筛选+分页）、POST /emails/batch-cancel（批量撤销）、GET /emails/stats（退信率/打开率/回复率）、GET/POST/DELETE /emails/blacklist
+- 更新 server/app/main.py：注册 admin_emails_router
+- 新增 client/src/api/admin/emails_admin.ts：API 客户端
+- 新增 client/src/pages/admin/EmailsAdminPage.tsx：Tab切换(邮件流水/黑名单)、4指标卡、多选批量撤销+confirm modal、黑名单增删
+- 更新 client/src/App.tsx：添加 /admin/emails 路由
+- **未来迭代的学习：**
+  - SQLite 的 Enum 类型存为 VARCHAR，Python 层新增枚举值无需 ALTER TABLE
+  - agents/sender.py 是实际发送循环，sender_service.py 专门放辅助函数（is_blacklisted 等）
+  - batch-cancel 的"撤销"语义：只有 pending/queued 可撤，改为 cancelled；sent 之后的无法撤
+  - Admin 邮件 API 路由前缀：prefix="/api/admin" + router prefix="/emails" = /api/admin/emails
 ---
