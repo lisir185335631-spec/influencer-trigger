@@ -46,6 +46,8 @@ from app.api.admin.scrape_admin import router as admin_scrape_router
 from app.api.admin.templates_admin import router as admin_templates_router
 from app.api.admin.agents_monitor import router as admin_agents_router
 from app.api.admin.usage import router as admin_usage_router
+from app.api.admin.followup_admin import router as admin_followup_router
+from app.api.admin.holidays_admin import router as admin_holidays_router
 from app.middleware.audit_middleware import AuditMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -85,6 +87,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "CREATE INDEX IF NOT EXISTS ix_agent_runs_state_started ON agent_runs (state, started_at)",
             "CREATE TABLE IF NOT EXISTS usage_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, metric_date DATE NOT NULL, metric_type VARCHAR(32) NOT NULL, sub_key VARCHAR(128), value REAL NOT NULL DEFAULT 0, cost_usd REAL, created_at DATETIME, CONSTRAINT ix_usage_metric_date_type_key UNIQUE (metric_date, metric_type, sub_key))",
             "CREATE TABLE IF NOT EXISTS usage_budgets (id INTEGER PRIMARY KEY AUTOINCREMENT, month VARCHAR(7) NOT NULL UNIQUE, budget_usd REAL NOT NULL DEFAULT 0, alert_threshold_pct REAL NOT NULL DEFAULT 80, created_at DATETIME)",
+            "ALTER TABLE holidays ADD COLUMN sensitive_regions VARCHAR(512) DEFAULT '' NOT NULL",
         ]:
             try:
                 await _mig_db.execute(sa_text(stmt))
@@ -195,6 +198,8 @@ app.include_router(admin_scrape_router, prefix="/api/admin")
 app.include_router(admin_templates_router, prefix="/api/admin")
 app.include_router(admin_agents_router, prefix="/api/admin")
 app.include_router(admin_usage_router, prefix="/api/admin")
+app.include_router(admin_followup_router, prefix="/api/admin")
+app.include_router(admin_holidays_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")
