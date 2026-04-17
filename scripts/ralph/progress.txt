@@ -1,3 +1,14 @@
+## 2026-04-18 12:30 - US-014 (retry fix)
+- 根因：后端服务（port 6002）是旧进程，在 settings_admin router 注册前已启动，导致所有 /api/admin/settings/* 返回 404
+- 修复：用 PowerShell Stop-Process 杀死 PID 29408，重启 uvicorn，端点立即恢复（返回 401 Not Authenticated 而非 404）
+- 浏览器验证通过：/admin/settings 页面加载、LLM Key badge 显示、Webhook URL 更新成功、Feature Flag 创建成功
+- TypeScript typecheck 通过；ESLint 通过
+- **未来迭代的学习：**
+  - 后端服务用 PM2 管理但 PM2 进程可能未正确注册，用 netstat + PowerShell Stop-Process 可靠杀进程
+  - 路由 404 vs 401：404 = 路由未注册（陈旧进程）；401 = 路由正常但需要认证，是健康状态
+  - Windows 环境 kill 命令无效，必须用 PowerShell Stop-Process -Id <PID> -Force
+---
+
 ## 2026-04-18 12:00 - US-014
 - 新增 server/app/models/feature_flag.py：FeatureFlag 模型（id, flag_key unique, enabled, description, rollout_percentage, target_roles, updated_by_user_id, created_at, updated_at）
 - 更新 server/app/models/system_settings.py：新增 webhook_default_url、default_daily_quota 字段
@@ -1214,3 +1225,7 @@
 --- [RALPH] Iteration 15 ended: US-013 (1小时 3分钟 32秒) ---
 
 --- [RALPH] Iteration 16 started: US-014 at 2026-04-18 02:30 ---
+
+--- [RALPH] Iteration 16 ended: US-014 (24分钟 32秒) ---
+
+--- [RALPH] Iteration 17 started: US-014 at 2026-04-18 02:54 ---
