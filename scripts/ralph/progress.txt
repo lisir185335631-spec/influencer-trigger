@@ -763,3 +763,16 @@
 - 前端 eslint 有 7 个 pre-existing error（不在 admin 相关文件），新建文件 lint 全部干净
 - git status 使用 ??(untracked) 查找新文件；新目录需手动 mkdir 后 Write
 ---
+
+--- [RALPH] Iteration 1 ended: US-001 (52分钟 37秒) ---
+
+--- [RALPH] Iteration 2 started: US-001 at 2026-04-17 11:36 ---
+
+## 2026-04-17 12:00 - US-001 (retry fix)
+- 修复 AC-8：将 App.tsx admin 路由改为 React Router v6 嵌套结构
+- 更改文件：client/src/App.tsx（导入 Outlet，/admin 使用 nested route + index redirect）
+- **未来迭代的学习：**
+  - Admin 嵌套路由：`<Route path="/admin" element={<RequireAdmin><AdminLayout><Outlet /></AdminLayout></RequireAdmin>}>` 包裹子路由
+  - 子路由无需写完整路径（`path="overview"` 非 `path="/admin/overview"`）
+  - `<Route index element={<Navigate to="overview" replace />} />` 处理 /admin 默认跳转
+---
