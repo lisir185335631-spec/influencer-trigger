@@ -15,6 +15,8 @@ class SystemSettings(Base):
     scrape_concurrency: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
     webhook_feishu: Mapped[str] = mapped_column(String, default="", nullable=False)
     webhook_slack: Mapped[str] = mapped_column(String, default="", nullable=False)
+    webhook_default_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
+    default_daily_quota: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False

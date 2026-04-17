@@ -23,6 +23,7 @@ import app.models.compliance_keywords  # noqa: F401
 import app.models.agent_run  # noqa: F401
 import app.models.usage_metric  # noqa: F401
 import app.models.usage_budget  # noqa: F401
+import app.models.feature_flag  # noqa: F401
 from app.api.auth import router as auth_router
 from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router
@@ -48,6 +49,7 @@ from app.api.admin.agents_monitor import router as admin_agents_router
 from app.api.admin.usage import router as admin_usage_router
 from app.api.admin.followup_admin import router as admin_followup_router
 from app.api.admin.holidays_admin import router as admin_holidays_router
+from app.api.admin.settings_admin import router as admin_settings_router
 from app.middleware.audit_middleware import AuditMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -88,6 +90,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "CREATE TABLE IF NOT EXISTS usage_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, metric_date DATE NOT NULL, metric_type VARCHAR(32) NOT NULL, sub_key VARCHAR(128), value REAL NOT NULL DEFAULT 0, cost_usd REAL, created_at DATETIME, CONSTRAINT ix_usage_metric_date_type_key UNIQUE (metric_date, metric_type, sub_key))",
             "CREATE TABLE IF NOT EXISTS usage_budgets (id INTEGER PRIMARY KEY AUTOINCREMENT, month VARCHAR(7) NOT NULL UNIQUE, budget_usd REAL NOT NULL DEFAULT 0, alert_threshold_pct REAL NOT NULL DEFAULT 80, created_at DATETIME)",
             "ALTER TABLE holidays ADD COLUMN sensitive_regions VARCHAR(512) DEFAULT '' NOT NULL",
+            "ALTER TABLE system_settings ADD COLUMN webhook_default_url VARCHAR(512) DEFAULT '' NOT NULL",
+            "ALTER TABLE system_settings ADD COLUMN default_daily_quota INTEGER DEFAULT 100 NOT NULL",
+            "CREATE TABLE IF NOT EXISTS feature_flags (id INTEGER PRIMARY KEY AUTOINCREMENT, flag_key VARCHAR(128) NOT NULL UNIQUE, enabled BOOLEAN NOT NULL DEFAULT 0, description VARCHAR(512) NOT NULL DEFAULT '', rollout_percentage INTEGER NOT NULL DEFAULT 100, target_roles VARCHAR(256) NOT NULL DEFAULT '', updated_by_user_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
+            "CREATE UNIQUE INDEX IF NOT EXISTS ix_feature_flags_key ON feature_flags (flag_key)",
         ]:
             try:
                 await _mig_db.execute(sa_text(stmt))
@@ -200,6 +206,7 @@ app.include_router(admin_agents_router, prefix="/api/admin")
 app.include_router(admin_usage_router, prefix="/api/admin")
 app.include_router(admin_followup_router, prefix="/api/admin")
 app.include_router(admin_holidays_router, prefix="/api/admin")
+app.include_router(admin_settings_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")

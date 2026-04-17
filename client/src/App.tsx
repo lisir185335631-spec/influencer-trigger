@@ -31,6 +31,7 @@ import AgentsMonitorPage from './pages/admin/AgentsMonitorPage'
 import UsagePage from './pages/admin/UsagePage'
 import FollowupAdminPage from './pages/admin/FollowupAdminPage'
 import HolidaysAdminPage from './pages/admin/HolidaysAdminPage'
+import SettingsAdminPage from './pages/admin/SettingsAdminPage'
 
 const PROTECTED_ROUTES = [
   { path: '/dashboard', element: <DashboardPage /> },
@@ -89,6 +90,7 @@ function App() {
               <Route path="usage" element={<UsagePage />} />
               <Route path="followup" element={<FollowupAdminPage />} />
               <Route path="holidays" element={<HolidaysAdminPage />} />
+              <Route path="settings" element={<SettingsAdminPage />} />
             </Route>
             <Route path="*" element={<Navigate to="/dashboard" replace />} />
           </Routes>
