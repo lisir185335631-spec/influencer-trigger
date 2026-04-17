@@ -1,3 +1,18 @@
+## 2026-04-18 15:00 - US-016
+- 新增 server/app/api/admin/diagnostics.py：6 个诊断端点（db/redis/websocket/scheduler/system/healthcheck）；内部 _check_* 辅助函数（无 Depends，可直接 await）供 POST /healthcheck 并行调用；psutil 用 try/except ImportError 包裹，缺失时 system 端点返回 not_available
+- 更新 server/requirements.txt：新增 psutil==6.1.1
+- 更新 server/app/main.py：import + include_router admin_diagnostics_router（prefix=/api/admin）
+- 新增 client/src/api/admin/diagnostics.ts：完整类型定义 + 6 个 API 函数
+- 新增 client/src/pages/admin/DiagnosticsPage.tsx：顶部一键自检大按钮；5 个诊断卡片（DB/Redis/WS/Scheduler/System）可展开；Scheduler 卡片列出所有 job；System 卡片磁盘/内存进度条；not_available 时显示灰色提示
+- 更新 client/src/App.tsx：/admin/diagnostics 路由（AdminSidebar 已有 Diagnostics 入口）
+- TypeScript typecheck 通过；ESLint 通过；Python import 通过
+- **未来迭代的学习：**
+  - pool.size()/checkedout()/overflow() 是 SQLAlchemy StaticPool/NullPool 上可能不存在的方法，用 callable(getattr(...)) 安全调用，避免 AttributeError
+  - FastAPI Depends() 由框架注入，直接调用带 Depends 的函数需要手动传参或抽离 _check_* 辅助层；后者是更干净的方案
+  - psutil.disk_usage(".") 比 "/" 更跨平台（Windows 下 "/" 映射到 C:\ 的根也能用，但 "." 更保险）
+  - redis.asyncio.from_url 连接超时用 socket_connect_timeout 参数；记得 await client.aclose() 防止连接泄漏
+---
+
 ## 2026-04-18 14:00 - US-015
 - 新增 server/app/models/security_alert.py：SecurityAlert 模型（id, alert_type, user_id, details_json, acknowledged, acknowledged_by, acknowledged_at, created_at）+ KeyRotationHistory 模型（同文件）
 - 更新 server/app/models/system_settings.py：新增 security_config TEXT 字段（JSON 存储 2FA 配置）
@@ -1264,3 +1279,7 @@
 --- [RALPH] Iteration 18 ended: US-014 (32分钟 17秒) ---
 
 --- [RALPH] Iteration 19 started: US-015 at 2026-04-18 04:15 ---
+
+--- [RALPH] Iteration 19 ended: US-015 (43分钟 42秒) ---
+
+--- [RALPH] Iteration 20 started: US-016 at 2026-04-18 04:58 ---
