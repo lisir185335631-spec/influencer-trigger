@@ -52,6 +52,7 @@ from app.api.admin.followup_admin import router as admin_followup_router
 from app.api.admin.holidays_admin import router as admin_holidays_router
 from app.api.admin.settings_admin import router as admin_settings_router
 from app.api.admin.security import router as admin_security_router
+from app.api.admin.diagnostics import router as admin_diagnostics_router
 from app.middleware.audit_middleware import AuditMiddleware
 
 logging.basicConfig(level=logging.INFO)
@@ -216,6 +217,7 @@ app.include_router(admin_followup_router, prefix="/api/admin")
 app.include_router(admin_holidays_router, prefix="/api/admin")
 app.include_router(admin_settings_router, prefix="/api/admin")
 app.include_router(admin_security_router, prefix="/api/admin")
+app.include_router(admin_diagnostics_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")

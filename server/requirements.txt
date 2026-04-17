@@ -24,5 +24,6 @@ structlog==24.4.0
 redis==5.2.1
 websockets==14.1
 slowapi==0.1.9
+psutil==6.1.1
 pytest==8.3.4
 pytest-asyncio==0.24.0
