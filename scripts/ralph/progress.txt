@@ -1,3 +1,21 @@
+## 2026-04-18 10:30 - US-013
+- 新增 server/app/models/holiday.py：添加 sensitive_regions 字段（VARCHAR(512) 逗号分隔 region code）
+- 新增 server/app/api/admin/followup_admin.py：GET/PATCH /followup/settings；GET /followup/responder-logs；POST /followup/pause-all；POST /followup/resume-all
+- 新增 server/app/api/admin/holidays_admin.py：GET /holidays（全量+统计）；POST/PATCH/DELETE CRUD；GET /{id}/investment-report 历年报告；POST /sensitive-regions
+- 更新 server/app/main.py：注册两个新 router；添加 ALTER TABLE holidays ADD COLUMN sensitive_regions 迁移
+- 新增 client/src/api/admin/followup_admin.ts：完整 TypeScript API 客户端
+- 新增 client/src/api/admin/holidays_admin.ts：完整 TypeScript API 客户端
+- 新增 client/src/pages/admin/FollowupAdminPage.tsx：策略配置表单 + 紧急暂停按钮（红色 + confirm modal）+ Responder 行为审计表格（分页）
+- 新增 client/src/pages/admin/HolidaysAdminPage.tsx：列表/日历视图切换；行展开查看历年柱状图报告；敏感地区 modal 配置
+- 更新 client/src/App.tsx：添加 /admin/followup 和 /admin/holidays 路由
+- TypeScript typecheck 通过；ESLint 通过；Python import 通过
+- **未来迭代的学习：**
+  - 紧急暂停通过 update_settings(enabled=False) 实现，Scheduler job 下次执行时会读取 settings.enabled 并跳过
+  - holidays_admin 的 investment-report 用 func.strftime('%Y', Email.sent_at) 按年分组（SQLite 专用）
+  - 行展开报告用独立组件 InvestmentReportRow 懒加载，避免列表初始化时批量请求所有报告
+  - HolidayAdminPage 的日历视图通过 reduce 按月分组（yyyy-mm key），不依赖额外库
+---
+
 ## 2026-04-18 00:10 - US-012
 - 修复：重启 uvicorn 服务（ports 6009, 6002）以加载新增的 usage router
 - 验证所有 API 端点工作正常：/api/admin/usage/summary、/trend、/breakdown、/alerts、/budget
@@ -1159,3 +1177,7 @@
 --- [RALPH] Iteration 12 ended: US-012 (36分钟 2秒) ---
 
 --- [RALPH] Iteration 13 started: US-012 at 2026-04-17 23:54 ---
+
+--- [RALPH] Iteration 13 ended: US-012 (1小时 5分钟 22秒) ---
+
+--- [RALPH] Iteration 14 started: US-013 at 2026-04-18 01:00 ---
