@@ -140,7 +140,7 @@ async def get_metrics(current_user: TokenData = Depends(require_admin)) -> dict:
         # ── Errors (notifications level=error) ────────────────────────────
         errors_today = (await db.execute(
             select(func.count(Notification.id)).where(
-                Notification.level == NotificationLevel.error,
+                Notification.level == NotificationLevel.urgent,
                 Notification.created_at >= today_start,
                 Notification.created_at <= today_end,
             )

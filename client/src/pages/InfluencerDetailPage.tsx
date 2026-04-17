@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   ArrowLeft,
   Mail,
@@ -27,12 +28,6 @@ import {
 
 type TabKey = 'emails' | 'tags' | 'notes' | 'collaborations'
 
-const STATUS_LABELS: Record<string, string> = {
-  new: 'New',
-  contacted: 'Contacted',
-  replied: 'Replied',
-  archived: 'Archived',
-}
 
 const STATUS_COLORS: Record<string, string> = {
   new: 'bg-gray-100 text-gray-600',
@@ -93,6 +88,7 @@ function formatShortDate(d: string | null): string {
 // ── Left info card ────────────────────────────────────────────────────────────
 
 function InfoCard({ inf }: { inf: InfluencerDetail }) {
+  const { t } = useTranslation()
   const initials = inf.nickname
     ? inf.nickname.slice(0, 2).toUpperCase()
     : inf.email.slice(0, 2).toUpperCase()
@@ -112,7 +108,7 @@ function InfoCard({ inf }: { inf: InfluencerDetail }) {
         </div>
         <div className="flex gap-2">
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[inf.status] ?? 'bg-gray-100 text-gray-600'}`}>
-            {STATUS_LABELS[inf.status] ?? inf.status}
+            {t(`common.status.${inf.status}`, { defaultValue: inf.status })}
           </span>
           <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[inf.priority] ?? 'bg-gray-100 text-gray-500'}`}>
             {inf.priority}
@@ -123,10 +119,10 @@ function InfoCard({ inf }: { inf: InfluencerDetail }) {
       {/* Details */}
       <div className="flex flex-col gap-3 text-sm">
         {inf.platform && (
-          <Row icon={<span>{PLATFORM_ICONS[inf.platform] ?? '🌐'}</span>} label="Platform" value={inf.platform} />
+          <Row icon={<span>{PLATFORM_ICONS[inf.platform] ?? '🌐'}</span>} label={t('influencer.info.platform')} value={inf.platform} />
         )}
-        <Row icon={<Mail size={14} />} label="Email" value={inf.email} />
-        <Row icon={<Users size={14} />} label="Followers" value={formatNumber(inf.followers)} />
+        <Row icon={<Mail size={14} />} label={t('influencer.info.email')} value={inf.email} />
+        <Row icon={<Users size={14} />} label={t('influencer.info.followers')} value={formatNumber(inf.followers)} />
         {inf.profile_url && (
           <div className="flex items-start gap-2 text-gray-600">
             <Globe size={14} className="mt-0.5 shrink-0 text-gray-400" />
@@ -141,20 +137,20 @@ function InfoCard({ inf }: { inf: InfluencerDetail }) {
           </div>
         )}
         {inf.industry && (
-          <Row icon={<Briefcase size={14} />} label="Industry" value={inf.industry} />
+          <Row icon={<Briefcase size={14} />} label={t('influencer.info.industry')} value={inf.industry} />
         )}
         {inf.reply_intent && (
-          <Row icon={<CheckCircle size={14} />} label="Intent" value={inf.reply_intent} />
+          <Row icon={<CheckCircle size={14} />} label={t('influencer.info.intent')} value={inf.reply_intent} />
         )}
-        <Row icon={<Clock size={14} />} label="Follow-ups" value={String(inf.follow_up_count)} />
+        <Row icon={<Clock size={14} />} label={t('influencer.info.followUps')} value={String(inf.follow_up_count)} />
         <Row
           icon={<Mail size={14} />}
-          label="Last sent"
+          label={t('influencer.info.lastSent')}
           value={formatShortDate(inf.last_email_sent_at)}
         />
         <Row
           icon={<Clock size={14} />}
-          label="Created"
+          label={t('influencer.info.created')}
           value={formatShortDate(inf.created_at)}
         />
       </div>
@@ -162,7 +158,7 @@ function InfoCard({ inf }: { inf: InfluencerDetail }) {
       {/* Bio */}
       {inf.bio && (
         <div className="pt-3 border-t border-gray-50">
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">Bio</p>
+          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-1">{t('influencer.bio')}</p>
           <p className="text-xs text-gray-600 leading-relaxed">{inf.bio}</p>
         </div>
       )}
@@ -170,15 +166,15 @@ function InfoCard({ inf }: { inf: InfluencerDetail }) {
       {/* Tags preview */}
       {inf.tags.length > 0 && (
         <div className="pt-3 border-t border-gray-50">
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-2">Tags</p>
+          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide mb-2">{t('influencer.tags.title')}</p>
           <div className="flex flex-wrap gap-1">
-            {inf.tags.map((t) => (
+            {inf.tags.map((tag) => (
               <span
-                key={t.id}
+                key={tag.id}
                 className="text-xs px-2 py-0.5 rounded-full text-white font-medium"
-                style={{ backgroundColor: t.color }}
+                style={{ backgroundColor: tag.color }}
               >
-                {t.name}
+                {tag.name}
               </span>
             ))}
           </div>
@@ -201,6 +197,7 @@ function Row({ icon, label, value }: { icon: React.ReactNode; label: string; val
 // ── Email timeline tab ────────────────────────────────────────────────────────
 
 function EmailsTab({ inf }: { inf: InfluencerDetail }) {
+  const { t } = useTranslation()
   if (inf.emails.length === 0) {
     return <Empty text="No emails yet" />
   }
@@ -216,15 +213,15 @@ function EmailsTab({ inf }: { inf: InfluencerDetail }) {
             </span>
           </div>
           <div className="flex flex-wrap gap-3 text-xs text-gray-400">
-            <span>Type: {e.email_type}</span>
-            {e.sent_at && <span>Sent: {formatDate(e.sent_at)}</span>}
-            {e.opened_at && <span>Opened: {formatDate(e.opened_at)}</span>}
-            {e.replied_at && <span>Replied: {formatDate(e.replied_at)}</span>}
-            {e.bounced_at && <span className="text-red-400">Bounced: {formatDate(e.bounced_at)}</span>}
+            <span>{t('influencer.emails.type', { type: e.email_type })}</span>
+            {e.sent_at && <span>{t('influencer.emails.sent', { date: formatDate(e.sent_at) })}</span>}
+            {e.opened_at && <span>{t('influencer.emails.opened', { date: formatDate(e.opened_at) })}</span>}
+            {e.replied_at && <span>{t('influencer.emails.replied', { date: formatDate(e.replied_at) })}</span>}
+            {e.bounced_at && <span className="text-red-400">{t('influencer.emails.bounced', { date: formatDate(e.bounced_at) })}</span>}
           </div>
           {e.reply_content && (
             <div className="mt-3 p-3 bg-green-50 rounded text-xs text-gray-700">
-              <p className="text-green-600 font-medium mb-1">Reply from {e.reply_from ?? '—'}</p>
+              <p className="text-green-600 font-medium mb-1">{t('influencer.emails.replyFrom', { name: e.reply_from ?? '—' })}</p>
               <p className="whitespace-pre-wrap">{e.reply_content}</p>
             </div>
           )}
@@ -245,11 +242,12 @@ function TagsTab({
   allTags: TagOut[]
   onRefresh: () => void
 }) {
+  const { t } = useTranslation()
   const [saving, setSaving] = useState(false)
   const [creating, setCreating] = useState(false)
   const [newTagName, setNewTagName] = useState('')
   const [newTagColor, setNewTagColor] = useState('#6366f1')
-  const assignedIds = new Set(inf.tags.map((t) => t.id))
+  const assignedIds = new Set(inf.tags.map((tag) => tag.id))
 
   async function handleToggle(tagId: number) {
     const next = assignedIds.has(tagId)
@@ -278,7 +276,7 @@ function TagsTab({
   }
 
   async function handleDeleteTag(tagId: number) {
-    if (!confirm('Delete this tag? It will be removed from all influencers.')) return
+    if (!confirm(t('influencer.tags.deleteConfirm'))) return
     await deleteTag(tagId)
     onRefresh()
   }
@@ -287,14 +285,14 @@ function TagsTab({
     <div className="flex flex-col gap-4">
       <div className="flex items-center justify-between">
         <p className="text-sm font-medium text-gray-700">
-          Select tags to assign to this influencer
+          {t('influencer.tags.selectHint')}
         </p>
         <button
           onClick={() => setCreating(!creating)}
           className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-700"
         >
           <Plus size={12} />
-          New tag
+          {t('influencer.tags.newTag')}
         </button>
       </div>
 
@@ -304,7 +302,7 @@ function TagsTab({
             type="text"
             value={newTagName}
             onChange={(e) => setNewTagName(e.target.value)}
-            placeholder="Tag name"
+            placeholder={t('influencer.tags.tagPlaceholder')}
             className="flex-1 text-sm border border-gray-200 rounded px-2 py-1 focus:outline-none focus:border-indigo-400"
           />
           <input
@@ -318,7 +316,7 @@ function TagsTab({
             disabled={saving || !newTagName.trim()}
             className="text-xs bg-indigo-600 text-white px-3 py-1 rounded hover:bg-indigo-700 disabled:opacity-50"
           >
-            Create
+            {t('influencer.tags.create')}
           </button>
           <button
             onClick={() => setCreating(false)}
@@ -330,7 +328,7 @@ function TagsTab({
       )}
 
       <div className="flex flex-col gap-1">
-        {allTags.length === 0 && <Empty text="No tags yet. Create one above." />}
+        {allTags.length === 0 && <Empty text={t('influencer.tags.noTags')} />}
         {allTags.map((tag) => {
           const assigned = assignedIds.has(tag.id)
           return (
@@ -372,6 +370,7 @@ function TagsTab({
 // ── Notes tab ─────────────────────────────────────────────────────────────────
 
 function NotesTab({ inf, onRefresh }: { inf: InfluencerDetail; onRefresh: () => void }) {
+  const { t } = useTranslation()
   const [text, setText] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -393,7 +392,7 @@ function NotesTab({ inf, onRefresh }: { inf: InfluencerDetail; onRefresh: () => 
         <textarea
           value={text}
           onChange={(e) => setText(e.target.value)}
-          placeholder="Add a note..."
+          placeholder={t('influencer.notes.placeholder')}
           rows={3}
           className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:border-indigo-400 resize-none"
         />
@@ -402,11 +401,11 @@ function NotesTab({ inf, onRefresh }: { inf: InfluencerDetail; onRefresh: () => 
           disabled={saving || !text.trim()}
           className="self-end text-xs bg-indigo-600 text-white px-4 py-1.5 rounded-lg hover:bg-indigo-700 disabled:opacity-50"
         >
-          {saving ? 'Saving…' : 'Add note'}
+          {saving ? t('influencer.notes.saving') : t('influencer.notes.addNote')}
         </button>
       </div>
 
-      {inf.notes.length === 0 && <Empty text="No notes yet" />}
+      {inf.notes.length === 0 && <Empty text={t('influencer.notes.noNotes')} />}
       {inf.notes.map((note) => (
         <div key={note.id} className="border border-gray-100 rounded-lg p-4">
           <p className="text-sm text-gray-800 whitespace-pre-wrap">{note.content}</p>
@@ -427,6 +426,7 @@ const COLLAB_STATUS_COLORS: Record<string, string> = {
 }
 
 function CollaborationsTab({ inf }: { inf: InfluencerDetail }) {
+  const { t } = useTranslation()
   if (inf.collaborations.length === 0) {
     return <Empty text="No collaboration records yet" />
   }
@@ -445,8 +445,8 @@ function CollaborationsTab({ inf }: { inf: InfluencerDetail }) {
             <p className="text-xs text-gray-600 mb-2">{c.description}</p>
           )}
           <div className="flex flex-wrap gap-3 text-xs text-gray-400">
-            {c.budget && <span>Budget: {c.budget}</span>}
-            <span>Created: {formatShortDate(c.created_at)}</span>
+            {c.budget && <span>{t('influencer.collaborations.budget', { budget: c.budget })}</span>}
+            <span>{t('influencer.collaborations.created', { date: formatShortDate(c.created_at) })}</span>
           </div>
         </div>
       ))}
@@ -467,6 +467,7 @@ function Empty({ text }: { text: string }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 
 export default function InfluencerDetailPage() {
+  const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [inf, setInf] = useState<InfluencerDetail | null>(null)
@@ -485,7 +486,7 @@ export default function InfluencerDetailPage() {
       setInf(detail)
       setAllTags(tags)
     } catch {
-      setError('Failed to load influencer')
+      setError(t('influencer.loadFailed'))
     } finally {
       setLoading(false)
     }
@@ -497,23 +498,23 @@ export default function InfluencerDetailPage() {
 
   if (loading) {
     return (
-      <div className="p-6 text-sm text-gray-400">Loading…</div>
+      <div className="p-6 text-sm text-gray-400">{t('influencer.loading')}</div>
     )
   }
 
   if (error || !inf) {
     return (
       <div className="p-6">
-        <p className="text-sm text-red-500">{error ?? 'Influencer not found'}</p>
+        <p className="text-sm text-red-500">{error ?? t('influencer.notFound')}</p>
       </div>
     )
   }
 
   const TABS: { key: TabKey; label: string; icon: React.ReactNode }[] = [
-    { key: 'emails', label: 'Emails', icon: <Mail size={14} /> },
-    { key: 'tags', label: 'Tags', icon: <Tag size={14} /> },
-    { key: 'notes', label: 'Notes', icon: <FileText size={14} /> },
-    { key: 'collaborations', label: 'Collaborations', icon: <Briefcase size={14} /> },
+    { key: 'emails', label: t('influencer.tabEmails'), icon: <Mail size={14} /> },
+    { key: 'tags', label: t('influencer.tabTags'), icon: <Tag size={14} /> },
+    { key: 'notes', label: t('influencer.tabNotes'), icon: <FileText size={14} /> },
+    { key: 'collaborations', label: t('influencer.tabCollaborations'), icon: <Briefcase size={14} /> },
   ]
 
   return (
@@ -525,7 +526,7 @@ export default function InfluencerDetailPage() {
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800"
         >
           <ArrowLeft size={16} />
-          CRM
+          {t('influencer.breadcrumb')}
         </button>
         <span className="text-gray-300">/</span>
         <span className="text-sm text-gray-900 font-medium">

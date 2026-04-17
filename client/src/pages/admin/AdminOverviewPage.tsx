@@ -164,8 +164,22 @@ export default function AdminOverviewPage() {
     )
   }
 
-  const m = metrics!
-  const h = health!
+  if (!metrics || !health) {
+    return (
+      <div className="flex flex-col items-center justify-center h-64 gap-3">
+        <p className="text-sm text-gray-400">Failed to load overview data.</p>
+        <button
+          onClick={() => fetchAll(true)}
+          className="text-sm text-indigo-600 hover:text-indigo-800 underline"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
+
+  const m = metrics
+  const h = health
 
   const mailboxStatusLabel =
     h.mailbox_pool.status === 'green'

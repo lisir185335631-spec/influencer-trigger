@@ -1,13 +1,8 @@
 import { useEffect, useState } from 'react'
-import { UserPlus, Pencil, Ban, CheckCircle, X } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
+import { UserPlus, Ban, CheckCircle, X } from 'lucide-react'
 import { useAuthContext } from '../stores/AuthContext'
 import { usersApi, UserItem, UserRole, UserCreateRequest } from '../api/users'
-
-const ROLE_LABELS: Record<UserRole, string> = {
-  admin: 'Admin',
-  manager: 'Manager',
-  operator: 'Operator',
-}
 
 const ROLE_COLORS: Record<UserRole, string> = {
   admin: 'bg-purple-50 text-purple-700',
@@ -16,6 +11,12 @@ const ROLE_COLORS: Record<UserRole, string> = {
 }
 
 function RoleBadge({ role }: { role: UserRole }) {
+  const { t } = useTranslation()
+  const ROLE_LABELS: Record<UserRole, string> = {
+    admin: t('common.role.admin'),
+    manager: t('common.role.manager'),
+    operator: t('common.role.operator'),
+  }
   return (
     <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${ROLE_COLORS[role]}`}>
       {ROLE_LABELS[role]}
@@ -29,6 +30,7 @@ interface AddMemberModalProps {
 }
 
 function AddMemberModal({ onClose, onCreated }: AddMemberModalProps) {
+  const { t } = useTranslation()
   const [form, setForm] = useState<UserCreateRequest>({
     username: '',
     email: '',
@@ -48,7 +50,7 @@ function AddMemberModal({ onClose, onCreated }: AddMemberModalProps) {
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-        'Failed to create member'
+        t('team.modal.createFailed')
       setError(msg)
     } finally {
       setLoading(false)
@@ -59,7 +61,7 @@ function AddMemberModal({ onClose, onCreated }: AddMemberModalProps) {
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
       <div className="bg-white rounded-lg shadow-lg w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-semibold text-gray-900">Add Team Member</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{t('team.modal.title')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={16} />
           </button>
@@ -71,7 +73,7 @@ function AddMemberModal({ onClose, onCreated }: AddMemberModalProps) {
 
         <form onSubmit={handleSubmit} className="space-y-3">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Username</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('team.modal.username')}</label>
             <input
               className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
               value={form.username}
@@ -80,7 +82,7 @@ function AddMemberModal({ onClose, onCreated }: AddMemberModalProps) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Email</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('team.modal.email')}</label>
             <input
               type="email"
               className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
@@ -90,7 +92,7 @@ function AddMemberModal({ onClose, onCreated }: AddMemberModalProps) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Password</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('team.modal.password')}</label>
             <input
               type="password"
               className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
@@ -100,15 +102,15 @@ function AddMemberModal({ onClose, onCreated }: AddMemberModalProps) {
             />
           </div>
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Role</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('team.modal.role')}</label>
             <select
               className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400"
               value={form.role}
               onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as UserRole }))}
             >
-              <option value="operator">Operator</option>
-              <option value="manager">Manager</option>
-              <option value="admin">Admin</option>
+              <option value="operator">{t('common.role.operator')}</option>
+              <option value="manager">{t('common.role.manager')}</option>
+              <option value="admin">{t('common.role.admin')}</option>
             </select>
           </div>
 
@@ -118,14 +120,14 @@ function AddMemberModal({ onClose, onCreated }: AddMemberModalProps) {
               onClick={onClose}
               className="px-4 py-2 text-sm text-gray-500 hover:text-gray-700"
             >
-              Cancel
+              {t('team.modal.cancel')}
             </button>
             <button
               type="submit"
               disabled={loading}
               className="px-4 py-2 text-sm bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-50"
             >
-              {loading ? 'Creating…' : 'Create'}
+              {loading ? t('team.modal.creating') : t('team.modal.create')}
             </button>
           </div>
         </form>
@@ -141,6 +143,7 @@ interface EditRoleDropdownProps {
 }
 
 function EditRoleDropdown({ user, currentUserId, onUpdated }: EditRoleDropdownProps) {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
 
   const handleChange = async (role: UserRole) => {
@@ -163,14 +166,15 @@ function EditRoleDropdown({ user, currentUserId, onUpdated }: EditRoleDropdownPr
       onChange={(e) => handleChange(e.target.value as UserRole)}
       className="border border-gray-200 rounded px-2 py-1 text-xs focus:outline-none focus:border-gray-400 disabled:opacity-50 disabled:cursor-not-allowed"
     >
-      <option value="operator">Operator</option>
-      <option value="manager">Manager</option>
-      <option value="admin">Admin</option>
+      <option value="operator">{t('common.role.operator')}</option>
+      <option value="manager">{t('common.role.manager')}</option>
+      <option value="admin">{t('common.role.admin')}</option>
     </select>
   )
 }
 
 export default function TeamPage() {
+  const { t } = useTranslation()
   const { role: currentRole, username: currentUsername } = useAuthContext()
   const [users, setUsers] = useState<UserItem[]>([])
   const [total, setTotal] = useState(0)
@@ -203,7 +207,7 @@ export default function TeamPage() {
     return (
       <div className="p-6">
         <div className="border border-gray-100 rounded-lg p-8 text-center text-gray-400 text-sm">
-          Access denied — admin only
+          {t('team.accessDenied')}
         </div>
       </div>
     )
@@ -233,9 +237,9 @@ export default function TeamPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-base font-semibold text-gray-900">Team Management</h1>
+          <h1 className="text-base font-semibold text-gray-900">{t('team.title')}</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            {total} / 10 members
+            {t('team.memberCount', { count: total })}
           </p>
         </div>
         <button
@@ -244,25 +248,25 @@ export default function TeamPage() {
           className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gray-900 text-white rounded hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
           <UserPlus size={14} />
-          Add Member
+          {t('team.addMember')}
         </button>
       </div>
 
       {/* Permission matrix info */}
       <div className="mb-5 p-4 bg-gray-50 rounded-lg border border-gray-100">
-        <p className="text-xs font-medium text-gray-600 mb-2">Role Permissions</p>
+        <p className="text-xs font-medium text-gray-600 mb-2">{t('team.permissions.title')}</p>
         <div className="grid grid-cols-3 gap-3 text-xs text-gray-500">
           <div>
-            <span className="font-medium text-purple-700">Admin</span>
-            <p className="mt-0.5">Full access — all features</p>
+            <span className="font-medium text-purple-700">{t('team.permissions.admin')}</span>
+            <p className="mt-0.5">{t('team.permissions.adminDesc')}</p>
           </div>
           <div>
-            <span className="font-medium text-blue-700">Manager</span>
-            <p className="mt-0.5">Dashboard, CRM, Templates</p>
+            <span className="font-medium text-blue-700">{t('team.permissions.manager')}</span>
+            <p className="mt-0.5">{t('team.permissions.managerDesc')}</p>
           </div>
           <div>
-            <span className="font-medium text-gray-600">Operator</span>
-            <p className="mt-0.5">Scrape tasks, CRM, Replies</p>
+            <span className="font-medium text-gray-600">{t('team.permissions.operator')}</span>
+            <p className="mt-0.5">{t('team.permissions.operatorDesc')}</p>
           </div>
         </div>
       </div>
@@ -270,16 +274,16 @@ export default function TeamPage() {
       {/* Members table */}
       <div className="border border-gray-100 rounded-lg overflow-hidden">
         {loading ? (
-          <div className="p-8 text-center text-sm text-gray-400">Loading…</div>
+          <div className="p-8 text-center text-sm text-gray-400">{t('team.loading')}</div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100 bg-gray-50">
-                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Username</th>
-                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Email</th>
-                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Role</th>
-                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">Status</th>
-                <th className="text-right text-xs font-medium text-gray-500 px-4 py-3">Actions</th>
+                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">{t('team.table.username')}</th>
+                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">{t('team.table.email')}</th>
+                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">{t('team.table.role')}</th>
+                <th className="text-left text-xs font-medium text-gray-500 px-4 py-3">{t('team.table.status')}</th>
+                <th className="text-right text-xs font-medium text-gray-500 px-4 py-3">{t('team.table.actions')}</th>
               </tr>
             </thead>
             <tbody>
@@ -289,7 +293,7 @@ export default function TeamPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-gray-800">{user.username}</span>
                       {user.id === currentUserId && (
-                        <span className="text-xs text-gray-400">(you)</span>
+                        <span className="text-xs text-gray-400">{t('team.table.you')}</span>
                       )}
                     </div>
                   </td>
@@ -315,7 +319,7 @@ export default function TeamPage() {
                           user.is_active ? 'bg-emerald-400' : 'bg-gray-300'
                         }`}
                       />
-                      {user.is_active ? 'Active' : 'Disabled'}
+                      {user.is_active ? t('team.table.active') : t('team.table.disabled')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-right">
@@ -323,18 +327,18 @@ export default function TeamPage() {
                       <button
                         onClick={() => handleToggleActive(user)}
                         disabled={actionLoading === user.id}
-                        title={user.is_active ? 'Disable member' : 'Enable member'}
+                        title={user.is_active ? t('team.table.disableTooltip') : t('team.table.enableTooltip')}
                         className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40 transition-colors"
                       >
                         {user.is_active ? (
                           <>
                             <Ban size={13} />
-                            Disable
+                            {t('team.table.disable')}
                           </>
                         ) : (
                           <>
                             <CheckCircle size={13} />
-                            Enable
+                            {t('team.table.enable')}
                           </>
                         )}
                       </button>
@@ -345,7 +349,7 @@ export default function TeamPage() {
               {users.length === 0 && (
                 <tr>
                   <td colSpan={5} className="px-4 py-8 text-center text-gray-400 text-sm">
-                    No team members yet
+                    {t('team.noMembers')}
                   </td>
                 </tr>
               )}

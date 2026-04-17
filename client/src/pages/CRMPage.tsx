@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   Search,
   ChevronLeft,
@@ -50,13 +51,6 @@ const PLATFORM_ICONS: Record<string, string> = {
   other: '🌐',
 }
 
-const REPLY_INTENT_LABELS: Record<string, string> = {
-  interested: 'Interested',
-  pricing: 'Pricing',
-  declined: 'Declined',
-  auto_reply: 'Auto-reply',
-  irrelevant: 'Irrelevant',
-}
 
 const REPLY_INTENT_COLORS: Record<string, string> = {
   interested: 'bg-green-50 text-green-700',
@@ -91,6 +85,7 @@ function TagMultiSelect({
   selected: number[]
   onChange: (ids: number[]) => void
 }) {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
@@ -108,9 +103,9 @@ function TagMultiSelect({
 
   const label =
     selected.length === 0
-      ? 'All tags'
+      ? t('crm.tagSelect.allTags')
       : selected.length === 1
-      ? (allTags.find((t) => t.id === selected[0])?.name ?? '1 tag')
+      ? (allTags.find((tag) => tag.id === selected[0])?.name ?? '1 tag')
       : `${selected.length} tags`
 
   return (
@@ -125,24 +120,24 @@ function TagMultiSelect({
       {open && (
         <div className="absolute z-20 mt-1 bg-white border border-gray-100 rounded-xl shadow-lg py-1 min-w-[160px] max-h-60 overflow-y-auto">
           {allTags.length === 0 && (
-            <p className="text-xs text-gray-400 px-3 py-2">No tags yet</p>
+            <p className="text-xs text-gray-400 px-3 py-2">{t('crm.tagSelect.noTags')}</p>
           )}
-          {allTags.map((t) => (
+          {allTags.map((tag) => (
             <label
-              key={t.id}
+              key={tag.id}
               className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer"
             >
               <input
                 type="checkbox"
                 className="rounded"
-                checked={selected.includes(t.id)}
-                onChange={() => toggle(t.id)}
+                checked={selected.includes(tag.id)}
+                onChange={() => toggle(tag.id)}
               />
               <span
                 className="w-2 h-2 rounded-full shrink-0"
-                style={{ backgroundColor: t.color }}
+                style={{ backgroundColor: tag.color }}
               />
-              <span className="text-sm text-gray-700">{t.name}</span>
+              <span className="text-sm text-gray-700">{tag.name}</span>
             </label>
           ))}
         </div>
@@ -162,6 +157,7 @@ function BatchTagModal({
   onConfirm: (tagIds: number[]) => void
   onClose: () => void
 }) {
+  const { t } = useTranslation()
   const [selected, setSelected] = useState<number[]>([])
 
   function toggle(id: number) {
@@ -172,29 +168,29 @@ function BatchTagModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
       <div className="bg-white rounded-2xl shadow-xl p-6 w-80">
         <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-900">Assign tags</h3>
+          <h3 className="font-semibold text-gray-900">{t('crm.tagModal.title')}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={16} />
           </button>
         </div>
         <div className="space-y-1 max-h-52 overflow-y-auto mb-4">
-          {allTags.map((t) => (
+          {allTags.map((tag) => (
             <label
-              key={t.id}
+              key={tag.id}
               className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer"
             >
               <input
                 type="checkbox"
                 className="rounded"
-                checked={selected.includes(t.id)}
-                onChange={() => toggle(t.id)}
+                checked={selected.includes(tag.id)}
+                onChange={() => toggle(tag.id)}
               />
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: t.color }} />
-              <span className="text-sm text-gray-700">{t.name}</span>
+              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
+              <span className="text-sm text-gray-700">{tag.name}</span>
             </label>
           ))}
           {allTags.length === 0 && (
-            <p className="text-sm text-gray-400 py-2 text-center">No tags available</p>
+            <p className="text-sm text-gray-400 py-2 text-center">{t('crm.tagModal.noTags')}</p>
           )}
         </div>
         <div className="flex gap-2">
@@ -202,14 +198,14 @@ function BatchTagModal({
             onClick={onClose}
             className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={() => { if (selected.length) onConfirm(selected) }}
             disabled={selected.length === 0}
             className="flex-1 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            Apply
+            {t('common.apply')}
           </button>
         </div>
       </div>
@@ -270,6 +266,7 @@ function PriorityDropdown({
 // ── replied view ──────────────────────────────────────────────────────────────
 
 function RepliedView() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [items, setItems] = useState<InfluencerListItem[]>([])
   const [total, setTotal] = useState(0)
@@ -309,30 +306,30 @@ function RepliedView() {
 
   return (
     <div className="flex flex-col gap-4">
-      <p className="text-sm text-gray-400">{total} replied influencer{total !== 1 ? 's' : ''}, sorted by priority</p>
+      <p className="text-sm text-gray-400">{t('crm.replied.subtitle', { count: total })}</p>
 
       <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Influencer</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Platform</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Followers</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Reply Intent</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Reply Summary</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Priority</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.influencer')}</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.platform')}</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.followers')}</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.replyIntent')}</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.replySummary')}</th>
+              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.priority')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
             {loading && (
               <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">Loading…</td>
+                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">{t('crm.replied.loading')}</td>
               </tr>
             )}
             {!loading && items.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">
-                  No replied influencers yet
+                  {t('crm.replied.noReplied')}
                 </td>
               </tr>
             )}
@@ -359,7 +356,7 @@ function RepliedView() {
                 <td className="px-4 py-3">
                   {inf.reply_intent ? (
                     <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${REPLY_INTENT_COLORS[inf.reply_intent] ?? 'bg-gray-100 text-gray-500'}`}>
-                      {REPLY_INTENT_LABELS[inf.reply_intent] ?? inf.reply_intent}
+                      {t(`common.intent.${inf.reply_intent}`, { defaultValue: inf.reply_intent })}
                     </span>
                   ) : '—'}
                 </td>
@@ -370,7 +367,7 @@ function RepliedView() {
                 </td>
                 <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
                   {updatingId === inf.id ? (
-                    <span className="text-xs text-gray-400">Saving…</span>
+                    <span className="text-xs text-gray-400">{t('crm.replied.saving')}</span>
                   ) : (
                     <PriorityDropdown
                       value={inf.priority}
@@ -386,7 +383,7 @@ function RepliedView() {
 
       {totalPages > 1 && (
         <div className="flex items-center justify-between text-sm text-gray-500">
-          <span>Page {page} of {totalPages}</span>
+          <span>{t('common.pageOf', { current: page, total: totalPages })}</span>
           <div className="flex gap-2">
             <button
               onClick={() => setPage((p) => Math.max(1, p - 1))}
@@ -394,14 +391,14 @@ function RepliedView() {
               className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
               <ChevronLeft size={14} />
-              Prev
+              {t('common.prev')}
             </button>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
               className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Next
+              {t('common.next')}
               <ChevronRight size={14} />
             </button>
           </div>
@@ -414,6 +411,7 @@ function RepliedView() {
 // ── main page ─────────────────────────────────────────────────────────────────
 
 export default function CRMPage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
 
   // tab
@@ -511,7 +509,7 @@ export default function CRMPage() {
   function toggleRow(id: number) {
     setSelected((prev) => {
       const next = new Set(prev)
-      next.has(id) ? next.delete(id) : next.add(id)
+      if (next.has(id)) { next.delete(id) } else { next.add(id) }
       return next
     })
   }
@@ -568,10 +566,10 @@ export default function CRMPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-lg font-semibold text-gray-900">CRM</h1>
+          <h1 className="text-lg font-semibold text-gray-900">{t('crm.title')}</h1>
           {tab === 'all' && (
             <p className="text-sm text-gray-400 mt-0.5">
-              {total} influencer{total !== 1 ? 's' : ''} total
+              {t('crm.totalCount', { count: total })}
             </p>
           )}
         </div>
@@ -581,7 +579,7 @@ export default function CRMPage() {
             className="flex items-center gap-1.5 text-sm border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 text-gray-600"
           >
             <Download size={14} />
-            Export CSV
+            {t('crm.exportCsv')}
           </button>
         )}
       </div>
@@ -596,7 +594,7 @@ export default function CRMPage() {
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          All Influencers
+          {t('crm.tabAll')}
         </button>
         <button
           onClick={() => setTab('replied')}
@@ -606,7 +604,7 @@ export default function CRMPage() {
               : 'border-transparent text-gray-500 hover:text-gray-700'
           }`}
         >
-          Replied
+          {t('crm.tabReplied')}
         </button>
       </div>
 
@@ -625,7 +623,7 @@ export default function CRMPage() {
                 type="text"
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
-                placeholder="Name or email…"
+                placeholder={t('crm.search')}
                 className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400 w-48"
               />
             </div>
@@ -636,13 +634,13 @@ export default function CRMPage() {
               onChange={(e) => setPlatformFilter(e.target.value)}
               className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600"
             >
-              <option value="">All platforms</option>
-              <option value="tiktok">TikTok</option>
-              <option value="instagram">Instagram</option>
-              <option value="youtube">YouTube</option>
-              <option value="twitter">Twitter</option>
-              <option value="facebook">Facebook</option>
-              <option value="other">Other</option>
+              <option value="">{t('crm.allPlatforms')}</option>
+              <option value="tiktok">{t('common.platform.tiktok')}</option>
+              <option value="instagram">{t('common.platform.instagram')}</option>
+              <option value="youtube">{t('common.platform.youtube')}</option>
+              <option value="twitter">{t('common.platform.twitter')}</option>
+              <option value="facebook">{t('common.platform.facebook')}</option>
+              <option value="other">{t('common.platform.other')}</option>
             </select>
 
             {/* Status */}
@@ -651,11 +649,11 @@ export default function CRMPage() {
               onChange={(e) => setStatusFilter(e.target.value)}
               className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600"
             >
-              <option value="">All statuses</option>
-              <option value="new">New</option>
-              <option value="contacted">Contacted</option>
-              <option value="replied">Replied</option>
-              <option value="archived">Archived</option>
+              <option value="">{t('crm.allStatuses')}</option>
+              <option value="new">{t('common.status.new')}</option>
+              <option value="contacted">{t('common.status.contacted')}</option>
+              <option value="replied">{t('common.status.replied')}</option>
+              <option value="archived">{t('common.status.archived')}</option>
             </select>
 
             {/* Tags multi-select */}
@@ -667,7 +665,7 @@ export default function CRMPage() {
                 type="number"
                 value={followersMin}
                 onChange={(e) => setFollowersMin(e.target.value)}
-                placeholder="Followers min"
+                placeholder={t('crm.followersMin')}
                 className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 w-28 text-gray-600"
               />
               <span className="text-gray-400 text-sm">–</span>
@@ -675,7 +673,7 @@ export default function CRMPage() {
                 type="number"
                 value={followersMax}
                 onChange={(e) => setFollowersMax(e.target.value)}
-                placeholder="max"
+                placeholder={t('crm.followersMax')}
                 className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 w-20 text-gray-600"
               />
             </div>
@@ -685,7 +683,7 @@ export default function CRMPage() {
               type="text"
               value={industryFilter}
               onChange={(e) => setIndustryFilter(e.target.value)}
-              placeholder="Industry…"
+              placeholder={t('crm.industry')}
               className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-400 w-32 text-gray-600"
             />
 
@@ -695,10 +693,12 @@ export default function CRMPage() {
               onChange={(e) => setReplyIntentFilter(e.target.value)}
               className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600"
             >
-              <option value="">All intents</option>
-              {Object.entries(REPLY_INTENT_LABELS).map(([v, l]) => (
-                <option key={v} value={v}>{l}</option>
-              ))}
+              <option value="">{t('crm.allIntents')}</option>
+              <option value="interested">{t('common.intent.interested')}</option>
+              <option value="pricing">{t('common.intent.pricing')}</option>
+              <option value="declined">{t('common.intent.declined')}</option>
+              <option value="auto_reply">{t('common.intent.auto_reply')}</option>
+              <option value="irrelevant">{t('common.intent.irrelevant')}</option>
             </select>
           </div>
 
@@ -716,28 +716,28 @@ export default function CRMPage() {
                     />
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Influencer
+                    {t('crm.table.influencer')}
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Platform
+                    {t('crm.table.platform')}
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Email
+                    {t('crm.table.email')}
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Followers
+                    {t('crm.table.followers')}
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Status
+                    {t('crm.table.status')}
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Tags
+                    {t('crm.table.tags')}
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Priority
+                    {t('crm.table.priority')}
                   </th>
                   <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    Last Email
+                    {t('crm.table.lastEmail')}
                   </th>
                 </tr>
               </thead>
@@ -745,14 +745,14 @@ export default function CRMPage() {
                 {loading && (
                   <tr>
                     <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
-                      Loading…
+                      {t('crm.loading')}
                     </td>
                   </tr>
                 )}
                 {!loading && items.length === 0 && (
                   <tr>
                     <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
-                      No influencers found
+                      {t('crm.noInfluencers')}
                     </td>
                   </tr>
                 )}
@@ -801,13 +801,13 @@ export default function CRMPage() {
                       </td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
-                          {inf.tags.slice(0, 3).map((t) => (
+                          {inf.tags.slice(0, 3).map((tag) => (
                             <span
-                              key={t.id}
+                              key={tag.id}
                               className="text-xs px-1.5 py-0.5 rounded-full text-white"
-                              style={{ backgroundColor: t.color }}
+                              style={{ backgroundColor: tag.color }}
                             >
-                              {t.name}
+                              {tag.name}
                             </span>
                           ))}
                           {inf.tags.length > 3 && (
@@ -835,7 +835,7 @@ export default function CRMPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between text-sm text-gray-500">
               <span>
-                Page {page} of {totalPages}
+                {t('common.pageOf', { current: page, total: totalPages })}
               </span>
               <div className="flex gap-2">
                 <button
@@ -844,14 +844,14 @@ export default function CRMPage() {
                   className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
                   <ChevronLeft size={14} />
-                  Prev
+                  {t('common.prev')}
                 </button>
                 <button
                   onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
                   disabled={page === totalPages}
                   className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
                 >
-                  Next
+                  {t('common.next')}
                   <ChevronRight size={14} />
                 </button>
               </div>
@@ -861,7 +861,7 @@ export default function CRMPage() {
           {/* Batch action bar */}
           {selected.size > 0 && (
             <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-xl">
-              <span className="text-sm font-medium">{selected.size} selected</span>
+              <span className="text-sm font-medium">{t('crm.batch.selected', { count: selected.size })}</span>
               <div className="w-px h-4 bg-white/20" />
               <button
                 onClick={() => setBatchTagOpen(true)}
@@ -869,7 +869,7 @@ export default function CRMPage() {
                 className="flex items-center gap-1.5 text-sm hover:text-indigo-300 transition-colors disabled:opacity-50"
               >
                 <Tag size={14} />
-                Assign tags
+                {t('crm.batch.assignTags')}
               </button>
               <button
                 onClick={handleBatchArchive}
@@ -877,7 +877,7 @@ export default function CRMPage() {
                 className="flex items-center gap-1.5 text-sm hover:text-yellow-300 transition-colors disabled:opacity-50"
               >
                 <Archive size={14} />
-                Archive
+                {t('crm.batch.archive')}
               </button>
               <button
                 onClick={handleExport}
@@ -885,7 +885,7 @@ export default function CRMPage() {
                 className="flex items-center gap-1.5 text-sm hover:text-green-300 transition-colors disabled:opacity-50"
               >
                 <Download size={14} />
-                Export CSV
+                {t('crm.batch.exportCsv')}
               </button>
               <div className="w-px h-4 bg-white/20" />
               <button

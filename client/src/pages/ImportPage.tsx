@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { Upload, FileSpreadsheet, AlertCircle, CheckCircle2, X, ChevronDown } from 'lucide-react'
+import { useTranslation } from 'react-i18next'
 import {
   ColumnMappingItem,
   ImportPreviewResponse,
@@ -9,7 +10,7 @@ import {
 } from '../api/import_'
 
 // ─── Email regex (mirrors backend) ───────────────────────────────────────────
-const EMAIL_RE = /^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$/
+const EMAIL_RE = /^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$/
 
 function isValidEmail(v: string): boolean {
   return EMAIL_RE.test(v.trim())
@@ -26,6 +27,7 @@ function MappingSelect({
   value: string | null
   onChange: (v: string | null) => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="relative">
       <select
@@ -33,7 +35,7 @@ function MappingSelect({
         onChange={(e) => onChange(e.target.value || null)}
         className="appearance-none w-full text-xs border border-gray-200 rounded px-2 py-1 pr-6 bg-white text-gray-700 focus:outline-none focus:ring-1 focus:ring-gray-400"
       >
-        <option value="">— skip —</option>
+        <option value="">{t('import.skip')}</option>
         {FIELD_OPTIONS.map((f) => (
           <option key={f.value} value={f.value}>
             {f.label}
@@ -47,6 +49,7 @@ function MappingSelect({
 
 // ─── Upload zone ─────────────────────────────────────────────────────────────
 function UploadZone({ onFile }: { onFile: (f: File) => void }) {
+  const { t } = useTranslation()
   const inputRef = useRef<HTMLInputElement>(null)
   const [dragOver, setDragOver] = useState(false)
   const [error, setError] = useState('')
@@ -54,7 +57,7 @@ function UploadZone({ onFile }: { onFile: (f: File) => void }) {
   const validate = (f: File): boolean => {
     const ext = f.name.split('.').pop()?.toLowerCase()
     if (!ext || !['csv', 'xlsx', 'xls'].includes(ext)) {
-      setError('Only .csv, .xlsx, .xls files are allowed.')
+      setError(t('import.fileTypeError'))
       return false
     }
     setError('')
@@ -91,8 +94,8 @@ function UploadZone({ onFile }: { onFile: (f: File) => void }) {
           <Upload size={24} className="text-gray-500" />
         </div>
         <div className="text-center">
-          <p className="text-sm font-medium text-gray-700">Drop your file here, or click to browse</p>
-          <p className="mt-1 text-xs text-gray-400">Supports .csv, .xlsx, .xls</p>
+          <p className="text-sm font-medium text-gray-700">{t('import.dropHint')}</p>
+          <p className="mt-1 text-xs text-gray-400">{t('import.browseHint')}</p>
         </div>
         <input
           ref={inputRef}
@@ -134,6 +137,7 @@ function PreviewStage({
   onReset: () => void
   confirming: boolean
 }) {
+  const { t } = useTranslation()
   // Find which csv_column maps to 'email'
   const emailCsvCol = mapping.find((m) => m.field === 'email')?.csv_column ?? null
   const hasEmail = emailCsvCol !== null
@@ -154,7 +158,7 @@ function PreviewStage({
 
       {/* Column mapping */}
       <div className="px-6 py-4 border-b border-gray-100 shrink-0">
-        <p className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">Column Mapping</p>
+        <p className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">{t('import.columnMapping')}</p>
         <div className="flex flex-wrap gap-3">
           {mapping.map((m, idx) => (
             <div key={m.csv_column} className="flex flex-col gap-1 min-w-[140px]">
@@ -171,7 +175,7 @@ function PreviewStage({
         {!hasEmail && (
           <p className="mt-2 flex items-center gap-1 text-xs text-amber-600">
             <AlertCircle size={12} />
-            Please map a column to <strong>Email</strong> before importing.
+            {t('import.mapEmailHint')}
           </p>
         )}
       </div>
@@ -179,7 +183,7 @@ function PreviewStage({
       {/* Preview table */}
       <div className="flex-1 overflow-auto px-6 py-4">
         <p className="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">
-          Preview (first {preview.rows.length} of {preview.total_rows} rows)
+          {t('import.preview', { shown: preview.rows.length, total: preview.total_rows })}
         </p>
         <div className="overflow-x-auto border border-gray-100 rounded-lg">
           <table className="min-w-full text-xs">
@@ -218,7 +222,7 @@ function PreviewStage({
                               ? 'text-red-600 bg-red-50 font-medium'
                               : 'text-gray-700'
                           }`}
-                          title={cellInvalid ? 'Invalid email format' : undefined}
+                          title={cellInvalid ? t('import.invalidEmail') : undefined}
                         >
                           {val || <span className="text-gray-300">—</span>}
                           {cellInvalid && (
@@ -244,8 +248,8 @@ function PreviewStage({
             onChange={(e) => onOverwriteChange(e.target.checked)}
             className="rounded border-gray-300 text-gray-900 focus:ring-gray-400"
           />
-          <span className="text-xs text-gray-600">Overwrite duplicates</span>
-          <span className="text-xs text-gray-400">(uncheck = skip existing emails)</span>
+          <span className="text-xs text-gray-600">{t('import.overwrite')}</span>
+          <span className="text-xs text-gray-400">{t('import.overwriteHint')}</span>
         </label>
         <button
           onClick={onConfirm}
@@ -255,10 +259,10 @@ function PreviewStage({
           {confirming ? (
             <>
               <span className="h-4 w-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-              Importing…
+              {t('import.importing')}
             </>
           ) : (
-            <>Import {preview.total_rows} rows</>
+            <>{t('import.importRows', { count: preview.total_rows })}</>
           )}
         </button>
       </div>
@@ -274,11 +278,12 @@ function ResultStage({
   result: ImportConfirmResponse
   onReset: () => void
 }) {
+  const { t } = useTranslation()
   const stats = [
-    { label: 'Imported', value: result.imported, color: 'text-emerald-600' },
-    { label: 'Duplicates', value: result.duplicates, color: 'text-amber-600' },
-    { label: 'Invalid', value: result.invalid, color: 'text-red-600' },
-    { label: 'Total rows', value: result.total, color: 'text-gray-700' },
+    { label: t('import.imported'), value: result.imported, color: 'text-emerald-600' },
+    { label: t('import.duplicates'), value: result.duplicates, color: 'text-amber-600' },
+    { label: t('import.invalid'), value: result.invalid, color: 'text-red-600' },
+    { label: t('import.totalRows'), value: result.total, color: 'text-gray-700' },
   ]
 
   return (
@@ -287,7 +292,7 @@ function ResultStage({
         <div className="flex h-14 w-14 items-center justify-center rounded-full bg-emerald-50">
           <CheckCircle2 size={28} className="text-emerald-500" />
         </div>
-        <h2 className="text-lg font-semibold text-gray-900">Import Complete</h2>
+        <h2 className="text-lg font-semibold text-gray-900">{t('import.complete')}</h2>
       </div>
 
       <div className="flex gap-8">
@@ -302,7 +307,7 @@ function ResultStage({
       {result.errors.length > 0 && (
         <div className="w-full max-w-lg rounded-lg border border-red-100 bg-red-50 p-4">
           <p className="text-xs font-medium text-red-700 mb-2">
-            Issues ({result.errors.length})
+            {t('import.issues', { count: result.errors.length })}
           </p>
           <ul className="space-y-1">
             {result.errors.map((e, i) => (
@@ -318,7 +323,7 @@ function ResultStage({
         onClick={onReset}
         className="px-4 py-2 text-sm font-medium border border-gray-200 rounded-lg text-gray-700 hover:bg-gray-50 transition-colors"
       >
-        Import another file
+        {t('import.importAnother')}
       </button>
     </div>
   )
@@ -326,6 +331,7 @@ function ResultStage({
 
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function ImportPage() {
+  const { t } = useTranslation()
   const [stage, setStage] = useState<Stage>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null)
@@ -350,7 +356,7 @@ export default function ImportPage() {
         err instanceof Error
           ? err.message
           : (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-            'Failed to parse file'
+            t('import.parseFailed')
       setLoadingError(msg)
     } finally {
       setLoading(false)
@@ -373,7 +379,7 @@ export default function ImportPage() {
         err instanceof Error
           ? err.message
           : (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail ??
-            'Import failed'
+            t('import.importFailed')
       setLoadingError(msg)
     } finally {
       setConfirming(false)
@@ -393,9 +399,9 @@ export default function ImportPage() {
     <div className="flex flex-col h-full">
       {/* Page header */}
       <div className="px-6 py-5 border-b border-gray-100 shrink-0">
-        <h1 className="text-base font-semibold text-gray-900">Import Influencers</h1>
+        <h1 className="text-base font-semibold text-gray-900">{t('import.title')}</h1>
         <p className="mt-0.5 text-sm text-gray-400">
-          Upload a CSV or Excel file to bulk-import influencer contacts.
+          {t('import.subtitle')}
         </p>
       </div>
 
@@ -416,7 +422,7 @@ export default function ImportPage() {
           <div className="flex h-full items-center justify-center">
             <div className="flex flex-col items-center gap-3">
               <span className="h-8 w-8 border-2 border-gray-200 border-t-gray-700 rounded-full animate-spin" />
-              <span className="text-sm text-gray-500">Parsing file…</span>
+              <span className="text-sm text-gray-500">{t('import.parsing')}</span>
             </div>
           </div>
         ) : stage === 'upload' ? (

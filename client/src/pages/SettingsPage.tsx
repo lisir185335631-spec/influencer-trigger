@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useAuthContext } from '../stores/AuthContext'
 import {
   getSettings,
@@ -12,9 +13,9 @@ type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type TestStatus = Record<string, 'idle' | 'testing' | 'ok' | 'fail'>
 
 export default function SettingsPage() {
+  const { t } = useTranslation()
   const { role } = useAuthContext()
 
-  const [settings, setSettings] = useState<SystemSettings | null>(null)
   const [form, setForm] = useState<SystemSettings | null>(null)
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle')
   const [testStatus, setTestStatus] = useState<TestStatus>({
@@ -28,10 +29,9 @@ export default function SettingsPage() {
     if (role === 'operator') return
     getSettings()
       .then((data) => {
-        setSettings(data)
         setForm(data)
       })
-      .catch(() => setError('加载设置失败'))
+      .catch(() => setError(t('settings.loadFailed')))
       .finally(() => setLoading(false))
   }, [role])
 
@@ -39,7 +39,7 @@ export default function SettingsPage() {
     return (
       <div className="p-6">
         <div className="border border-gray-100 rounded-lg p-8 text-center text-gray-400 text-sm">
-          系统设置 — 仅管理员和经理可访问
+          {t('settings.accessDenied')}
         </div>
       </div>
     )
@@ -66,7 +66,6 @@ export default function SettingsPage() {
         webhook_slack: form.webhook_slack,
       }
       const updated = await updateSettings(patch)
-      setSettings(updated)
       setForm(updated)
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2500)
@@ -97,20 +96,20 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="p-6 text-sm text-gray-400">加载设置中…</div>
+      <div className="p-6 text-sm text-gray-400">{t('settings.loading')}</div>
     )
   }
 
   if (error || !form) {
     return (
-      <div className="p-6 text-sm text-red-500">{error || '加载失败'}</div>
+      <div className="p-6 text-sm text-red-500">{error || t('settings.loadFailed')}</div>
     )
   }
 
   return (
     <div className="p-6 max-w-2xl">
       <div className="flex items-center justify-between mb-6">
-        <h1 className="text-lg font-semibold text-gray-900">系统设置</h1>
+        <h1 className="text-lg font-semibold text-gray-900">{t('settings.title')}</h1>
         <button
           onClick={handleSave}
           disabled={saveStatus === 'saving'}
@@ -125,26 +124,26 @@ export default function SettingsPage() {
           }`}
         >
           {saveStatus === 'saving'
-            ? '保存中…'
+            ? t('settings.save.saving')
             : saveStatus === 'saved'
-            ? '✓ 已保存'
+            ? t('settings.save.saved')
             : saveStatus === 'error'
-            ? '保存失败'
-            : '保存设置'}
+            ? t('settings.save.failed')
+            : t('settings.save.button')}
         </button>
       </div>
 
       {/* Follow-up strategy */}
       <section className="mb-8">
         <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-4">
-          追发策略
+          {t('settings.followUp.title')}
         </h2>
         <div className="space-y-4">
           <div className="flex items-center justify-between py-3 border-b border-gray-50">
             <div>
-              <div className="text-sm font-medium text-gray-800">启用自动追发</div>
+              <div className="text-sm font-medium text-gray-800">{t('settings.followUp.enable')}</div>
               <div className="text-xs text-gray-400 mt-0.5">
-                开启后定时检查并发送追发邮件
+                {t('settings.followUp.enableHint')}
               </div>
             </div>
             <button
@@ -165,9 +164,9 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between py-3 border-b border-gray-50">
             <div>
-              <div className="text-sm font-medium text-gray-800">追发间隔天数</div>
+              <div className="text-sm font-medium text-gray-800">{t('settings.followUp.interval')}</div>
               <div className="text-xs text-gray-400 mt-0.5">
-                距上次邮件多少天后触发追发
+                {t('settings.followUp.intervalHint')}
               </div>
             </div>
             <input
@@ -184,9 +183,9 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between py-3 border-b border-gray-50">
             <div>
-              <div className="text-sm font-medium text-gray-800">最大追发次数</div>
+              <div className="text-sm font-medium text-gray-800">{t('settings.followUp.max')}</div>
               <div className="text-xs text-gray-400 mt-0.5">
-                每位网红最多追发几封邮件
+                {t('settings.followUp.maxHint')}
               </div>
             </div>
             <input
@@ -203,9 +202,9 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between py-3 border-b border-gray-50">
             <div>
-              <div className="text-sm font-medium text-gray-800">执行时间（UTC 小时）</div>
+              <div className="text-sm font-medium text-gray-800">{t('settings.followUp.sendTime')}</div>
               <div className="text-xs text-gray-400 mt-0.5">
-                每天定时执行追发检查的 UTC 小时（0–23）
+                {t('settings.followUp.sendTimeHint')}
               </div>
             </div>
             <input
@@ -225,13 +224,13 @@ export default function SettingsPage() {
       {/* Scrape config */}
       <section className="mb-8">
         <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-4">
-          抓取配置
+          {t('settings.scrape.title')}
         </h2>
         <div className="flex items-center justify-between py-3 border-b border-gray-50">
           <div>
-            <div className="text-sm font-medium text-gray-800">抓取并发数</div>
+            <div className="text-sm font-medium text-gray-800">{t('settings.scrape.concurrency')}</div>
             <div className="text-xs text-gray-400 mt-0.5">
-              同时启动的 Playwright 浏览器实例数量
+              {t('settings.scrape.concurrencyHint')}
             </div>
           </div>
           <input
@@ -250,13 +249,13 @@ export default function SettingsPage() {
       {/* Webhook notifications */}
       <section className="mb-8">
         <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-4">
-          Webhook 通知
+          {t('settings.webhook.title')}
         </h2>
         <div className="space-y-4">
           {/* Feishu */}
           <div className="py-3 border-b border-gray-50">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-gray-800">飞书 Webhook</div>
+              <div className="text-sm font-medium text-gray-800">{t('settings.webhook.feishu')}</div>
               <button
                 onClick={() => handleTest('feishu')}
                 disabled={!form.webhook_feishu || testStatus.feishu === 'testing'}
@@ -269,17 +268,17 @@ export default function SettingsPage() {
                 }`}
               >
                 {testStatus.feishu === 'testing'
-                  ? '发送中…'
+                  ? t('settings.webhook.test.sending')
                   : testStatus.feishu === 'ok'
-                  ? '✓ 发送成功'
+                  ? t('settings.webhook.test.success')
                   : testStatus.feishu === 'fail'
-                  ? '✗ 发送失败'
-                  : '测试'}
+                  ? t('settings.webhook.test.failed')
+                  : t('settings.webhook.test.button')}
               </button>
             </div>
             <input
               type="url"
-              placeholder="https://open.feishu.cn/open-apis/bot/v2/hook/…"
+              placeholder={t('settings.webhook.feishuPlaceholder')}
               value={form.webhook_feishu}
               onChange={(e) => handleChange('webhook_feishu', e.target.value)}
               className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300"
@@ -289,7 +288,7 @@ export default function SettingsPage() {
           {/* Slack */}
           <div className="py-3 border-b border-gray-50">
             <div className="flex items-center justify-between mb-2">
-              <div className="text-sm font-medium text-gray-800">Slack Webhook</div>
+              <div className="text-sm font-medium text-gray-800">{t('settings.webhook.slack')}</div>
               <button
                 onClick={() => handleTest('slack')}
                 disabled={!form.webhook_slack || testStatus.slack === 'testing'}
@@ -302,17 +301,17 @@ export default function SettingsPage() {
                 }`}
               >
                 {testStatus.slack === 'testing'
-                  ? '发送中…'
+                  ? t('settings.webhook.test.sending')
                   : testStatus.slack === 'ok'
-                  ? '✓ 发送成功'
+                  ? t('settings.webhook.test.success')
                   : testStatus.slack === 'fail'
-                  ? '✗ 发送失败'
-                  : '测试'}
+                  ? t('settings.webhook.test.failed')
+                  : t('settings.webhook.test.button')}
               </button>
             </div>
             <input
               type="url"
-              placeholder="https://hooks.slack.com/services/…"
+              placeholder={t('settings.webhook.slackPlaceholder')}
               value={form.webhook_slack}
               onChange={(e) => handleChange('webhook_slack', e.target.value)}
               className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300"
@@ -322,7 +321,7 @@ export default function SettingsPage() {
       </section>
 
       <div className="pt-2 text-xs text-gray-400">
-        修改后点击右上角「保存设置」立即生效
+        {t('settings.footer')}
       </div>
     </div>
   )
