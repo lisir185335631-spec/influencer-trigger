@@ -14,6 +14,7 @@ from app.models.email_event import EmailEvent
 from app.models.notification import Notification
 from app.models.follow_up_settings import FollowUpSettings
 from app.models.login_history import LoginHistory
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "User",
@@ -32,4 +33,5 @@ __all__ = [
     "Notification",
     "FollowUpSettings",
     "LoginHistory",
+    "AuditLog",
 ]

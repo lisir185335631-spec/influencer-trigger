@@ -33,6 +33,8 @@ from app.api.users import router as users_router
 from app.api.settings import router as settings_router
 from app.api.admin.overview import router as admin_overview_router
 from app.api.admin.users_admin import router as admin_users_router
+from app.api.admin.audit import router as admin_audit_router
+from app.middleware.audit_middleware import AuditMiddleware
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -146,6 +148,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+app.add_middleware(AuditMiddleware)
 
 # Register routers
 app.include_router(health_router, prefix="/api")
@@ -164,6 +167,7 @@ app.include_router(users_router, prefix="/api")
 app.include_router(settings_router, prefix="/api")
 app.include_router(admin_overview_router, prefix="/api/admin")
 app.include_router(admin_users_router, prefix="/api/admin")
+app.include_router(admin_audit_router, prefix="/api/admin")
 
 
 @app.websocket("/ws")
