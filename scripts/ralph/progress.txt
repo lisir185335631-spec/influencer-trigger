@@ -1053,3 +1053,28 @@
 --- [RALPH] Iteration 6 ended: US-009 (43分钟 2秒) ---
 
 --- [RALPH] Iteration 7 started: US-010 at 2026-04-17 20:46 ---
+
+--- [RALPH] Iteration 7 ended: US-010 (27分钟 32秒) ---
+
+--- [RALPH] Iteration 8 started: US-011 at 2026-04-17 21:14 ---
+
+## 2026-04-17 21:30 - US-011
+- 新增 server/app/models/agent_run.py：AgentRun 模型（id, agent_name, task_id, state, input/output/error snapshot, started/finished_at, duration_ms, token_cost_usd, llm_calls_count），两个复合索引
+- 更新 server/app/models/__init__.py：import AgentRun
+- 新增 server/app/agents/_tracking.py：async context manager track_agent_run，自动记录 run 的 state/timing/error
+- 新增 server/app/agents/supervisor.py：tracked 入口点 run_scraper_with_tracking / run_sender_with_tracking / run_monitor_with_tracking / run_holiday_with_tracking；5 个 Executor Agent 文件零修改
+- 修改 server/app/api/scrape.py：_launch_scraper 改为调用 supervisor.run_scraper_with_tracking
+- 修改 server/app/api/emails.py：_launch_sender 改为调用 supervisor.run_sender_with_tracking
+- 新增 server/app/api/admin/agents_monitor.py：4 个端点（GET /status、GET /runs、GET /runs/{id}、POST /runs/{id}/retry）
+- 修改 server/app/main.py：import agent_run model + CREATE TABLE migration + monitor/holiday 用 supervisor 包裹 + 注册 admin_agents_router
+- 新增 client/src/api/admin/agents_monitor.ts：TypeScript API 客户端
+- 新增 client/src/pages/admin/AgentsMonitorPage.tsx：6 个 Agent 卡片（状态灯/成功率/平均耗时/运行中数）+ 历史 run 表格（筛选 agent+状态）+ 展开看 input/error_stack + 失败 run 重试按钮
+- 更新 client/src/App.tsx：/admin/agents 路由
+- TypeScript typecheck 通过；ESLint 0 errors；Python import 通过
+- 手动浏览器验证需要：admin 进入 /admin/agents 看到 6 个 Agent 卡片，触发抓取后能看到新 run 出现
+- **未来迭代的学习：**
+  - supervisor.py 是 Agent 调用的单一入口，所有新 Agent 执行必须经过 supervisor；这样 _tracking.py 的 context manager 就能统一管理所有 run 记录
+  - monitor 是长生命周期 task (lifespan)，track_agent_run 会记录它整个生命周期为一条 run；对 monitor 来说这是合理的
+  - CREATE TABLE IF NOT EXISTS + CREATE INDEX IF NOT EXISTS 用于 SQLite migration，比 ALTER TABLE 更稳定（新表不存在 "column already exists" 问题）
+  - agent_runs 表的 state 字段是 VARCHAR 而非 Enum，未来新增 state 值无需 DB migration
+---
