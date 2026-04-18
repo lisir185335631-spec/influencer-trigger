@@ -4,7 +4,7 @@ Scraper Agent — Playwright-based influencer email extractor.
 Supports: Instagram, YouTube (full Playwright scraping)
 Degrades:  TikTok, Twitter, Facebook (stub — shows manual-input prompt)
 
-Concurrency: controlled by `scrape_concurrency` system setting (default 3), random 2-5 second delay between page visits.
+Concurrency: controlled by `scrape_concurrency` system setting (default 1), random 5-15 second delay between page visits.
 """
 
 import asyncio
@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 import dns.resolver
 import sqlalchemy as sa
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
+from playwright_stealth import stealth_async
 from sqlalchemy import select
 
 from app.config import get_settings
@@ -158,7 +159,7 @@ async def _new_context(browser: Browser) -> BrowserContext:
 
 
 async def _random_delay() -> None:
-    await asyncio.sleep(random.uniform(2.0, 5.0))
+    await asyncio.sleep(random.uniform(5.0, 15.0))
 
 
 # ── platform scrapers ────────────────────────────────────────────────────────
@@ -175,6 +176,7 @@ async def _scrape_youtube(
     """
     ctx = await _new_context(browser)
     page = await ctx.new_page()
+    await stealth_async(page)
 
     try:
         search_queries = queries or [f"{industry} creator contact email"]
@@ -267,10 +269,22 @@ async def _scrape_youtube(
                 except Exception:
                     pass
 
+                avatar_url: str | None = None
+                try:
+                    # og:image is typically the channel avatar
+                    m = re.search(
+                        r'<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"',
+                        content,
+                    )
+                    if m and m.group(1):
+                        avatar_url = m.group(1)[:512]
+                except Exception:
+                    pass
+
                 for email in emails:
                     domain = email.split("@")[1]
                     if await _mx_valid(domain):
-                        await on_found(email, name, ch_url, followers=followers, bio=bio)
+                        await on_found(email, name, ch_url, followers=followers, bio=bio, avatar_url=avatar_url)
                         found += 1
                         break
 
@@ -296,6 +310,7 @@ async def _scrape_instagram(
     """
     ctx = await _new_context(browser)
     page = await ctx.new_page()
+    await stealth_async(page)
 
     try:
         hashtags = queries or [industry.lower().replace(" ", "")]
@@ -361,10 +376,40 @@ async def _scrape_instagram(
                 content = await page.content()
                 emails = _extract_emails(content)
 
+                # Extract Instagram metadata from SSR meta tags
+                bio: str | None = None
+                followers: int | None = None
+                avatar_url: str | None = None
+
+                try:
+                    desc_m = re.search(
+                        r'<meta\s+(?:property|name)="og:description"\s+content="([^"]+)"',
+                        content,
+                    )
+                    if desc_m:
+                        desc = html_module.unescape(desc_m.group(1))
+                        # followers from "1,234 Followers" embedded in description
+                        fm = re.search(r'([\d.,]+\s*[KMB]?)\s*Followers?', desc, re.IGNORECASE)
+                        if fm:
+                            followers = _parse_subscriber_count(fm.group(1))
+                        bio = desc[:2000]
+                except Exception:
+                    pass
+
+                try:
+                    img_m = re.search(
+                        r'<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"',
+                        content,
+                    )
+                    if img_m and img_m.group(1):
+                        avatar_url = img_m.group(1)[:512]
+                except Exception:
+                    pass
+
                 for email in emails:
                     domain = email.split("@")[1]
                     if await _mx_valid(domain):
-                        await on_found(email, username, profile_url)
+                        await on_found(email, username, profile_url, followers=followers, bio=bio, avatar_url=avatar_url)
                         found += 1
                         break
 
@@ -616,6 +661,7 @@ async def run_scraper_agent(task_id: int) -> None:
                 profile_url: str,
                 followers: int | None = None,
                 bio: str | None = None,
+                avatar_url: str | None = None,
             ) -> None:
                 nonlocal found_total, valid_total
 
@@ -639,6 +685,7 @@ async def run_scraper_agent(task_id: int) -> None:
                             industry=industry,
                             followers=followers,
                             bio=bio,
+                            avatar_url=avatar_url,
                         )
                         db.add(inf)
                         await db.flush()  # get inf.id without full commit

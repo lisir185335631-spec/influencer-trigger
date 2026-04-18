@@ -13,7 +13,7 @@ class SystemSettings(Base):
     __tablename__ = "system_settings"
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
-    scrape_concurrency: Mapped[int] = mapped_column(Integer, default=3, nullable=False)
+    scrape_concurrency: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     webhook_feishu: Mapped[str] = mapped_column(String, default="", nullable=False)
     webhook_slack: Mapped[str] = mapped_column(String, default="", nullable=False)
     webhook_default_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
