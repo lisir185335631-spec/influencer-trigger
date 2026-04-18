@@ -8,6 +8,7 @@ Concurrency: controlled by `scrape_concurrency` system setting (default 3), rand
 """
 
 import asyncio
+import html as html_module
 import json
 import logging
 import random
@@ -29,6 +30,26 @@ from app.services.settings_service import get_or_create_system_settings
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+_SUB_COUNT_RE = re.compile(r"([\d.,]+)\s*([KMB]?)", re.IGNORECASE)
+
+
+def _parse_subscriber_count(text: str) -> int | None:
+    """Parse '1.2M subscribers' / '123K' / '456' into an int."""
+    if not text:
+        return None
+    m = _SUB_COUNT_RE.search(text.strip())
+    if not m:
+        return None
+    try:
+        num = float(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+    mult = {"K": 1_000, "M": 1_000_000, "B": 1_000_000_000}.get(m.group(2).upper(), 1)
+    return int(num * mult)
+
 
 # ── email extraction ─────────────────────────────────────────────────────────
 
@@ -219,10 +240,37 @@ async def _scrape_youtube(
                 except Exception:
                     pass
 
+                # Extract channel bio (og:description) + subscriber count
+                # (from SSR'd JSON inside the page HTML)
+                bio: str | None = None
+                followers: int | None = None
+                try:
+                    m = re.search(
+                        r'<meta\s+(?:property|name)="(?:og:description|description)"\s+content="([^"]*)"',
+                        content,
+                    )
+                    if m and m.group(1):
+                        bio = html_module.unescape(m.group(1))[:2000]
+                except Exception:
+                    pass
+                try:
+                    # YouTube renders "1.2M subscribers" / "123K subscribers" / "456 subscribers"
+                    # in multiple places (page body, JSON metadata, aria labels).
+                    # A direct text regex is resilient to their SSR schema changes.
+                    sm = re.search(
+                        r'([\d.,]+\s*[KMB]?)\s*subscribers?',
+                        content,
+                        re.IGNORECASE,
+                    )
+                    if sm:
+                        followers = _parse_subscriber_count(sm.group(1))
+                except Exception:
+                    pass
+
                 for email in emails:
                     domain = email.split("@")[1]
                     if await _mx_valid(domain):
-                        await on_found(email, name, ch_url)
+                        await on_found(email, name, ch_url, followers=followers, bio=bio)
                         found += 1
                         break
 
@@ -562,7 +610,13 @@ async def run_scraper_agent(task_id: int) -> None:
             """Return a platform-specific on_found callback (avoids shared mutable closure)."""
             plat = platform_map.get(platform, InfluencerPlatform.other)
 
-            async def on_found(email: str, name: str, profile_url: str) -> None:
+            async def on_found(
+                email: str,
+                name: str,
+                profile_url: str,
+                followers: int | None = None,
+                bio: str | None = None,
+            ) -> None:
                 nonlocal found_total, valid_total
 
                 async with db_lock:
@@ -583,6 +637,8 @@ async def run_scraper_agent(task_id: int) -> None:
                             platform=plat,
                             profile_url=profile_url or None,
                             industry=industry,
+                            followers=followers,
+                            bio=bio,
                         )
                         db.add(inf)
                         await db.flush()  # get inf.id without full commit
