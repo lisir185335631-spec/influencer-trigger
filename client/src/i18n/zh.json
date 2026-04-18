@@ -742,7 +742,7 @@
     "sidebar": {
       "overview": "总览",
       "users": "用户管理",
-      "emails": "邮件管理",
+      "emails": "已发邮件管理",
       "mailboxes": "邮箱池",
       "influencers": "网红邮箱库",
       "scrape": "抓取任务",
@@ -1265,7 +1265,7 @@
       }
     },
     "emails": {
-      "title": "邮件管理",
+      "title": "已发邮件管理",
       "subtitle": "全局邮件流水与黑名单管理",
       "tabs": {
         "flow": "邮件流水",

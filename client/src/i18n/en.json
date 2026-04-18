@@ -742,7 +742,7 @@
     "sidebar": {
       "overview": "Overview",
       "users": "Users",
-      "emails": "Emails",
+      "emails": "Sent Emails",
       "mailboxes": "Mailboxes",
       "influencers": "Influencer Emails",
       "scrape": "Scrape",
@@ -1265,7 +1265,7 @@
       }
     },
     "emails": {
-      "title": "Email Admin",
+      "title": "Sent Email Admin",
       "subtitle": "Global email flow & blacklist management",
       "tabs": {
         "flow": "Email Flow",
