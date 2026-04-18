@@ -695,5 +695,68 @@
       }
     },
     "footer": "修改后点击右上角「保存设置」立即生效"
+  },
+  "admin": {
+    "layout": {
+      "console": "管理控制台"
+    },
+    "sidebar": {
+      "overview": "总览",
+      "users": "用户管理",
+      "emails": "邮件管理",
+      "mailboxes": "邮箱池",
+      "influencers": "网红库",
+      "scrape": "抓取任务",
+      "templates": "模板库",
+      "agents": "Agent 监控",
+      "usage": "用量与成本",
+      "followup": "追发策略",
+      "holidays": "节假日",
+      "settings": "系统配置",
+      "security": "安全合规",
+      "audit": "审计日志",
+      "diagnostics": "系统诊断",
+      "backToApp": "← 返回业务端"
+    },
+    "common": {
+      "save": "保存",
+      "cancel": "取消",
+      "delete": "删除",
+      "confirm": "确认",
+      "close": "关闭",
+      "edit": "编辑",
+      "add": "添加",
+      "create": "新建",
+      "update": "更新",
+      "reset": "重置",
+      "search": "搜索",
+      "filter": "筛选",
+      "export": "导出",
+      "refresh": "刷新",
+      "loading": "加载中...",
+      "noData": "暂无数据",
+      "actions": "操作",
+      "status": "状态",
+      "createdAt": "创建时间",
+      "updatedAt": "更新时间",
+      "yes": "是",
+      "no": "否",
+      "all": "全部",
+      "previous": "上一页",
+      "next": "下一页",
+      "pageOf": "第 {{current}} / {{total}} 页",
+      "total": "共 {{count}} 条",
+      "selectAll": "全选",
+      "selected": "已选 {{count}} 项",
+      "required": "必填",
+      "optional": "（可选）",
+      "enabled": "启用",
+      "disabled": "停用",
+      "active": "激活",
+      "inactive": "未激活",
+      "adminPasswordRequired": "需要管理员密码",
+      "operationSuccess": "操作成功",
+      "operationFailed": "操作失败"
+    }
   }
 }

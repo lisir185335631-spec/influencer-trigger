@@ -695,5 +695,68 @@
       }
     },
     "footer": "After modifying, click 'Save Settings' in the top right to apply immediately"
+  },
+  "admin": {
+    "layout": {
+      "console": "ADMIN CONSOLE"
+    },
+    "sidebar": {
+      "overview": "Overview",
+      "users": "Users",
+      "emails": "Emails",
+      "mailboxes": "Mailboxes",
+      "influencers": "Influencers",
+      "scrape": "Scrape",
+      "templates": "Templates",
+      "agents": "Agents",
+      "usage": "Usage",
+      "followup": "Follow-up",
+      "holidays": "Holidays",
+      "settings": "Settings",
+      "security": "Security",
+      "audit": "Audit Log",
+      "diagnostics": "Diagnostics",
+      "backToApp": "← Back to App"
+    },
+    "common": {
+      "save": "Save",
+      "cancel": "Cancel",
+      "delete": "Delete",
+      "confirm": "Confirm",
+      "close": "Close",
+      "edit": "Edit",
+      "add": "Add",
+      "create": "Create",
+      "update": "Update",
+      "reset": "Reset",
+      "search": "Search",
+      "filter": "Filter",
+      "export": "Export",
+      "refresh": "Refresh",
+      "loading": "Loading...",
+      "noData": "No data",
+      "actions": "Actions",
+      "status": "Status",
+      "createdAt": "Created At",
+      "updatedAt": "Updated At",
+      "yes": "Yes",
+      "no": "No",
+      "all": "All",
+      "previous": "Previous",
+      "next": "Next",
+      "pageOf": "Page {{current}} of {{total}}",
+      "total": "Total: {{count}}",
+      "selectAll": "Select All",
+      "selected": "{{count}} selected",
+      "required": "Required",
+      "optional": "(optional)",
+      "enabled": "Enabled",
+      "disabled": "Disabled",
+      "active": "Active",
+      "inactive": "Inactive",
+      "adminPasswordRequired": "Admin password required",
+      "operationSuccess": "Operation succeeded",
+      "operationFailed": "Operation failed"
+    }
   }
 }
