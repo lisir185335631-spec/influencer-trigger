@@ -13,6 +13,7 @@ import {
   Upload,
   FileSpreadsheet,
   AlertCircle,
+  ArrowRight,
 } from 'lucide-react'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
 import {
@@ -725,7 +726,7 @@ export default function ScrapePage() {
                 return (
                   <tr
                     key={task.id}
-                    className="hover:bg-gray-50/60 transition-colors cursor-pointer"
+                    className="group hover:bg-gray-50/60 transition-colors cursor-pointer"
                     onClick={() => navigate(`/scrape/tasks/${task.id}`)}
                   >
                     <td className="px-4 py-3">
@@ -756,12 +757,20 @@ export default function ScrapePage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <span className="text-xs font-medium text-gray-900">{task.valid_count}</span>
-                      {task.found_count > task.valid_count && (
-                        <span className="text-[10px] text-gray-400 ml-1">
-                          {t('scrape.table.found', { count: task.found_count })}
-                        </span>
-                      )}
+                      <div className="flex items-center justify-end gap-2">
+                        <span className="text-xs font-medium text-gray-900">{task.valid_count}</span>
+                        {task.found_count > task.valid_count && (
+                          <span className="text-[10px] text-gray-400">
+                            {t('scrape.table.found', { count: task.found_count })}
+                          </span>
+                        )}
+                        {task.valid_count > 0 && (
+                          <span className="inline-flex items-center gap-0.5 text-[11px] text-blue-600 group-hover:text-blue-800">
+                            {t('scrape.table.view')}
+                            <ArrowRight size={11} />
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-gray-500">
                       {task.target_count}
