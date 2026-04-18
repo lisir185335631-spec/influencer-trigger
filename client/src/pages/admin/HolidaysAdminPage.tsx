@@ -195,8 +195,8 @@ function InvestmentReportRow({ holidayId }: { holidayId: number }) {
             <YAxis tick={{ fontSize: 11 }} />
             <Tooltip
               contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }}
-              formatter={(value: number, name: string) => [
-                name === 'total' ? value : `${value}%`,
+              formatter={(value, name) => [
+                name === 'total' ? Number(value) : `${Number(value)}%`,
                 name === 'total' ? 'Sent' : name === 'open_rate' ? 'Open Rate' : 'Reply Rate',
               ]}
             />

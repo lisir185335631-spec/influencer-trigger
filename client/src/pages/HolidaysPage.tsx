@@ -453,14 +453,14 @@ export default function HolidaysPage() {
 
   useEffect(() => { loadHolidays() }, [loadHolidays])
 
-  const handleAdd = async (data: Parameters<typeof holidaysApi.create>[0]) => {
-    await holidaysApi.create(data)
+  const handleAdd = async (data: HolidayCreate | HolidayUpdate) => {
+    await holidaysApi.create(data as HolidayCreate)
     await loadHolidays()
   }
 
-  const handleEdit = async (data: Parameters<typeof holidaysApi.update>[1]) => {
+  const handleEdit = async (data: HolidayCreate | HolidayUpdate) => {
     if (!editTarget) return
-    await holidaysApi.update(editTarget.id, data)
+    await holidaysApi.update(editTarget.id, data as HolidayUpdate)
     await loadHolidays()
   }
 

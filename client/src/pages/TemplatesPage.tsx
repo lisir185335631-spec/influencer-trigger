@@ -391,7 +391,7 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
               <p className="text-xs text-gray-400">
                 {t('templates.ai.generatedHint')}
               </p>
-              {results.map((t, i) => (
+              {results.map((tpl, i) => (
                 <div key={i} className="border border-gray-100 rounded-xl overflow-hidden">
                   <button
                     type="button"
@@ -399,8 +399,8 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
                     className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left"
                   >
                     <div className="flex items-center gap-2">
-                      <StyleBadge style={t.style} />
-                      <span className="text-sm font-medium text-gray-900">{t.name}</span>
+                      <StyleBadge style={tpl.style} />
+                      <span className="text-sm font-medium text-gray-900">{tpl.name}</span>
                     </div>
                     <ChevronDown
                       size={14}
@@ -412,19 +412,19 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
                     <div className="px-4 pb-4 space-y-3 border-t border-gray-50">
                       <div className="pt-3">
                         <p className="text-xs text-gray-400 mb-1">{t('templates.ai.subject')}</p>
-                        <p className="text-sm text-gray-700">{renderPreview(t.subject)}</p>
+                        <p className="text-sm text-gray-700">{renderPreview(tpl.subject)}</p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-400 mb-1">{t('templates.ai.preview')}</p>
                         <div
                           className="prose prose-sm max-w-none text-gray-700 border border-gray-100 rounded-lg p-3 bg-gray-50 text-xs"
-                          dangerouslySetInnerHTML={{ __html: renderPreview(t.body_html) }}
+                          dangerouslySetInnerHTML={{ __html: renderPreview(tpl.body_html) }}
                         />
                       </div>
                       <div className="flex justify-end">
                         <button
                           type="button"
-                          onClick={() => onSelect(t)}
+                          onClick={() => onSelect(tpl)}
                           className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
                         >
                           {t('templates.ai.useTemplate')}
@@ -500,7 +500,7 @@ export default function TemplatesPage() {
 
   // Collect unique industries for filter chip bar
   const industries = Array.from(
-    new Set(templates.map((t) => t.industry).filter(Boolean) as string[])
+    new Set(templates.map((tpl) => tpl.industry).filter(Boolean) as string[])
   ).sort()
 
   return (
@@ -585,39 +585,39 @@ export default function TemplatesPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {templates.map((t) => (
-                <tr key={t.id} className="hover:bg-gray-50/60 transition-colors">
+              {templates.map((tpl) => (
+                <tr key={tpl.id} className="hover:bg-gray-50/60 transition-colors">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900 text-xs">{t.name}</p>
+                    <p className="font-medium text-gray-900 text-xs">{tpl.name}</p>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500 max-w-[220px] truncate">
-                    {t.subject}
+                    {tpl.subject}
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500">
-                    {t.industry ?? <span className="text-gray-300">—</span>}
+                    {tpl.industry ?? <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <StyleBadge style={t.style} />
+                    <StyleBadge style={tpl.style} />
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-400">
-                    {new Date(t.created_at).toLocaleDateString()}
+                    {new Date(tpl.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => setModal(t)}
+                        onClick={() => setModal(tpl)}
                         title={t('common.edit')}
                         className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
                       >
                         <Pencil size={13} />
                       </button>
                       <button
-                        onClick={() => handleDelete(t.id)}
-                        disabled={deletingId === t.id}
+                        onClick={() => handleDelete(tpl.id)}
+                        disabled={deletingId === tpl.id}
                         title={t('common.delete')}
                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
                       >
-                        {deletingId === t.id ? (
+                        {deletingId === tpl.id ? (
                           <Loader2 size={13} className="animate-spin" />
                         ) : (
                           <Trash2 size={13} />
