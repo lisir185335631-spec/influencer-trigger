@@ -50,6 +50,7 @@ class ScrapeInfluencerResult(BaseModel):
     email: str
     platform: Optional[str]
     profile_url: Optional[str]
+    avatar_url: str | None = None
     followers: Optional[int]
     industry: Optional[str]
     bio: Optional[str]

@@ -44,6 +44,7 @@ class Influencer(Base):
     email: Mapped[str] = mapped_column(String(256), unique=True, nullable=False, index=True)
     platform: Mapped[InfluencerPlatform | None] = mapped_column(Enum(InfluencerPlatform), nullable=True, index=True)
     profile_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    avatar_url: Mapped[str | None] = mapped_column(String(512), nullable=True)
     followers: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     industry: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
     bio: Mapped[str | None] = mapped_column(Text, nullable=True)
