@@ -245,7 +245,7 @@ async def rotate_keys(
     admin_user = (
         await db.execute(select(User).where(User.id == current_user.user_id))
     ).scalar_one_or_none()
-    if not admin_user or not verify_password(body.admin_password, admin_user.password_hash):
+    if not admin_user or not verify_password(body.admin_password, admin_user.hashed_password):
         raise HTTPException(status_code=403, detail="Invalid password")
 
     # Generate new keys
