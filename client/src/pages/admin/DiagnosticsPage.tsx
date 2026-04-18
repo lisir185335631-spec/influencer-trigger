@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Activity,
   AlertCircle,
@@ -26,23 +27,24 @@ import {
 // ─── Status Badge ─────────────────────────────────────────────────────────────
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation()
   if (status === 'ok') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-xs font-medium">
-        <CheckCircle size={11} /> OK
+        <CheckCircle size={11} /> {t('admin.diagnostics.status.ok')}
       </span>
     )
   }
   if (status === 'not_configured' || status === 'not_available') {
     return (
       <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 text-xs font-medium">
-        <HelpCircle size={11} /> {status === 'not_configured' ? 'Not Configured' : 'Not Available'}
+        <HelpCircle size={11} /> {status === 'not_configured' ? t('admin.diagnostics.status.notConfigured') : t('admin.diagnostics.status.notAvailable')}
       </span>
     )
   }
   return (
     <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-50 text-red-600 text-xs font-medium">
-      <AlertCircle size={11} /> Error
+      <AlertCircle size={11} /> {t('admin.diagnostics.status.error')}
     </span>
   )
 }
@@ -115,31 +117,32 @@ function DiagCard({
 // ─── DB Card ─────────────────────────────────────────────────────────────────
 
 function DbCard({ data }: { data: DbHealth | undefined }) {
+  const { t } = useTranslation()
   return (
-    <DiagCard icon={<Database size={16} />} title="Database" status={data?.status}>
+    <DiagCard icon={<Database size={16} />} title={t('admin.diagnostics.cards.database')} status={data?.status}>
       {data && data.status === 'ok' && (
         <div className="space-y-3">
           <div className="grid grid-cols-2 gap-3 text-xs">
             <div className="bg-white rounded-lg p-3 border border-gray-100">
-              <p className="text-gray-400 mb-0.5">Latency</p>
+              <p className="text-gray-400 mb-0.5">{t('admin.diagnostics.db.latency')}</p>
               <p className="font-semibold text-gray-800">{data.latency_ms} ms</p>
             </div>
             <div className="bg-white rounded-lg p-3 border border-gray-100">
-              <p className="text-gray-400 mb-0.5">Pool Size</p>
+              <p className="text-gray-400 mb-0.5">{t('admin.diagnostics.db.poolSize')}</p>
               <p className="font-semibold text-gray-800">{data.pool?.size ?? '—'}</p>
             </div>
             <div className="bg-white rounded-lg p-3 border border-gray-100">
-              <p className="text-gray-400 mb-0.5">Checked Out</p>
+              <p className="text-gray-400 mb-0.5">{t('admin.diagnostics.db.checkedOut')}</p>
               <p className="font-semibold text-gray-800">{data.pool?.checked_out ?? '—'}</p>
             </div>
             <div className="bg-white rounded-lg p-3 border border-gray-100">
-              <p className="text-gray-400 mb-0.5">Overflow</p>
+              <p className="text-gray-400 mb-0.5">{t('admin.diagnostics.db.overflow')}</p>
               <p className="font-semibold text-gray-800">{data.pool?.overflow ?? '—'}</p>
             </div>
           </div>
           {data.slow_queries_top10 && data.slow_queries_top10.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-gray-600 mb-2">Slow Queries (Top 10)</p>
+              <p className="text-xs font-medium text-gray-600 mb-2">{t('admin.diagnostics.db.slowQueries')}</p>
               <pre className="text-xs bg-white border border-gray-100 rounded p-2 overflow-auto max-h-32">
                 {JSON.stringify(data.slow_queries_top10, null, 2)}
               </pre>
@@ -157,24 +160,25 @@ function DbCard({ data }: { data: DbHealth | undefined }) {
 // ─── Redis Card ───────────────────────────────────────────────────────────────
 
 function RedisCard({ data }: { data: RedisHealth | undefined }) {
+  const { t } = useTranslation()
   return (
     <DiagCard icon={<Server size={16} />} title="Redis" status={data?.status}>
       {data && data.status === 'ok' && (
         <div className="grid grid-cols-2 gap-3 text-xs">
           <div className="bg-white rounded-lg p-3 border border-gray-100">
-            <p className="text-gray-400 mb-0.5">Latency</p>
+            <p className="text-gray-400 mb-0.5">{t('admin.diagnostics.db.latency')}</p>
             <p className="font-semibold text-gray-800">{data.latency_ms} ms</p>
           </div>
           <div className="bg-white rounded-lg p-3 border border-gray-100">
-            <p className="text-gray-400 mb-0.5">Connected Clients</p>
+            <p className="text-gray-400 mb-0.5">{t('admin.diagnostics.redis.connectedClients')}</p>
             <p className="font-semibold text-gray-800">{data.connected_clients}</p>
           </div>
           <div className="bg-white rounded-lg p-3 border border-gray-100">
-            <p className="text-gray-400 mb-0.5">Keys</p>
+            <p className="text-gray-400 mb-0.5">{t('admin.diagnostics.redis.keys')}</p>
             <p className="font-semibold text-gray-800">{data.key_count}</p>
           </div>
           <div className="bg-white rounded-lg p-3 border border-gray-100">
-            <p className="text-gray-400 mb-0.5">Queue Depth</p>
+            <p className="text-gray-400 mb-0.5">{t('admin.diagnostics.redis.queueDepth')}</p>
             <p className="font-semibold text-gray-800">{data.queue_depth}</p>
           </div>
         </div>
@@ -182,7 +186,7 @@ function RedisCard({ data }: { data: RedisHealth | undefined }) {
       {data && (data.status === 'not_configured' || data.status === 'error') && (
         <p className="text-xs text-slate-500">
           {data.status === 'not_configured'
-            ? '系统指标不可用（Redis 未配置）'
+            ? t('admin.diagnostics.redis.notConfigured')
             : data.reason}
         </p>
       )}
@@ -193,17 +197,18 @@ function RedisCard({ data }: { data: RedisHealth | undefined }) {
 // ─── WebSocket Card ───────────────────────────────────────────────────────────
 
 function WsCard({ data }: { data: WsHealth | undefined }) {
+  const { t } = useTranslation()
   return (
     <DiagCard icon={<Wifi size={16} />} title="WebSocket" status={data?.status}>
       {data && data.status === 'ok' && (
         <div className="space-y-2 text-xs">
           <div className="bg-white rounded-lg p-3 border border-gray-100 inline-block">
-            <p className="text-gray-400 mb-0.5">Active Connections</p>
+            <p className="text-gray-400 mb-0.5">{t('admin.diagnostics.ws.activeConnections')}</p>
             <p className="font-semibold text-gray-800">{data.active_connections}</p>
           </div>
           {data.channels && (
             <div>
-              <p className="text-xs font-medium text-gray-600 mb-1">Channels</p>
+              <p className="text-xs font-medium text-gray-600 mb-1">{t('admin.diagnostics.ws.channels')}</p>
               {Object.entries(data.channels).map(([ch, count]) => (
                 <div key={ch} className="flex justify-between text-xs text-gray-600 py-0.5">
                   <span>{ch}</span>
@@ -221,8 +226,9 @@ function WsCard({ data }: { data: WsHealth | undefined }) {
 // ─── Scheduler Card ───────────────────────────────────────────────────────────
 
 function SchedulerCard({ data }: { data: SchedulerHealth | undefined }) {
+  const { t } = useTranslation()
   return (
-    <DiagCard icon={<Clock size={16} />} title="Scheduler" status={data?.status}>
+    <DiagCard icon={<Clock size={16} />} title={t('admin.diagnostics.cards.scheduler')} status={data?.status}>
       {data && data.status === 'ok' && (
         <div className="space-y-3">
           <div className="flex items-center gap-3 text-xs">
@@ -231,9 +237,9 @@ function SchedulerCard({ data }: { data: SchedulerHealth | undefined }) {
                 data.running ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'
               }`}
             >
-              {data.running ? 'Running' : 'Stopped'}
+              {data.running ? t('admin.diagnostics.scheduler.running') : t('admin.diagnostics.scheduler.stopped')}
             </span>
-            <span className="text-gray-500">{data.job_count} jobs</span>
+            <span className="text-gray-500">{data.job_count} {t('admin.diagnostics.scheduler.jobs')}</span>
           </div>
           {data.jobs && data.jobs.length > 0 && (
             <div className="space-y-1">
@@ -247,7 +253,7 @@ function SchedulerCard({ data }: { data: SchedulerHealth | undefined }) {
                     <span className="text-gray-400 font-mono text-[10px]">{job.id}</span>
                   </div>
                   <div className="text-gray-500 mt-0.5">
-                    Next: {job.next_run_time ?? 'paused'}
+                    {t('admin.diagnostics.scheduler.next')}: {job.next_run_time ?? t('admin.diagnostics.scheduler.paused')}
                   </div>
                   <div className="text-gray-400 text-[10px] mt-0.5">{job.trigger}</div>
                 </div>
@@ -255,7 +261,7 @@ function SchedulerCard({ data }: { data: SchedulerHealth | undefined }) {
             </div>
           )}
           {data.jobs?.length === 0 && (
-            <p className="text-xs text-gray-400">No jobs registered</p>
+            <p className="text-xs text-gray-400">{t('admin.diagnostics.scheduler.noJobs')}</p>
           )}
         </div>
       )}
@@ -266,29 +272,30 @@ function SchedulerCard({ data }: { data: SchedulerHealth | undefined }) {
 // ─── System Card ──────────────────────────────────────────────────────────────
 
 function SystemCard({ data }: { data: SystemHealth | undefined }) {
+  const { t } = useTranslation()
   if (data?.status === 'not_available') {
     return (
-      <DiagCard icon={<Activity size={16} />} title="System" status={data.status}>
+      <DiagCard icon={<Activity size={16} />} title={t('admin.diagnostics.cards.system')} status={data.status}>
         <p className="text-xs text-slate-500">
-          系统指标不可用（请联系运维安装 psutil）
+          {t('admin.diagnostics.system.notAvailable')}
         </p>
       </DiagCard>
     )
   }
 
   return (
-    <DiagCard icon={<Activity size={16} />} title="System" status={data?.status}>
+    <DiagCard icon={<Activity size={16} />} title={t('admin.diagnostics.cards.system')} status={data?.status}>
       {data && data.status === 'ok' && (
         <div className="space-y-4">
           {data.disk && (
             <div>
-              <p className="text-xs font-medium text-gray-600 mb-2">Disk</p>
+              <p className="text-xs font-medium text-gray-600 mb-2">{t('admin.diagnostics.system.disk')}</p>
               <ProgressBar percent={data.disk.percent} label={`${data.disk.used_gb} GB / ${data.disk.total_gb} GB`} />
             </div>
           )}
           {data.memory && (
             <div>
-              <p className="text-xs font-medium text-gray-600 mb-2">Memory</p>
+              <p className="text-xs font-medium text-gray-600 mb-2">{t('admin.diagnostics.system.memory')}</p>
               <ProgressBar
                 percent={data.memory.percent}
                 label={`${data.memory.used_gb} GB / ${data.memory.total_gb} GB`}
@@ -297,13 +304,13 @@ function SystemCard({ data }: { data: SystemHealth | undefined }) {
           )}
           {data.process && (
             <div>
-              <p className="text-xs font-medium text-gray-600 mb-2">Python Process</p>
+              <p className="text-xs font-medium text-gray-600 mb-2">{t('admin.diagnostics.system.pythonProcess')}</p>
               <div className="grid grid-cols-2 gap-2 text-xs">
                 {[
                   ['PID', data.process.pid],
-                  ['Threads', data.process.num_threads],
+                  [t('admin.diagnostics.system.threads'), data.process.num_threads],
                   ['RSS', data.process.memory_rss_mb != null ? `${data.process.memory_rss_mb} MB` : '—'],
-                  ['Uptime', data.process.uptime_s != null ? `${Math.round(data.process.uptime_s / 60)} min` : '—'],
+                  [t('admin.diagnostics.system.uptime'), data.process.uptime_s != null ? `${Math.round(data.process.uptime_s / 60)} min` : '—'],
                 ].map(([k, v]) => (
                   <div key={k as string} className="bg-white border border-gray-100 rounded p-2">
                     <p className="text-gray-400">{k}</p>
@@ -325,6 +332,7 @@ function SystemCard({ data }: { data: SystemHealth | undefined }) {
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
 export default function DiagnosticsPage() {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [result, setResult] = useState<HealthcheckResult | null>(null)
   const [err, setErr] = useState('')
@@ -339,7 +347,7 @@ export default function DiagnosticsPage() {
       setCheckedAt(new Date(data.checked_at).toLocaleTimeString())
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setErr(msg ?? 'Healthcheck failed')
+      setErr(msg ?? t('admin.diagnostics.healthcheckFailed'))
     } finally {
       setLoading(false)
     }
@@ -358,17 +366,17 @@ export default function DiagnosticsPage() {
     <div className="px-8 py-8 max-w-3xl">
       <div className="flex items-start justify-between mb-8">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">System Diagnostics</h1>
+          <h1 className="text-xl font-semibold text-gray-900">{t('admin.diagnostics.title')}</h1>
           <p className="text-sm text-gray-500 mt-0.5">
-            One-click health check for all system components
+            {t('admin.diagnostics.subtitle')}
           </p>
         </div>
         {result && (
           <div className="text-right">
             <p className={`text-sm font-semibold ${overallColor} capitalize`}>
-              Overall: {result.overall}
+              {t('admin.diagnostics.overall')}: {result.overall}
             </p>
-            <p className="text-xs text-gray-400 mt-0.5">Checked at {checkedAt}</p>
+            <p className="text-xs text-gray-400 mt-0.5">{t('admin.diagnostics.checkedAt', { time: checkedAt })}</p>
           </div>
         )}
       </div>
@@ -380,11 +388,11 @@ export default function DiagnosticsPage() {
       >
         {loading ? (
           <>
-            <Loader2 size={16} className="animate-spin" /> Running diagnostics…
+            <Loader2 size={16} className="animate-spin" /> {t('admin.diagnostics.running')}
           </>
         ) : (
           <>
-            <RefreshCw size={15} /> Run Full Diagnostics
+            <RefreshCw size={15} /> {t('admin.diagnostics.runButton')}
           </>
         )}
       </button>
@@ -405,7 +413,7 @@ export default function DiagnosticsPage() {
 
       {!result && !loading && (
         <p className="text-center text-xs text-gray-400 mt-8">
-          Click "Run Full Diagnostics" to check all components
+          {t('admin.diagnostics.hint')}
         </p>
       )}
     </div>

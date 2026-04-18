@@ -950,6 +950,227 @@
         "confirmRotate": "确认轮换密钥",
         "rotationFailed": "密钥轮换失败"
       }
+    },
+    "mailboxes": {
+      "title": "邮箱池管理",
+      "subtitle": "监控所有发送邮箱的 SMTP / IMAP 健康状态",
+      "noMailboxes": "暂无邮箱。",
+      "smtpOk": "{{email}} SMTP 正常",
+      "smtpFailed": "SMTP 失败：{{error}}",
+      "imapOk": "{{email}} IMAP 正常",
+      "imapFailed": "IMAP 失败：{{error}}",
+      "disableConfirm": "停用邮箱 {{email}}？停用后将无法发送邮件。",
+      "disableSuccess": "邮箱 {{email}} 已停用",
+      "disableFailed": "停用邮箱失败",
+      "quotaResetSuccess": "{{email}} 配额已重置",
+      "quotaResetFailed": "重置配额失败",
+      "stats": {
+        "total": "总计",
+        "healthy": "健康",
+        "warning": "警告",
+        "critical": "严重",
+        "disabled": "已停用"
+      },
+      "table": {
+        "health": "健康",
+        "mailbox": "邮箱",
+        "todayLimit": "今日 / 限额",
+        "failRate": "失败率",
+        "lastSuccess": "最近成功",
+        "lastFailure": "最近失败",
+        "totalSent": "总计"
+      },
+      "actions": {
+        "testSmtp": "测试 SMTP",
+        "testImap": "测试 IMAP",
+        "disable": "停用",
+        "resetQuota": "重置配额",
+        "sendHistory": "发送记录"
+      },
+      "history": {
+        "title": "发送记录",
+        "last100": "最近 100 条",
+        "noHistory": "暂无发送记录。",
+        "colTime": "时间",
+        "colRecipient": "收件人",
+        "colSubject": "主题"
+      }
+    },
+    "audit": {
+      "title": "审计日志",
+      "recordsFound": "共 {{count}} 条记录",
+      "exportCsv": "导出 CSV",
+      "exporting": "导出中…",
+      "trendTitle": "操作趋势（近 7 天）",
+      "noLogs": "暂无审计日志。",
+      "filter": {
+        "user": "用户",
+        "allUsers": "全部用户",
+        "action": "操作类型",
+        "allActions": "全部操作",
+        "resource": "资源",
+        "allResources": "全部资源",
+        "method": "请求方法",
+        "allMethods": "全部方法",
+        "from": "开始日期",
+        "to": "结束日期",
+        "searchPlaceholder": "按用户名搜索…",
+        "apply": "应用"
+      },
+      "table": {
+        "time": "时间",
+        "user": "用户",
+        "role": "角色",
+        "method": "方法",
+        "path": "路径",
+        "resource": "资源",
+        "ip": "IP",
+        "duration": "耗时"
+      },
+      "detail": {
+        "userAgent": "User Agent",
+        "resourceId": "资源 ID",
+        "requestBody": "请求体",
+        "responseSnippet": "响应片段",
+        "noResponse": "响应未捕获。"
+      },
+      "pagination": {
+        "pageOf": "第 {{current}} / {{total}} 页",
+        "total": "共 {{count}} 条"
+      }
+    },
+    "scrape": {
+      "title": "抓取管控",
+      "subtitle": "监控所有抓取任务与平台配额",
+      "tabs": {
+        "tasks": "任务列表",
+        "quota": "平台配额"
+      },
+      "tasks": {
+        "total": "总计",
+        "running": "运行中",
+        "noTasks": "暂无抓取任务"
+      },
+      "table": {
+        "industry": "行业",
+        "platforms": "平台",
+        "creator": "创建人",
+        "progress": "进度",
+        "found": "发现数"
+      },
+      "actions": {
+        "forceTerminate": "强制终止",
+        "retry": "重试"
+      },
+      "confirmTerminate": {
+        "title": "强制终止任务 #{{id}}",
+        "message": "此操作将立即取消正在运行的任务，所有进行中的 Playwright 工作将被标记为已终止，且无法撤销。",
+        "terminate": "终止"
+      },
+      "quota": {
+        "editHint": "点击进度条可编辑对应平台的日限额。",
+        "today": "今日",
+        "used": "已用",
+        "editLimit": "编辑限额"
+      },
+      "quotaModal": {
+        "title": "{{platform}} 日限额",
+        "newLimit": "新日限额"
+      }
+    },
+    "diagnostics": {
+      "title": "系统诊断",
+      "subtitle": "一键检查所有系统组件健康状态",
+      "runButton": "执行全量诊断",
+      "running": "诊断中…",
+      "overall": "整体状态",
+      "checkedAt": "检查时间：{{time}}",
+      "hint": "点击「执行全量诊断」检查所有组件",
+      "healthcheckFailed": "健康检查失败",
+      "status": {
+        "ok": "正常",
+        "notConfigured": "未配置",
+        "notAvailable": "不可用",
+        "error": "异常"
+      },
+      "cards": {
+        "database": "数据库",
+        "scheduler": "调度器",
+        "system": "系统"
+      },
+      "db": {
+        "latency": "延迟",
+        "poolSize": "连接池大小",
+        "checkedOut": "已借出",
+        "overflow": "溢出",
+        "slowQueries": "慢查询（Top 10）"
+      },
+      "redis": {
+        "connectedClients": "连接客户端数",
+        "keys": "Key 数量",
+        "queueDepth": "队列深度",
+        "notConfigured": "系统指标不可用（Redis 未配置）"
+      },
+      "ws": {
+        "activeConnections": "活跃连接数",
+        "channels": "频道"
+      },
+      "scheduler": {
+        "running": "运行中",
+        "stopped": "已停止",
+        "jobs": "个任务",
+        "next": "下次执行",
+        "paused": "已暂停",
+        "noJobs": "暂无注册任务"
+      },
+      "system": {
+        "disk": "磁盘",
+        "memory": "内存",
+        "pythonProcess": "Python 进程",
+        "threads": "线程数",
+        "uptime": "运行时长",
+        "notAvailable": "系统指标不可用（请联系运维安装 psutil）"
+      }
+    },
+    "settings": {
+      "title": "系统配置",
+      "subtitle": "平台参数与功能开关管理",
+      "saving": "保存中…",
+      "tabs": {
+        "system": "系统参数",
+        "flags": "功能开关"
+      },
+      "system": {
+        "llmKey": "LLM 密钥",
+        "llmConfigured": "已配置：sk-…{{last4}}",
+        "llmNotConfigured": "未配置",
+        "llmHint": "LLM 密钥通过环境变量 OPENAI_API_KEY 配置，UI 修改功能待后续 story。",
+        "defaultWebhook": "默认 Webhook 地址",
+        "feishuWebhook": "飞书 Webhook",
+        "slackWebhook": "Slack Webhook",
+        "defaultQuota": "默认日发送限额（封/天）",
+        "saveButton": "保存配置",
+        "saved": "已保存！"
+      },
+      "flags": {
+        "editTitle": "编辑功能开关",
+        "newTitle": "新建功能开关",
+        "newFlag": "新建开关",
+        "noFlags": "暂无功能开关。",
+        "flagCount": "{{count}} 个开关",
+        "flagKey": "开关 Key",
+        "description": "描述",
+        "descriptionPlaceholder": "该开关控制什么功能？",
+        "rollout": "灰度比例",
+        "targetRoles": "目标角色",
+        "roles": "角色",
+        "on": "开",
+        "off": "关",
+        "noDescription": "暂无描述",
+        "updatedBy": "最后修改人",
+        "keyRequired": "开关 Key 不能为空",
+        "deleteConfirm": "删除功能开关「{{key}}」？"
+      }
     }
   }
 }

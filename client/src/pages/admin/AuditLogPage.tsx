@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, Download, Filter, RefreshCw } from 'lucide-react'
 import {
   Bar,
@@ -109,6 +110,7 @@ function JsonSnippet({ label, raw }: { label: string; raw: string | null }) {
 const PAGE_SIZE = 50
 
 export default function AuditLogPage() {
+  const { t } = useTranslation()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [filters, setFilters] = useState<AuditFilters>({})
   const [draftFilters, setDraftFilters] = useState<AuditFilters>({})
@@ -204,8 +206,8 @@ export default function AuditLogPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Audit Log</h1>
-          <p className="text-xs text-gray-400 mt-0.5">{total.toLocaleString()} records found</p>
+          <h1 className="text-xl font-semibold text-gray-900">{t('admin.audit.title')}</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{t('admin.audit.recordsFound', { count: total.toLocaleString() })}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -214,7 +216,7 @@ export default function AuditLogPage() {
             className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-50"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-            Refresh
+            {t('admin.common.refresh')}
           </button>
           <button
             onClick={handleExport}
@@ -222,14 +224,14 @@ export default function AuditLogPage() {
             className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 transition-colors disabled:opacity-50"
           >
             <Download className="w-4 h-4" />
-            {exporting ? 'Exporting…' : 'Export CSV'}
+            {exporting ? t('admin.audit.exporting') : t('admin.audit.exportCsv')}
           </button>
         </div>
       </div>
 
       {/* Trend chart */}
       <div className="bg-white border border-gray-100 rounded-xl p-5">
-        <h2 className="text-sm font-semibold text-gray-700 mb-3">Operation Trend (7 days)</h2>
+        <h2 className="text-sm font-semibold text-gray-700 mb-3">{t('admin.audit.trendTitle')}</h2>
         {statsLoading ? (
           <div className="h-28 flex items-center justify-center">
             <RefreshCw className="w-5 h-5 text-gray-300 animate-spin" />
@@ -254,11 +256,11 @@ export default function AuditLogPage() {
       <div className="bg-white border border-gray-100 rounded-xl p-4">
         <div className="flex items-center gap-2 mb-3">
           <Filter className="w-4 h-4 text-gray-400" />
-          <span className="text-sm font-medium text-gray-700">Filters</span>
+          <span className="text-sm font-medium text-gray-700">{t('admin.common.filter')}</span>
         </div>
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
           <div>
-            <label className="block text-xs text-gray-500 mb-1">User</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('admin.audit.filter.user')}</label>
             <select
               value={draftFilters.user_id ?? ''}
               onChange={(e) =>
@@ -270,7 +272,7 @@ export default function AuditLogPage() {
               }
               className={inputCls}
             >
-              <option value="">All users</option>
+              <option value="">{t('admin.audit.filter.allUsers')}</option>
               {users.map((u) => (
                 <option key={u.id} value={u.id}>{u.username}</option>
               ))}
@@ -278,46 +280,46 @@ export default function AuditLogPage() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Action</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('admin.audit.filter.action')}</label>
             <select
               value={draftFilters.action ?? ''}
               onChange={(e) => setDraftFilters({ ...draftFilters, action: e.target.value || undefined })}
               className={inputCls}
             >
               {ACTION_OPTIONS.map((a) => (
-                <option key={a} value={a}>{a || 'All actions'}</option>
+                <option key={a} value={a}>{a || t('admin.audit.filter.allActions')}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Resource</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('admin.audit.filter.resource')}</label>
             <select
               value={draftFilters.resource_type ?? ''}
               onChange={(e) => setDraftFilters({ ...draftFilters, resource_type: e.target.value || undefined })}
               className={inputCls}
             >
               {RESOURCE_TYPES.map((r) => (
-                <option key={r} value={r}>{r || 'All resources'}</option>
+                <option key={r} value={r}>{r || t('admin.audit.filter.allResources')}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Method</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('admin.audit.filter.method')}</label>
             <select
               value={draftFilters.method ?? ''}
               onChange={(e) => setDraftFilters({ ...draftFilters, method: e.target.value || undefined })}
               className={inputCls}
             >
               {METHOD_OPTIONS.map((m) => (
-                <option key={m} value={m}>{m || 'All methods'}</option>
+                <option key={m} value={m}>{m || t('admin.audit.filter.allMethods')}</option>
               ))}
             </select>
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">From</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('admin.audit.filter.from')}</label>
             <input
               type="date"
               value={draftFilters.created_at_start ?? ''}
@@ -329,7 +331,7 @@ export default function AuditLogPage() {
           </div>
 
           <div>
-            <label className="block text-xs text-gray-500 mb-1">To</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('admin.audit.filter.to')}</label>
             <input
               type="date"
               value={draftFilters.created_at_end ?? ''}
@@ -344,7 +346,7 @@ export default function AuditLogPage() {
         <div className="mt-3 flex items-center gap-3">
           <input
             type="text"
-            placeholder="Search by username…"
+            placeholder={t('admin.audit.filter.searchPlaceholder')}
             value={draftFilters.username ?? ''}
             onChange={(e) =>
               setDraftFilters({
@@ -359,13 +361,13 @@ export default function AuditLogPage() {
             onClick={applyFilters}
             className="px-4 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
           >
-            Apply
+            {t('admin.audit.filter.apply')}
           </button>
           <button
             onClick={resetFilters}
             className="px-4 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
           >
-            Reset
+            {t('admin.common.reset')}
           </button>
         </div>
       </div>
@@ -378,7 +380,7 @@ export default function AuditLogPage() {
           </div>
         ) : logs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-sm text-gray-400">
-            No audit logs found.
+            {t('admin.audit.noLogs')}
           </div>
         ) : (
           <>
@@ -387,15 +389,15 @@ export default function AuditLogPage() {
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wider">
                     <th className="px-3 py-3 w-6"></th>
-                    <th className="px-4 py-3 text-left">Time</th>
-                    <th className="px-4 py-3 text-left">User</th>
-                    <th className="px-4 py-3 text-left">Role</th>
-                    <th className="px-4 py-3 text-left">Method</th>
-                    <th className="px-4 py-3 text-left">Path</th>
-                    <th className="px-4 py-3 text-left">Resource</th>
-                    <th className="px-4 py-3 text-left">Status</th>
-                    <th className="px-4 py-3 text-left">IP</th>
-                    <th className="px-4 py-3 text-left">Duration</th>
+                    <th className="px-4 py-3 text-left">{t('admin.audit.table.time')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.audit.table.user')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.audit.table.role')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.audit.table.method')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.audit.table.path')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.audit.table.resource')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.common.status')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.audit.table.ip')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.audit.table.duration')}</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -450,20 +452,20 @@ export default function AuditLogPage() {
                             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                               <div>
                                 <div className="text-xs text-gray-500 mb-2">
-                                  <span className="font-semibold">User Agent:</span>{' '}
+                                  <span className="font-semibold">{t('admin.audit.detail.userAgent')}:</span>{' '}
                                   <span className="font-mono break-all">{log.user_agent ?? '—'}</span>
                                 </div>
                                 <div className="text-xs text-gray-500 mb-3">
-                                  <span className="font-semibold">Resource ID:</span>{' '}
+                                  <span className="font-semibold">{t('admin.audit.detail.resourceId')}:</span>{' '}
                                   {log.resource_id ?? '—'}
                                 </div>
-                                <JsonSnippet label="Request Body" raw={log.request_body_snippet} />
+                                <JsonSnippet label={t('admin.audit.detail.requestBody')} raw={log.request_body_snippet} />
                               </div>
                               <div>
-                                <JsonSnippet label="Response Snippet" raw={log.response_snippet} />
+                                <JsonSnippet label={t('admin.audit.detail.responseSnippet')} raw={log.response_snippet} />
                                 {!log.response_snippet && (
                                   <p className="text-xs text-gray-400 italic">
-                                    Response snippet not captured.
+                                    {t('admin.audit.detail.noResponse')}
                                   </p>
                                 )}
                               </div>
@@ -480,7 +482,7 @@ export default function AuditLogPage() {
             {/* Pagination */}
             <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
               <span className="text-xs text-gray-400">
-                Page {page} of {totalPages} · {total.toLocaleString()} total
+                {t('admin.audit.pagination.pageOf', { current: page, total: totalPages })} · {t('admin.audit.pagination.total', { count: total.toLocaleString() })}
               </span>
               <div className="flex items-center gap-1">
                 <button

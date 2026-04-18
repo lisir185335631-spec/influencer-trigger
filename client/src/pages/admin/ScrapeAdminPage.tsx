@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, RefreshCw, Square, RotateCcw, X } from 'lucide-react'
 import {
   type PlatformQuotaItem,
@@ -51,32 +52,32 @@ function ConfirmModal({
   onConfirm: () => void
   onCancel: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl p-7 w-[380px] max-w-[90vw]">
         <div className="flex items-center gap-3 mb-4">
           <AlertTriangle className="text-red-500 shrink-0" size={22} />
-          <h2 className="text-base font-semibold text-gray-900">Force Terminate Task #{taskId}</h2>
+          <h2 className="text-base font-semibold text-gray-900">{t('admin.scrape.confirmTerminate.title', { id: taskId })}</h2>
           <button onClick={onCancel} className="ml-auto text-gray-400 hover:text-gray-600">
             <X size={16} />
           </button>
         </div>
         <p className="text-sm text-gray-600 mb-6">
-          This will cancel the running task immediately. Any in-progress Playwright work will be
-          marked as terminated. This action cannot be undone.
+          {t('admin.scrape.confirmTerminate.message')}
         </p>
         <div className="flex gap-3 justify-end">
           <button
             onClick={onCancel}
             className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
           >
-            Cancel
+            {t('admin.common.cancel')}
           </button>
           <button
             onClick={onConfirm}
             className="px-4 py-2 text-sm rounded-lg bg-red-600 text-white hover:bg-red-700 font-medium"
           >
-            Terminate
+            {t('admin.scrape.confirmTerminate.terminate')}
           </button>
         </div>
       </div>
@@ -95,6 +96,7 @@ function QuotaEditModal({
   onSave: (limit: number) => void
   onCancel: () => void
 }) {
+  const { t } = useTranslation()
   const [value, setValue] = useState(String(quota.daily_limit))
 
   function handleSave() {
@@ -108,7 +110,7 @@ function QuotaEditModal({
       <div className="bg-white rounded-2xl shadow-xl p-7 w-[360px] max-w-[90vw]">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-semibold text-gray-900 capitalize">
-            {quota.platform} Daily Limit
+            {t('admin.scrape.quotaModal.title', { platform: quota.platform })}
           </h2>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600">
             <X size={16} />
@@ -116,7 +118,7 @@ function QuotaEditModal({
         </div>
         <div className="mb-5">
           <label className="text-xs text-gray-500 font-medium uppercase tracking-wider block mb-2">
-            New Daily Limit
+            {t('admin.scrape.quotaModal.newLimit')}
           </label>
           <input
             type="number"
@@ -132,13 +134,13 @@ function QuotaEditModal({
             onClick={onCancel}
             className="px-4 py-2 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
           >
-            Cancel
+            {t('admin.common.cancel')}
           </button>
           <button
             onClick={handleSave}
             className="px-4 py-2 text-sm rounded-lg bg-indigo-600 text-white hover:bg-indigo-700 font-medium"
           >
-            Save
+            {t('admin.common.save')}
           </button>
         </div>
       </div>
@@ -149,6 +151,7 @@ function QuotaEditModal({
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ScrapeAdminPage() {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<Tab>('tasks')
 
   // Tasks tab state
@@ -248,15 +251,15 @@ export default function ScrapeAdminPage() {
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-xl font-bold text-gray-900">Scrape Governance</h1>
-          <p className="text-sm text-gray-500 mt-0.5">Monitor all scrape tasks and platform quotas</p>
+          <h1 className="text-xl font-bold text-gray-900">{t('admin.scrape.title')}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{t('admin.scrape.subtitle')}</p>
         </div>
         <div className="flex gap-2">
           <div className={tabCls('tasks')}>
-            <button onClick={() => setTab('tasks')}>Task List</button>
+            <button onClick={() => setTab('tasks')}>{t('admin.scrape.tabs.tasks')}</button>
           </div>
           <div className={tabCls('quota')}>
-            <button onClick={() => setTab('quota')}>Platform Quota</button>
+            <button onClick={() => setTab('quota')}>{t('admin.scrape.tabs.quota')}</button>
           </div>
         </div>
       </div>
@@ -269,10 +272,10 @@ export default function ScrapeAdminPage() {
               {taskData && (
                 <>
                   <span>
-                    Total: <span className="font-semibold text-gray-900">{taskData.total}</span>
+                    {t('admin.scrape.tasks.total')}: <span className="font-semibold text-gray-900">{taskData.total}</span>
                   </span>
                   <span>
-                    Running:{' '}
+                    {t('admin.scrape.tasks.running')}:{' '}
                     <span className="font-semibold text-blue-600">{taskData.running}</span>
                   </span>
                 </>
@@ -284,7 +287,7 @@ export default function ScrapeAdminPage() {
               className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 px-3 py-1.5 rounded-lg hover:bg-gray-100"
             >
               <RefreshCw size={14} className={tasksLoading ? 'animate-spin' : ''} />
-              Refresh
+              {t('admin.common.refresh')}
             </button>
           </div>
 
@@ -293,28 +296,28 @@ export default function ScrapeAdminPage() {
               <thead>
                 <tr className="border-b border-gray-100 text-xs text-gray-400 font-medium uppercase tracking-wider">
                   <th className="px-4 py-3 text-left">ID</th>
-                  <th className="px-4 py-3 text-left">Industry</th>
-                  <th className="px-4 py-3 text-left">Platforms</th>
-                  <th className="px-4 py-3 text-left">Creator</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-left">Progress</th>
-                  <th className="px-4 py-3 text-left">Found</th>
-                  <th className="px-4 py-3 text-left">Created</th>
-                  <th className="px-4 py-3 text-left">Actions</th>
+                  <th className="px-4 py-3 text-left">{t('admin.scrape.table.industry')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.scrape.table.platforms')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.scrape.table.creator')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.common.status')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.scrape.table.progress')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.scrape.table.found')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.common.createdAt')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
                 {tasksLoading && (
                   <tr>
                     <td colSpan={9} className="px-4 py-10 text-center text-gray-400">
-                      Loading...
+                      {t('admin.common.loading')}
                     </td>
                   </tr>
                 )}
                 {!tasksLoading && taskData?.items.length === 0 && (
                   <tr>
                     <td colSpan={9} className="px-4 py-10 text-center text-gray-400">
-                      No scrape tasks found
+                      {t('admin.scrape.tasks.noTasks')}
                     </td>
                   </tr>
                 )}
@@ -373,7 +376,7 @@ export default function ScrapeAdminPage() {
                             <button
                               onClick={() => setConfirmTaskId(task.id)}
                               disabled={actionLoading === task.id}
-                              title="Force Terminate"
+                              title={t('admin.scrape.actions.forceTerminate')}
                               className="p-1.5 rounded hover:bg-red-50 text-red-500 hover:text-red-700 disabled:opacity-40"
                             >
                               <Square size={14} />
@@ -383,7 +386,7 @@ export default function ScrapeAdminPage() {
                             <button
                               onClick={() => handleRetry(task.id)}
                               disabled={actionLoading === task.id}
-                              title="Retry"
+                              title={t('admin.scrape.actions.retry')}
                               className="p-1.5 rounded hover:bg-indigo-50 text-indigo-500 hover:text-indigo-700 disabled:opacity-40"
                             >
                               <RotateCcw size={14} />
@@ -404,7 +407,7 @@ export default function ScrapeAdminPage() {
         <div>
           <div className="flex items-center justify-between mb-4">
             <p className="text-sm text-gray-500">
-              Click a progress bar to edit its daily limit.
+              {t('admin.scrape.quota.editHint')}
             </p>
             <button
               onClick={loadQuotas}
@@ -412,12 +415,12 @@ export default function ScrapeAdminPage() {
               className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-800 px-3 py-1.5 rounded-lg hover:bg-gray-100"
             >
               <RefreshCw size={14} className={quotaLoading ? 'animate-spin' : ''} />
-              Refresh
+              {t('admin.common.refresh')}
             </button>
           </div>
 
           {quotaLoading && (
-            <div className="text-center text-gray-400 py-12 text-sm">Loading...</div>
+            <div className="text-center text-gray-400 py-12 text-sm">{t('admin.common.loading')}</div>
           )}
 
           {!quotaLoading && (
@@ -439,7 +442,7 @@ export default function ScrapeAdminPage() {
                         <span className="font-semibold text-gray-900">{q.today_used}</span>
                         {' / '}
                         <span>{q.daily_limit}</span>
-                        <span className="ml-1 text-xs text-gray-400">today</span>
+                        <span className="ml-1 text-xs text-gray-400">{t('admin.scrape.quota.today')}</span>
                       </div>
                     </div>
                     <div className="w-full h-2.5 bg-gray-100 rounded-full overflow-hidden">
@@ -451,8 +454,8 @@ export default function ScrapeAdminPage() {
                       />
                     </div>
                     <div className="flex items-center justify-between mt-2">
-                      <span className="text-xs text-gray-400">{pct.toFixed(1)}% used</span>
-                      <span className="text-xs text-indigo-500 hover:underline">Edit limit →</span>
+                      <span className="text-xs text-gray-400">{pct.toFixed(1)}% {t('admin.scrape.quota.used')}</span>
+                      <span className="text-xs text-indigo-500 hover:underline">{t('admin.scrape.quota.editLimit')} →</span>
                     </div>
                   </div>
                 )

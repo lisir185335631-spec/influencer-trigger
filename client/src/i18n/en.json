@@ -950,6 +950,227 @@
         "confirmRotate": "Confirm Rotate Keys",
         "rotationFailed": "Key rotation failed"
       }
+    },
+    "mailboxes": {
+      "title": "Mailbox Admin",
+      "subtitle": "Monitor SMTP / IMAP health across all sending mailboxes",
+      "noMailboxes": "No mailboxes found.",
+      "smtpOk": "SMTP OK for {{email}}",
+      "smtpFailed": "SMTP failed: {{error}}",
+      "imapOk": "IMAP OK for {{email}}",
+      "imapFailed": "IMAP failed: {{error}}",
+      "disableConfirm": "Disable mailbox {{email}}? This stops it from sending.",
+      "disableSuccess": "Mailbox {{email}} disabled",
+      "disableFailed": "Failed to disable mailbox",
+      "quotaResetSuccess": "Quota reset for {{email}}",
+      "quotaResetFailed": "Failed to reset quota",
+      "stats": {
+        "total": "Total",
+        "healthy": "Healthy",
+        "warning": "Warning",
+        "critical": "Critical",
+        "disabled": "Disabled"
+      },
+      "table": {
+        "health": "Health",
+        "mailbox": "Mailbox",
+        "todayLimit": "Today / Limit",
+        "failRate": "Fail Rate",
+        "lastSuccess": "Last Success",
+        "lastFailure": "Last Failure",
+        "totalSent": "total"
+      },
+      "actions": {
+        "testSmtp": "Test SMTP",
+        "testImap": "Test IMAP",
+        "disable": "Disable",
+        "resetQuota": "Reset Quota",
+        "sendHistory": "Send History"
+      },
+      "history": {
+        "title": "Send History",
+        "last100": "last 100 records",
+        "noHistory": "No send history.",
+        "colTime": "Time",
+        "colRecipient": "Recipient",
+        "colSubject": "Subject"
+      }
+    },
+    "audit": {
+      "title": "Audit Log",
+      "recordsFound": "{{count}} records found",
+      "exportCsv": "Export CSV",
+      "exporting": "Exporting…",
+      "trendTitle": "Operation Trend (7 days)",
+      "noLogs": "No audit logs found.",
+      "filter": {
+        "user": "User",
+        "allUsers": "All users",
+        "action": "Action",
+        "allActions": "All actions",
+        "resource": "Resource",
+        "allResources": "All resources",
+        "method": "Method",
+        "allMethods": "All methods",
+        "from": "From",
+        "to": "To",
+        "searchPlaceholder": "Search by username…",
+        "apply": "Apply"
+      },
+      "table": {
+        "time": "Time",
+        "user": "User",
+        "role": "Role",
+        "method": "Method",
+        "path": "Path",
+        "resource": "Resource",
+        "ip": "IP",
+        "duration": "Duration"
+      },
+      "detail": {
+        "userAgent": "User Agent",
+        "resourceId": "Resource ID",
+        "requestBody": "Request Body",
+        "responseSnippet": "Response Snippet",
+        "noResponse": "Response snippet not captured."
+      },
+      "pagination": {
+        "pageOf": "Page {{current}} of {{total}}",
+        "total": "{{count}} total"
+      }
+    },
+    "scrape": {
+      "title": "Scrape Governance",
+      "subtitle": "Monitor all scrape tasks and platform quotas",
+      "tabs": {
+        "tasks": "Task List",
+        "quota": "Platform Quota"
+      },
+      "tasks": {
+        "total": "Total",
+        "running": "Running",
+        "noTasks": "No scrape tasks found"
+      },
+      "table": {
+        "industry": "Industry",
+        "platforms": "Platforms",
+        "creator": "Creator",
+        "progress": "Progress",
+        "found": "Found"
+      },
+      "actions": {
+        "forceTerminate": "Force Terminate",
+        "retry": "Retry"
+      },
+      "confirmTerminate": {
+        "title": "Force Terminate Task #{{id}}",
+        "message": "This will cancel the running task immediately. Any in-progress Playwright work will be marked as terminated. This action cannot be undone.",
+        "terminate": "Terminate"
+      },
+      "quota": {
+        "editHint": "Click a progress bar to edit its daily limit.",
+        "today": "today",
+        "used": "used",
+        "editLimit": "Edit limit"
+      },
+      "quotaModal": {
+        "title": "{{platform}} Daily Limit",
+        "newLimit": "New Daily Limit"
+      }
+    },
+    "diagnostics": {
+      "title": "System Diagnostics",
+      "subtitle": "One-click health check for all system components",
+      "runButton": "Run Full Diagnostics",
+      "running": "Running diagnostics…",
+      "overall": "Overall",
+      "checkedAt": "Checked at {{time}}",
+      "hint": "Click \"Run Full Diagnostics\" to check all components",
+      "healthcheckFailed": "Healthcheck failed",
+      "status": {
+        "ok": "OK",
+        "notConfigured": "Not Configured",
+        "notAvailable": "Not Available",
+        "error": "Error"
+      },
+      "cards": {
+        "database": "Database",
+        "scheduler": "Scheduler",
+        "system": "System"
+      },
+      "db": {
+        "latency": "Latency",
+        "poolSize": "Pool Size",
+        "checkedOut": "Checked Out",
+        "overflow": "Overflow",
+        "slowQueries": "Slow Queries (Top 10)"
+      },
+      "redis": {
+        "connectedClients": "Connected Clients",
+        "keys": "Keys",
+        "queueDepth": "Queue Depth",
+        "notConfigured": "System metrics unavailable (Redis not configured)"
+      },
+      "ws": {
+        "activeConnections": "Active Connections",
+        "channels": "Channels"
+      },
+      "scheduler": {
+        "running": "Running",
+        "stopped": "Stopped",
+        "jobs": "jobs",
+        "next": "Next",
+        "paused": "paused",
+        "noJobs": "No jobs registered"
+      },
+      "system": {
+        "disk": "Disk",
+        "memory": "Memory",
+        "pythonProcess": "Python Process",
+        "threads": "Threads",
+        "uptime": "Uptime",
+        "notAvailable": "System metrics unavailable (install psutil)"
+      }
+    },
+    "settings": {
+      "title": "System Settings",
+      "subtitle": "Platform configuration and feature flag management",
+      "saving": "Saving…",
+      "tabs": {
+        "system": "System Parameters",
+        "flags": "Feature Flags"
+      },
+      "system": {
+        "llmKey": "LLM Key",
+        "llmConfigured": "Configured: sk-…{{last4}}",
+        "llmNotConfigured": "Not Configured",
+        "llmHint": "LLM Key is configured via environment variable OPENAI_API_KEY. UI editing is planned for a future story.",
+        "defaultWebhook": "Default Webhook URL",
+        "feishuWebhook": "Feishu Webhook",
+        "slackWebhook": "Slack Webhook",
+        "defaultQuota": "Default Daily Quota (emails/day)",
+        "saveButton": "Save Settings",
+        "saved": "Saved!"
+      },
+      "flags": {
+        "editTitle": "Edit Feature Flag",
+        "newTitle": "New Feature Flag",
+        "newFlag": "New Flag",
+        "noFlags": "No feature flags yet.",
+        "flagCount": "{{count}} flags",
+        "flagKey": "Flag Key",
+        "description": "Description",
+        "descriptionPlaceholder": "What does this flag control?",
+        "rollout": "Rollout",
+        "targetRoles": "Target Roles",
+        "roles": "Roles",
+        "on": "On",
+        "off": "Off",
+        "noDescription": "No description",
+        "updatedBy": "Updated by user",
+        "keyRequired": "Flag key is required",
+        "deleteConfirm": "Delete flag \"{{key}}\"?"
+      }
     }
   }
 }

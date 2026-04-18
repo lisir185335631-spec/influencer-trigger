@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { History, Mail, RefreshCw, RotateCcw, ServerOff, Wifi, WifiOff, X } from 'lucide-react'
 import {
   type MailboxAdminItem,
@@ -63,6 +64,7 @@ interface ToastState {
 let toastSeq = 0
 
 export default function MailboxesAdminPage() {
+  const { t } = useTranslation()
   const [loading, setLoading] = useState(false)
   const [total, setTotal] = useState(0)
   const [healthy, setHealthy] = useState(0)
@@ -109,7 +111,7 @@ export default function MailboxesAdminPage() {
     setActionLoading((p) => ({ ...p, [mb.id]: 'smtp' }))
     try {
       const res: TestConnectionResult = await testSmtp(mb.id)
-      pushToast(res.success ? `SMTP OK for ${mb.email}` : `SMTP failed: ${res.error}`, res.success)
+      pushToast(res.success ? t('admin.mailboxes.smtpOk', { email: mb.email }) : t('admin.mailboxes.smtpFailed', { error: res.error }), res.success)
     } finally {
       setActionLoading((p) => { const n = { ...p }; delete n[mb.id]; return n })
     }
@@ -119,21 +121,21 @@ export default function MailboxesAdminPage() {
     setActionLoading((p) => ({ ...p, [mb.id]: 'imap' }))
     try {
       const res: TestConnectionResult = await testImap(mb.id)
-      pushToast(res.success ? `IMAP OK for ${mb.email}` : `IMAP failed: ${res.error}`, res.success)
+      pushToast(res.success ? t('admin.mailboxes.imapOk', { email: mb.email }) : t('admin.mailboxes.imapFailed', { error: res.error }), res.success)
     } finally {
       setActionLoading((p) => { const n = { ...p }; delete n[mb.id]; return n })
     }
   }
 
   async function handleDisable(mb: MailboxAdminItem) {
-    if (!window.confirm(`Disable mailbox ${mb.email}? This stops it from sending.`)) return
+    if (!window.confirm(t('admin.mailboxes.disableConfirm', { email: mb.email }))) return
     setActionLoading((p) => ({ ...p, [mb.id]: 'disable' }))
     try {
       await disableMailbox(mb.id)
-      pushToast(`Mailbox ${mb.email} disabled`, true)
+      pushToast(t('admin.mailboxes.disableSuccess', { email: mb.email }), true)
       await load()
     } catch {
-      pushToast('Failed to disable mailbox', false)
+      pushToast(t('admin.mailboxes.disableFailed'), false)
     } finally {
       setActionLoading((p) => { const n = { ...p }; delete n[mb.id]; return n })
     }
@@ -143,10 +145,10 @@ export default function MailboxesAdminPage() {
     setActionLoading((p) => ({ ...p, [mb.id]: 'quota' }))
     try {
       await resetMailboxQuota(mb.id)
-      pushToast(`Quota reset for ${mb.email}`, true)
+      pushToast(t('admin.mailboxes.quotaResetSuccess', { email: mb.email }), true)
       await load()
     } catch {
-      pushToast('Failed to reset quota', false)
+      pushToast(t('admin.mailboxes.quotaResetFailed'), false)
     } finally {
       setActionLoading((p) => { const n = { ...p }; delete n[mb.id]; return n })
     }
@@ -168,25 +170,25 @@ export default function MailboxesAdminPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Mailbox Admin</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Monitor SMTP / IMAP health across all sending mailboxes</p>
+          <h1 className="text-xl font-semibold text-gray-900">{t('admin.mailboxes.title')}</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{t('admin.mailboxes.subtitle')}</p>
         </div>
         <button
           onClick={load}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('admin.common.refresh')}
         </button>
       </div>
 
       {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="Total" value={total} />
-        <StatCard label="Healthy" value={healthy} color="text-green-700" />
-        <StatCard label="Warning" value={warning} color="text-yellow-700" />
-        <StatCard label="Critical" value={critical} color="text-red-700" />
-        <StatCard label="Disabled" value={disabled} color="text-gray-400" />
+        <StatCard label={t('admin.mailboxes.stats.total')} value={total} />
+        <StatCard label={t('admin.mailboxes.stats.healthy')} value={healthy} color="text-green-700" />
+        <StatCard label={t('admin.mailboxes.stats.warning')} value={warning} color="text-yellow-700" />
+        <StatCard label={t('admin.mailboxes.stats.critical')} value={critical} color="text-red-700" />
+        <StatCard label={t('admin.mailboxes.stats.disabled')} value={disabled} color="text-gray-400" />
       </div>
 
       {/* Table */}
@@ -198,22 +200,22 @@ export default function MailboxesAdminPage() {
         ) : mailboxes.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-40 text-sm text-gray-400">
             <Mail className="w-8 h-8 mb-2 text-gray-200" />
-            No mailboxes found.
+            {t('admin.mailboxes.noMailboxes')}
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wider">
-                  <th className="px-4 py-3 text-left">Health</th>
-                  <th className="px-4 py-3 text-left">Mailbox</th>
+                  <th className="px-4 py-3 text-left">{t('admin.mailboxes.table.health')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.mailboxes.table.mailbox')}</th>
                   <th className="px-4 py-3 text-left">SMTP</th>
                   <th className="px-4 py-3 text-left">IMAP</th>
-                  <th className="px-4 py-3 text-left">Today / Limit</th>
-                  <th className="px-4 py-3 text-left">Fail Rate</th>
-                  <th className="px-4 py-3 text-left">Last Success</th>
-                  <th className="px-4 py-3 text-left">Last Failure</th>
-                  <th className="px-4 py-3 text-left">Actions</th>
+                  <th className="px-4 py-3 text-left">{t('admin.mailboxes.table.todayLimit')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.mailboxes.table.failRate')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.mailboxes.table.lastSuccess')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.mailboxes.table.lastFailure')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.common.actions')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -252,7 +254,7 @@ export default function MailboxesAdminPage() {
                         <span className={mb.failure_rate > 5 ? 'text-red-600 font-semibold' : mb.failure_rate >= 1 ? 'text-yellow-700' : 'text-green-700'}>
                           {mb.failure_rate.toFixed(1)}%
                         </span>
-                        <div className="text-gray-400 text-xs">{mb.total_sent.toLocaleString()} total</div>
+                        <div className="text-gray-400 text-xs">{mb.total_sent.toLocaleString()} {t('admin.mailboxes.table.totalSent')}</div>
                       </td>
                       <td className="px-4 py-3 text-xs text-gray-500 tabular-nums whitespace-nowrap">
                         {formatTs(mb.last_success_at)}
@@ -265,19 +267,19 @@ export default function MailboxesAdminPage() {
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1 flex-wrap">
                           <ActionBtn
-                            title="Test SMTP"
+                            title={t('admin.mailboxes.actions.testSmtp')}
                             busy={busy === 'smtp'}
                             onClick={() => handleTestSmtp(mb)}
                             icon={<Wifi className="w-3.5 h-3.5" />}
                           />
                           <ActionBtn
-                            title="Test IMAP"
+                            title={t('admin.mailboxes.actions.testImap')}
                             busy={busy === 'imap'}
                             onClick={() => handleTestImap(mb)}
                             icon={<WifiOff className="w-3.5 h-3.5" />}
                           />
                           <ActionBtn
-                            title="Disable"
+                            title={t('admin.mailboxes.actions.disable')}
                             busy={busy === 'disable'}
                             onClick={() => handleDisable(mb)}
                             icon={<ServerOff className="w-3.5 h-3.5" />}
@@ -285,13 +287,13 @@ export default function MailboxesAdminPage() {
                             disabled={mb.status === 'inactive'}
                           />
                           <ActionBtn
-                            title="Reset Quota"
+                            title={t('admin.mailboxes.actions.resetQuota')}
                             busy={busy === 'quota'}
                             onClick={() => handleResetQuota(mb)}
                             icon={<RotateCcw className="w-3.5 h-3.5" />}
                           />
                           <ActionBtn
-                            title="Send History"
+                            title={t('admin.mailboxes.actions.sendHistory')}
                             busy={false}
                             onClick={() => openHistory(mb)}
                             icon={<History className="w-3.5 h-3.5" />}
@@ -314,8 +316,8 @@ export default function MailboxesAdminPage() {
           <div className="w-full max-w-lg bg-white shadow-2xl flex flex-col h-full">
             <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
               <div>
-                <h2 className="text-sm font-semibold text-gray-900">Send History</h2>
-                <p className="text-xs text-gray-400 mt-0.5">{historyMailbox.email} · last 100 records</p>
+                <h2 className="text-sm font-semibold text-gray-900">{t('admin.mailboxes.history.title')}</h2>
+                <p className="text-xs text-gray-400 mt-0.5">{historyMailbox.email} · {t('admin.mailboxes.history.last100')}</p>
               </div>
               <button onClick={() => setHistoryMailbox(null)} className="text-gray-400 hover:text-gray-700">
                 <X className="w-5 h-5" />
@@ -328,16 +330,16 @@ export default function MailboxesAdminPage() {
                 </div>
               ) : history.length === 0 ? (
                 <div className="flex flex-col items-center justify-center h-40 text-sm text-gray-400">
-                  No send history.
+                  {t('admin.mailboxes.history.noHistory')}
                 </div>
               ) : (
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="bg-gray-50 border-b border-gray-100 text-gray-500 uppercase tracking-wider">
-                      <th className="px-4 py-2 text-left">Time</th>
-                      <th className="px-4 py-2 text-left">Recipient</th>
-                      <th className="px-4 py-2 text-left">Status</th>
-                      <th className="px-4 py-2 text-left">Subject</th>
+                      <th className="px-4 py-2 text-left">{t('admin.mailboxes.history.colTime')}</th>
+                      <th className="px-4 py-2 text-left">{t('admin.mailboxes.history.colRecipient')}</th>
+                      <th className="px-4 py-2 text-left">{t('admin.common.status')}</th>
+                      <th className="px-4 py-2 text-left">{t('admin.mailboxes.history.colSubject')}</th>
                     </tr>
                   </thead>
                   <tbody>
