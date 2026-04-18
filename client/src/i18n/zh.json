@@ -71,7 +71,7 @@
     "scrape": "邮箱抓取",
     "import": "数据导入",
     "emails": "邮件管理",
-    "crm": "网红库",
+    "crm": "网红邮箱库",
     "templates": "邮件模板",
     "mailboxes": "发送邮箱",
     "followUp": "自动追发",
@@ -102,7 +102,7 @@
       "scrape": "邮箱抓取",
       "import": "数据导入",
       "emails": "邮件管理",
-      "crm": "网红库",
+      "crm": "网红邮箱库",
       "templates": "邮件模板",
       "mailboxes": "发送邮箱",
       "followUp": "自动追发",
@@ -744,7 +744,7 @@
       "users": "用户管理",
       "emails": "邮件管理",
       "mailboxes": "邮箱池",
-      "influencers": "网红库",
+      "influencers": "网红邮箱库",
       "scrape": "抓取任务",
       "templates": "模板库",
       "agents": "Agent 监控",
@@ -1441,7 +1441,7 @@
       }
     },
     "influencers": {
-      "title": "网红库管理",
+      "title": "网红邮箱库管理",
       "subtitle": "去重、监控数据质量、批量验证邮箱域名",
       "tabs": {
         "all": "全量列表",

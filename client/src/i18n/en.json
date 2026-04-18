@@ -71,7 +71,7 @@
     "scrape": "Scrape",
     "import": "Import",
     "emails": "Emails",
-    "crm": "Influencers",
+    "crm": "Influencer Emails",
     "templates": "Templates",
     "mailboxes": "Mailboxes",
     "followUp": "Follow-up",
@@ -102,7 +102,7 @@
       "scrape": "Scrape",
       "import": "Import",
       "emails": "Emails",
-      "crm": "Influencers",
+      "crm": "Influencer Emails",
       "templates": "Templates",
       "mailboxes": "Mailboxes",
       "followUp": "Follow-up",
@@ -744,7 +744,7 @@
       "users": "Users",
       "emails": "Emails",
       "mailboxes": "Mailboxes",
-      "influencers": "Influencers",
+      "influencers": "Influencer Emails",
       "scrape": "Scrape",
       "templates": "Templates",
       "agents": "Agents",
@@ -1441,7 +1441,7 @@
       }
     },
     "influencers": {
-      "title": "Influencer Governance",
+      "title": "Influencer Email Library Management",
       "subtitle": "Deduplicate records, monitor data quality, and bulk-verify email domains",
       "tabs": {
         "all": "All Influencers",
