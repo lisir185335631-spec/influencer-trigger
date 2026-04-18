@@ -91,10 +91,25 @@
 同目录下 `ralph-tools.py` 提供机械化操作，替代手动解析 prd.json：
 
 ```bash
-python scripts/ralph/ralph-tools.py next-story   # 返回下一个待执行 story ID
-python scripts/ralph/ralph-tools.py status        # 打印所有 story 状态摘要
-python scripts/ralph/ralph-tools.py story US-001  # 打印指定 story 详情
-python scripts/ralph/ralph-tools.py deps          # 显示依赖关系图
+# 查询类
+python scripts/ralph/ralph-tools.py next-story       # 返回下一个待执行 story ID
+python scripts/ralph/ralph-tools.py status            # 打印所有 story 状态摘要
+python scripts/ralph/ralph-tools.py story US-001      # 打印指定 story 详情
+python scripts/ralph/ralph-tools.py deps              # 显示依赖关系图
+python scripts/ralph/ralph-tools.py waves             # 分析 Wave 执行计划
+python scripts/ralph/ralph-tools.py cost              # 查看成本追踪摘要
+python scripts/ralph/ralph-tools.py validate          # 验证 prd.json 结构完整性
+
+# 操作类（你通常不需要手动使用，编排器会自动处理）
+python scripts/ralph/ralph-tools.py block US-001 "原因"  # 标记 story 为 blocked
+python scripts/ralph/ralph-tools.py reset US-001         # 重置 story 状态
+python scripts/ralph/ralph-tools.py clear-lock           # 清除残留的 lock file
+
+# 审计门禁（由 Opus 主对话操作，你不需要使用）
+python scripts/ralph/ralph-tools.py approve              # 审计通过
+python scripts/ralph/ralph-tools.py reject "反馈"        # 审计驳回
+python scripts/ralph/ralph-tools.py force-reject "反馈"  # 强制驳回
+python scripts/ralph/ralph-tools.py audit-status         # 查看门禁状态
 ```
 
 你可以用这些命令快速查询状态，但核心的 story 查找逻辑已由编排器（ralph.py）注入到你的 prompt 中，通常不需要自行查询。
@@ -106,9 +121,11 @@ python scripts/ralph/ralph-tools.py deps          # 显示依赖关系图
 - 保持 CI 绿色
 - 在开始之前阅读 progress.txt 中的 Codebase Patterns 部分
 - **禁止修改或删除 `audit-gate.json`** — 这是编排器（ralph.py）与 Opus 之间的审计门禁通信文件，由 ralph.py 自动管理。你完成 story 后正常退出即可，编排器会在你退出后自动激活审计门禁等待 Opus 审查
+- **禁止修改或删除 `ralph-lock.json`** — 这是 ralph.py 的进程锁文件，用于防止多实例并发和崩溃恢复
+- **禁止修改或删除 `cost-log.jsonl`** — 这是 ralph.py 的成本追踪日志，仅由编排器追加写入
 
 ## 关于该项目的重要注意事项
 
-项目跟路径下读取AGENTS.md, 这是整个项目的技术架构开发指导说明, 也就是harness.
+项目根路径下读取 AGENTS.md，这是整个项目的技术架构开发指导说明。
 
-先加载这些“补充说明信息.md”, 我要做的这些story都是来自跟路径下tasks/prd-aiba-agent-gateway.md的这个需求 , 如果你开发过程中有需求不明确的事情可以去这里查看
+如果你开发过程中有需求不明确的事情，可以查看 `tasks/` 目录下对应的 PRD 文件（根据 prd.json 的 project 或 branchName 推断）。

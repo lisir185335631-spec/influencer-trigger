@@ -1,0 +1,699 @@
+{
+  "common": {
+    "loading": "Loading…",
+    "cancel": "Cancel",
+    "save": "Save",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "close": "Close",
+    "prev": "Prev",
+    "next": "Next",
+    "confirm": "Confirm",
+    "saving": "Saving…",
+    "ok": "OK",
+    "fail": "Fail",
+    "test": "Test",
+    "apply": "Apply",
+    "noDataYet": "No data yet",
+    "loadFailed": "Loading failed",
+    "saveFailed": "Save failed",
+    "pageOf": "Page {{current}} of {{total}}",
+    "status": {
+      "new": "New",
+      "contacted": "Contacted",
+      "replied": "Replied",
+      "archived": "Archived",
+      "pending": "Pending",
+      "sent": "Sent",
+      "delivered": "Delivered",
+      "opened": "Opened",
+      "bounced": "Bounced",
+      "failed": "Failed",
+      "active": "Active",
+      "disabled": "Disabled",
+      "inactive": "Inactive"
+    },
+    "platform": {
+      "tiktok": "TikTok",
+      "instagram": "Instagram",
+      "youtube": "YouTube",
+      "twitter": "Twitter / X",
+      "facebook": "Facebook",
+      "other": "Other"
+    },
+    "priority": {
+      "high": "High",
+      "medium": "Medium",
+      "low": "Low"
+    },
+    "role": {
+      "admin": "Admin",
+      "manager": "Manager",
+      "operator": "Operator"
+    },
+    "intent": {
+      "interested": "Interested",
+      "pricing": "Pricing",
+      "declined": "Declined",
+      "auto_reply": "Auto-reply",
+      "irrelevant": "Irrelevant"
+    },
+    "time": {
+      "justNow": "just now",
+      "minutesAgo": "{{n}}m ago",
+      "hoursAgo": "{{n}}h ago"
+    }
+  },
+  "sidebar": {
+    "brand": "Influencer",
+    "dashboard": "Dashboard",
+    "scrape": "Scrape",
+    "import": "Import",
+    "emails": "Emails",
+    "crm": "CRM",
+    "templates": "Templates",
+    "mailboxes": "Mailboxes",
+    "followUp": "Follow-up",
+    "holidays": "Holidays",
+    "settings": "Settings",
+    "team": "Team",
+    "expand": "Expand sidebar",
+    "collapse": "Collapse sidebar"
+  },
+  "login": {
+    "title": "Influencer Trigger",
+    "subtitle": "Sign in to your account",
+    "username": "Username",
+    "password": "Password",
+    "usernamePlaceholder": "admin",
+    "passwordPlaceholder": "••••••••",
+    "signIn": "Sign in",
+    "signingIn": "Signing in…",
+    "loginFailed": "Login failed"
+  },
+  "mainLayout": {
+    "home": "Home",
+    "signOut": "Sign out",
+    "wsTooltip": "WebSocket: {{status}}",
+    "fallbackTitle": "Influencer Trigger",
+    "pageTitles": {
+      "dashboard": "Dashboard",
+      "scrape": "Scrape",
+      "import": "Import",
+      "emails": "Emails",
+      "crm": "CRM",
+      "templates": "Templates",
+      "mailboxes": "Mailboxes",
+      "followUp": "Follow-up",
+      "team": "Team",
+      "settings": "Settings",
+      "holidays": "Holidays",
+      "influencerDetail": "Influencer Detail"
+    }
+  },
+  "notification": {
+    "title": "Notifications",
+    "unread": "{{count}} unread",
+    "markAllRead": "Mark all read",
+    "loading": "Loading…",
+    "noNotifications": "No notifications yet"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "subtitle": "Overview of influencer outreach operations",
+    "totalInfluencers": "Total Influencers",
+    "thisWeek": "+{{count}} this week",
+    "totalSent": "Total Sent",
+    "sentThisWeek": "{{count}} this week",
+    "replyRate": "Reply Rate",
+    "repliedPerSent": "replied / sent",
+    "effectiveReplyRate": "Effective Reply Rate",
+    "interestedPricingPerSent": "interested + pricing / sent",
+    "conversionRate": "Conversion Rate",
+    "collaborationsPerInfluencers": "collaborations / influencers",
+    "trendTitle": "30-Day Send & Reply Trend",
+    "chartSent": "Sent",
+    "chartReplied": "Replied",
+    "platformDistribution": "Platform Distribution",
+    "mailboxHealth": "Mailbox Health",
+    "noMailboxes": "No mailboxes configured",
+    "colEmail": "Email",
+    "colUsage": "Usage",
+    "colBounce": "Bounce",
+    "loadFailed": "Failed to load dashboard"
+  },
+  "scrape": {
+    "title": "Scrape",
+    "subtitle": "Automatically scrape or manually import influencer emails",
+    "newTask": "New Task",
+    "tabScrapeTasks": "Scrape Tasks",
+    "tabCsvImport": "CSV / Excel Import",
+    "wsHint": "A scrape task is running — progress updates in real time via WebSocket.",
+    "loading": "Loading…",
+    "emptyTitle": "No scrape tasks yet",
+    "emptySubtitle": "Create a task to start extracting influencer emails",
+    "table": {
+      "platforms": "Platforms",
+      "industry": "Industry",
+      "status": "Status",
+      "progress": "Progress",
+      "validEmails": "Valid Emails",
+      "target": "Target",
+      "created": "Created",
+      "found": "/ {{count}} found"
+    },
+    "status": {
+      "pending": "Pending",
+      "running": "Running",
+      "done": "Done",
+      "failed": "Failed",
+      "cancelled": "Cancelled"
+    },
+    "modal": {
+      "title": "New Scrape Task",
+      "platforms": "Platforms",
+      "csvOnly": "CSV only",
+      "platformHint": "Instagram & YouTube support automatic Playwright scraping. TikTok / Twitter / Facebook will prompt for CSV import.",
+      "industryLabel": "Industry keyword *",
+      "industryPlaceholder": "e.g. fitness, beauty, gaming",
+      "targetLabel": "Target email count — {{count}}",
+      "cancel": "Cancel",
+      "startScraping": "Start Scraping",
+      "targetMarket": "Target Market (optional)",
+      "noMarketFilter": "— No market filter —",
+      "competitorBrands": "Competitor Brands (optional)",
+      "competitorPlaceholder": "e.g. GoingBus, GamsGo, FlixSeek"
+    },
+    "validation": {
+      "selectPlatform": "Select at least one platform",
+      "industryRequired": "Industry keyword is required"
+    },
+    "createFailed": "Failed to create task"
+  },
+  "scrapeDetail": {
+    "title": "Scrape Results — #{{id}}",
+    "subtitle": "{{platforms}} · {{industry}} · {{count}} valid emails",
+    "loading": "Loading results…",
+    "notFound": "Task not found.",
+    "emptyTitle": "No results yet",
+    "emptyInProgress": "Scraping in progress — results will appear when emails are found.",
+    "emptyNoResults": "This task found no influencer emails.",
+    "selected": "{{selected}} of {{total}} selected",
+    "sortMost": "Followers ↑ Most",
+    "sortLeast": "Followers ↑ Least",
+    "table": {
+      "name": "Name",
+      "platform": "Platform",
+      "email": "Email",
+      "followers": "Followers",
+      "bio": "Bio",
+      "relevance": "Relevance",
+      "matchReason": "Match Reason"
+    },
+    "hint": "Uncheck influencers you don't want to contact, then click Send All.",
+    "sendAll": "Send All ({{count}})"
+  },
+  "import": {
+    "title": "Import Influencers",
+    "subtitle": "Upload a CSV or Excel file to bulk-import influencer contacts.",
+    "dropHint": "Drop your file here, or click to browse",
+    "browseHint": "Supports .csv, .xlsx, .xls",
+    "parsing": "Parsing file…",
+    "fileTypeError": "Only .csv, .xlsx, .xls files are allowed.",
+    "columnMapping": "Column Mapping",
+    "mapEmailHint": "Please map a column to Email before importing.",
+    "preview": "Preview (first {{shown}} of {{total}} rows)",
+    "invalidEmail": "Invalid email format",
+    "overwrite": "Overwrite duplicates",
+    "overwriteHint": "(uncheck = skip existing emails)",
+    "importing": "Importing…",
+    "importRows": "Import {{count}} rows",
+    "complete": "Import Complete",
+    "imported": "Imported",
+    "duplicates": "Duplicates",
+    "invalid": "Invalid",
+    "totalRows": "Total rows",
+    "issues": "Issues ({{count}})",
+    "importAnother": "Import another file",
+    "autoDetected": "Auto-detected columns: email, nickname, platform, followers, profile_url, industry (English and Chinese column names)",
+    "rowsDetected": "{{count}} rows detected",
+    "parseFailed": "Failed to parse file",
+    "importFailed": "Import failed",
+    "skip": "— skip —"
+  },
+  "emails": {
+    "tabStatus": "Email Status",
+    "tabBatchSend": "Batch Send",
+    "stats": {
+      "totalSent": "Total Sent",
+      "delivered": "Delivered",
+      "opened": "Opened",
+      "replied": "Replied",
+      "noReply": "No Reply",
+      "bounced": "Bounced"
+    },
+    "filter": {
+      "allCampaigns": "All campaigns",
+      "allPlatforms": "All platforms",
+      "allStatuses": "All statuses",
+      "clearFilters": "Clear filters"
+    },
+    "emailCount": "{{count}} email(s)",
+    "table": {
+      "influencer": "Influencer",
+      "email": "Email",
+      "campaign": "Campaign",
+      "sentAt": "Sent At",
+      "status": "Status",
+      "lastUpdated": "Last Updated"
+    },
+    "noEmails": "No emails found",
+    "prev": "Previous",
+    "pageOf": "Page {{current}} of {{total}}",
+    "next": "Next",
+    "batch": {
+      "title": "Batch Send",
+      "subtitle": "Send personalised emails to influencers at scale using multi-mailbox rotation.",
+      "noInfluencers": "No influencers selected",
+      "noInfluencersHint": "Go to Scrape, open a task, select influencers, and click \"Send All\".",
+      "configure": "Batch Send",
+      "configureHint": "Configure and launch your email campaign.",
+      "influencersSelected": "{{count}} influencer(s) selected",
+      "campaignName": "Campaign Name",
+      "optional": "(optional)",
+      "emailTemplate": "Email Template",
+      "noTemplates": "No templates found.",
+      "createFirst": "Create one first.",
+      "selectTemplate": "Select a template…",
+      "sendFailed": "Failed to start send. Check that mailboxes are configured.",
+      "starting": "Starting…",
+      "sendTo": "Send to {{count}} Influencer(s)",
+      "rateHint": "Emails are sent with 30-60s intervals using your active mailboxes.",
+      "complete": "Campaign Complete",
+      "sending": "Sending…",
+      "done": "Done",
+      "running": "Running",
+      "statsTotal": "Total",
+      "statsSent": "Sent",
+      "statsSuccess": "Success",
+      "statsFailed": "Failed",
+      "percentComplete": "{{percent}}% complete",
+      "sendingTo": "Sending to {{email}}…",
+      "sendingHint": "Sending with 30-60s intervals to avoid rate limits. This may take a while.",
+      "sendAnother": "Send Another Batch",
+      "loadTemplatesFailed": "Failed to load templates"
+    }
+  },
+  "crm": {
+    "title": "CRM",
+    "totalCount": "{{count}} influencer(s) total",
+    "exportCsv": "Export CSV",
+    "tabAll": "All Influencers",
+    "tabReplied": "Replied",
+    "search": "Name or email…",
+    "allPlatforms": "All platforms",
+    "allStatuses": "All statuses",
+    "followersMin": "Followers min",
+    "followersMax": "max",
+    "industry": "Industry…",
+    "allIntents": "All intents",
+    "table": {
+      "influencer": "Influencer",
+      "platform": "Platform",
+      "email": "Email",
+      "followers": "Followers",
+      "status": "Status",
+      "tags": "Tags",
+      "priority": "Priority",
+      "lastEmail": "Last Email"
+    },
+    "loading": "Loading…",
+    "noInfluencers": "No influencers found",
+    "replied": {
+      "subtitle": "{{count}} replied influencer(s), sorted by priority",
+      "table": {
+        "influencer": "Influencer",
+        "platform": "Platform",
+        "followers": "Followers",
+        "replyIntent": "Reply Intent",
+        "replySummary": "Reply Summary",
+        "priority": "Priority"
+      },
+      "saving": "Saving…",
+      "loading": "Loading…",
+      "noReplied": "No replied influencers yet"
+    },
+    "batch": {
+      "selected": "{{count}} selected",
+      "assignTags": "Assign tags",
+      "archive": "Archive",
+      "exportCsv": "Export CSV"
+    },
+    "tagSelect": {
+      "allTags": "All tags",
+      "noTags": "No tags yet"
+    },
+    "tagModal": {
+      "title": "Assign tags",
+      "noTags": "No tags available",
+      "cancel": "Cancel",
+      "apply": "Apply"
+    }
+  },
+  "influencer": {
+    "loading": "Loading…",
+    "notFound": "Influencer not found",
+    "breadcrumb": "CRM",
+    "loadFailed": "Failed to load influencer",
+    "tabEmails": "Emails",
+    "tabTags": "Tags",
+    "tabNotes": "Notes",
+    "tabCollaborations": "Collaborations",
+    "info": {
+      "platform": "Platform",
+      "email": "Email",
+      "followers": "Followers",
+      "industry": "Industry",
+      "intent": "Intent",
+      "followUps": "Follow-ups",
+      "lastSent": "Last sent",
+      "created": "Created"
+    },
+    "bio": "Bio",
+    "tags": {
+      "title": "Tags",
+      "newTag": "New tag",
+      "tagPlaceholder": "Tag name",
+      "create": "Create",
+      "noTags": "No tags yet. Create one above.",
+      "deleteConfirm": "Delete this tag? It will be removed from all influencers.",
+      "selectHint": "Select tags to assign to this influencer"
+    },
+    "emails": {
+      "type": "Type: {{type}}",
+      "sent": "Sent: {{date}}",
+      "opened": "Opened: {{date}}",
+      "replied": "Replied: {{date}}",
+      "bounced": "Bounced: {{date}}",
+      "replyFrom": "Reply from {{name}}"
+    },
+    "notes": {
+      "placeholder": "Add a note...",
+      "saving": "Saving…",
+      "addNote": "Add note",
+      "noNotes": "No notes yet"
+    },
+    "collaborations": {
+      "budget": "Budget: {{budget}}",
+      "created": "Created: {{date}}"
+    }
+  },
+  "templates": {
+    "title": "Templates",
+    "subtitle": "Email templates with variable substitution",
+    "aiGenerate": "AI Generate",
+    "newTemplate": "New Template",
+    "filter": "Filter:",
+    "all": "All",
+    "loading": "Loading…",
+    "noTemplatesFor": "No templates for \"{{filter}}\".",
+    "noTemplates": "No templates yet. Create one or use AI Generate.",
+    "deleteConfirm": "Delete this template?",
+    "table": {
+      "name": "Name",
+      "subject": "Subject",
+      "industry": "Industry",
+      "style": "Style",
+      "created": "Created",
+      "actions": "Actions"
+    },
+    "modal": {
+      "editTitle": "Edit Template",
+      "newTitle": "New Template",
+      "editTab": "Edit",
+      "previewTab": "Preview",
+      "subjectPreview": "Subject preview",
+      "noSubject": "(no subject)",
+      "bodyPreview": "Body preview",
+      "sampleValues": "Sample values: influencer_name=Jane, platform=Instagram, followers=50K, industry=Beauty",
+      "nameLabel": "Template Name *",
+      "namePlaceholder": "e.g. Formal Fitness Pitch",
+      "industryLabel": "Industry",
+      "industryPlaceholder": "fitness",
+      "styleLabel": "Style",
+      "anyStyle": "— any —",
+      "formal": "Formal",
+      "casual": "Casual",
+      "direct": "Direct",
+      "languageLabel": "Language",
+      "languagePlaceholder": "en",
+      "subjectLabel": "Subject *",
+      "bodyLabel": "Body HTML *",
+      "cancel": "Cancel",
+      "saveChanges": "Save Changes",
+      "createTemplate": "Create Template",
+      "saveFailed": "Save failed"
+    },
+    "ai": {
+      "title": "AI Template Generator",
+      "placeholder": "Industry keyword, e.g. fitness, beauty, gaming",
+      "generate": "Generate",
+      "generatedHint": "3 templates generated — expand to preview, then click \"Use this template\" to edit and save.",
+      "subject": "Subject",
+      "preview": "Preview",
+      "useTemplate": "Use this template",
+      "generateFailed": "Generation failed"
+    }
+  },
+  "mailboxes": {
+    "title": "Mailboxes",
+    "subtitle": "Sending accounts with SMTP configuration",
+    "addMailbox": "Add Mailbox",
+    "loading": "Loading…",
+    "noMailboxes": "No mailboxes yet. Add one to get started.",
+    "deleteConfirm": "Delete this mailbox?",
+    "table": {
+      "account": "Account",
+      "smtp": "SMTP",
+      "status": "Status",
+      "todayDaily": "Today / Daily",
+      "bounceRate": "Bounce Rate",
+      "actions": "Actions"
+    },
+    "testTooltip": "Test SMTP connection",
+    "modal": {
+      "editTitle": "Edit Mailbox",
+      "addTitle": "Add Mailbox",
+      "emailLabel": "Email *",
+      "displayName": "Display Name",
+      "smtpSection": "SMTP",
+      "hostLabel": "Host *",
+      "hostPlaceholder": "smtp.gmail.com",
+      "portLabel": "Port",
+      "passwordLabel": "Password",
+      "keepCurrent": "(leave blank to keep current)",
+      "starttls": "STARTTLS",
+      "imapSection": "IMAP",
+      "imapOptional": "(optional)",
+      "imapHost": "Host",
+      "imapPlaceholder": "imap.gmail.com",
+      "imapPort": "Port",
+      "dailyLimit": "Daily Limit",
+      "hourlyLimit": "Hourly Limit",
+      "cancel": "Cancel",
+      "save": "Save",
+      "addMailbox": "Add Mailbox",
+      "saveFailed": "Save failed"
+    }
+  },
+  "followUp": {
+    "title": "Automated Follow-up",
+    "subtitle": "Configure automatic monthly follow-ups for non-responsive influencers. Each follow-up uses a different angle generated by GPT-4o.",
+    "strategy": {
+      "title": "Follow-up Strategy",
+      "autoFollowUp": "Auto follow-up",
+      "intervalLabel": "Follow-up interval (days)",
+      "intervalHint": "Days since last email before sending follow-up",
+      "maxLabel": "Max follow-up emails",
+      "maxHint": "Influencer archived after this many follow-ups",
+      "sendTimeLabel": "Send time (UTC hour)",
+      "sendTimeHint": "Daily check runs at this UTC hour",
+      "lastUpdated": "Last updated: {{date}}",
+      "saving": "Saving…",
+      "saved": "Settings saved",
+      "saveFailed": "Failed to save settings",
+      "saveButton": "Save settings",
+      "loadFailed": "Failed to load settings"
+    },
+    "log": {
+      "title": "Follow-up Log",
+      "loading": "Loading…",
+      "noLogs": "No follow-up emails sent yet.",
+      "noLogsHint": "Follow-ups run automatically each day at the configured UTC hour.",
+      "table": {
+        "influencer": "Influencer",
+        "platform": "Platform",
+        "subject": "Subject",
+        "followUpNum": "Follow-up #",
+        "status": "Status",
+        "sentAt": "Sent at"
+      },
+      "total": "{{count}} total · page {{current}}/{{pages}}"
+    }
+  },
+  "holidays": {
+    "title": "Holiday Greetings",
+    "subtitle": "Automatically send greetings on international holidays",
+    "triggerNow": "Trigger Now",
+    "triggered": "Triggered!",
+    "running": "Running…",
+    "addHoliday": "Add Holiday",
+    "tabCalendar": "Calendar",
+    "tabManage": "Manage",
+    "tabLogs": "Greeting Logs",
+    "loading": "Loading…",
+    "noHolidays": "No holidays configured",
+    "loadFailed": "Failed to load holidays",
+    "table": {
+      "holiday": "Holiday",
+      "date": "Date",
+      "recurring": "Recurring",
+      "active": "Active",
+      "customTemplate": "Custom Template",
+      "annual": "Annual",
+      "oneTime": "One-time",
+      "activeLabel": "Active",
+      "inactiveLabel": "Inactive",
+      "aiGenerated": "AI-generated"
+    },
+    "deleteModal": {
+      "title": "Delete Holiday",
+      "message": "Are you sure you want to delete this holiday? This cannot be undone.",
+      "cancel": "Cancel",
+      "delete": "Delete"
+    },
+    "modal": {
+      "editTitle": "Edit Holiday",
+      "addTitle": "Add Holiday",
+      "nameLabel": "Name *",
+      "namePlaceholder": "e.g. Christmas",
+      "dateLabel": "Date *",
+      "templateLabel": "Custom Greeting Template",
+      "templatePlaceholder": "Optional. Use {name} and {holiday} as placeholders. Leave empty to use AI-generated greeting.",
+      "recurring": "Recurring (every year)",
+      "active": "Active",
+      "cancel": "Cancel",
+      "saving": "Saving…",
+      "save": "Save",
+      "saveFailed": "Failed to save holiday",
+      "nameRequired": "Name is required"
+    },
+    "logs": {
+      "loading": "Loading…",
+      "noLogs": "No holiday greetings sent yet",
+      "table": {
+        "influencer": "Influencer",
+        "platform": "Platform",
+        "subject": "Subject",
+        "status": "Status",
+        "sentAt": "Sent At"
+      },
+      "totalGreetings": "{{count}} total greetings",
+      "loadFailed": "Failed to load greeting logs"
+    },
+    "months": {
+      "0": "January", "1": "February", "2": "March", "3": "April",
+      "4": "May", "5": "June", "6": "July", "7": "August",
+      "8": "September", "9": "October", "10": "November", "11": "December"
+    },
+    "days": {
+      "0": "Sun", "1": "Mon", "2": "Tue", "3": "Wed",
+      "4": "Thu", "5": "Fri", "6": "Sat"
+    }
+  },
+  "team": {
+    "title": "Team Management",
+    "memberCount": "{{count}} / 10 members",
+    "addMember": "Add Member",
+    "accessDenied": "Access denied — admin only",
+    "loading": "Loading…",
+    "noMembers": "No team members yet",
+    "permissions": {
+      "title": "Role Permissions",
+      "admin": "Admin",
+      "adminDesc": "Full access — all features",
+      "manager": "Manager",
+      "managerDesc": "Dashboard, CRM, Templates",
+      "operator": "Operator",
+      "operatorDesc": "Scrape tasks, CRM, Replies"
+    },
+    "table": {
+      "username": "Username",
+      "email": "Email",
+      "role": "Role",
+      "status": "Status",
+      "actions": "Actions",
+      "you": "(you)",
+      "active": "Active",
+      "disabled": "Disabled",
+      "disableTooltip": "Disable member",
+      "enableTooltip": "Enable member",
+      "disable": "Disable",
+      "enable": "Enable"
+    },
+    "modal": {
+      "title": "Add Team Member",
+      "username": "Username",
+      "email": "Email",
+      "password": "Password",
+      "role": "Role",
+      "cancel": "Cancel",
+      "creating": "Creating…",
+      "create": "Create",
+      "createFailed": "Failed to create member"
+    }
+  },
+  "settings": {
+    "title": "System Settings",
+    "accessDenied": "System Settings — Admin and Manager access only",
+    "loading": "Loading settings…",
+    "loadFailed": "Failed to load settings",
+    "save": {
+      "saving": "Saving…",
+      "saved": "✓ Saved",
+      "failed": "Save failed",
+      "button": "Save Settings"
+    },
+    "followUp": {
+      "title": "Follow-up Strategy",
+      "enable": "Enable auto follow-up",
+      "enableHint": "When enabled, periodically check and send follow-up emails",
+      "interval": "Follow-up interval (days)",
+      "intervalHint": "Days since last email to trigger follow-up",
+      "max": "Max follow-up count",
+      "maxHint": "Max follow-up emails per influencer",
+      "sendTime": "Execution time (UTC hour)",
+      "sendTimeHint": "Daily UTC hour for follow-up check (0–23)"
+    },
+    "scrape": {
+      "title": "Scrape Configuration",
+      "concurrency": "Scrape concurrency",
+      "concurrencyHint": "Number of concurrent Playwright browser instances"
+    },
+    "webhook": {
+      "title": "Webhook Notifications",
+      "feishu": "Feishu Webhook",
+      "slack": "Slack Webhook",
+      "feishuPlaceholder": "https://open.feishu.cn/open-apis/bot/v2/hook/…",
+      "slackPlaceholder": "https://hooks.slack.com/services/…",
+      "test": {
+        "sending": "Sending…",
+        "success": "✓ Send successful",
+        "failed": "✗ Send failed",
+        "button": "Test"
+      }
+    },
+    "footer": "After modifying, click 'Save Settings' in the top right to apply immediately"
+  }
+}

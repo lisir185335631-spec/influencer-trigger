@@ -43,9 +43,9 @@ else
 fi
 
 # ---- 5. Start FastAPI backend ----
-echo "[INFO] Starting FastAPI backend on port 8000..."
+echo "[INFO] Starting FastAPI backend on port 6002..."
 cd "$SERVER_DIR"
-nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 \
+nohup python -m uvicorn app.main:app --host 0.0.0.0 --port 6002 \
   > /tmp/influencer-backend.log 2>&1 &
 BACKEND_PID=$!
 echo "[INFO] Backend PID: $BACKEND_PID"
@@ -53,7 +53,7 @@ echo "[INFO] Backend PID: $BACKEND_PID"
 # Wait for backend to be ready
 echo -n "[INFO] Waiting for backend..."
 for i in $(seq 1 30); do
-  if curl -sf http://localhost:8000/api/health &>/dev/null; then
+  if curl -sf http://localhost:6002/api/health &>/dev/null; then
     echo " ready!"
     break
   fi
@@ -69,7 +69,7 @@ if command -v nginx &>/dev/null; then
   npm run build
   echo "[INFO] Frontend built. Configure nginx with nginx.conf in project root."
 else
-  echo "[INFO] Starting frontend dev server on port 3000..."
+  echo "[INFO] Starting frontend dev server on port 6001..."
   cd "$CLIENT_DIR"
   npm ci -q
   nohup npm run dev > /tmp/influencer-frontend.log 2>&1 &
@@ -80,10 +80,10 @@ fi
 echo ""
 echo "=============================="
 echo " Services started:"
-echo "  Backend:  http://localhost:8000"
-echo "  API docs: http://localhost:8000/docs"
+echo "  Backend:  http://localhost:6002"
+echo "  API docs: http://localhost:6002/docs"
 if ! command -v nginx &>/dev/null; then
-  echo "  Frontend: http://localhost:3000"
+  echo "  Frontend: http://localhost:6001"
 fi
 echo ""
 echo " Logs:"

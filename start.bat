@@ -44,31 +44,76 @@ if %errorlevel% == 0 (
 )
 
 REM ---- 5. Start FastAPI backend ----
-echo [INFO] Starting FastAPI backend on port 8000...
+echo [INFO] Starting FastAPI backend on port 6002...
 cd /d "%SERVER_DIR%"
-start /b cmd /c "python -m uvicorn app.main:app --host 0.0.0.0 --port 8000 > %TEMP%\influencer-backend.log 2>&1"
-echo [INFO] Backend starting...
+start /b cmd /c "python -m uvicorn app.main:app --host 0.0.0.0 --port 6002 > %TEMP%\influencer-backend.log 2>&1"
 
-REM Wait a few seconds for backend to start
-timeout /t 5 /nobreak >nul
+REM Wait for backend to be ready
+echo [INFO] Waiting for backend...
+set "BACKEND_READY=0"
+for /L %%i in (1,1,30) do (
+    if !BACKEND_READY! == 0 (
+        curl -sf http://localhost:6002/api/health >nul 2>&1
+        if !errorlevel! == 0 (
+            set "BACKEND_READY=1"
+            echo [OK] Backend is ready.
+        ) else (
+            timeout /t 1 /nobreak >nul
+        )
+    )
+)
+if !BACKEND_READY! == 0 (
+    echo [WARN] Backend did not respond within 30s, continuing anyway...
+)
 
 REM ---- 6. Start Frontend dev server ----
-echo [INFO] Starting frontend dev server on port 3000...
+echo [INFO] Starting frontend dev server on port 6001...
 cd /d "%CLIENT_DIR%"
 call npm ci --silent
 start /b cmd /c "npm run dev > %TEMP%\influencer-frontend.log 2>&1"
-echo [INFO] Frontend starting...
+
+REM Wait for frontend to be ready
+echo [INFO] Waiting for frontend...
+set "FRONTEND_READY=0"
+for /L %%i in (1,1,30) do (
+    if !FRONTEND_READY! == 0 (
+        curl -sf http://localhost:6001 >nul 2>&1
+        if !errorlevel! == 0 (
+            set "FRONTEND_READY=1"
+            echo [OK] Frontend is ready.
+        ) else (
+            timeout /t 1 /nobreak >nul
+        )
+    )
+)
+if !FRONTEND_READY! == 0 (
+    echo [WARN] Frontend did not respond within 30s, continuing anyway...
+)
+
+REM ---- 7. Open browser ----
+echo [INFO] Opening browser...
+start "" http://localhost:6001
+start "" http://localhost:6002/docs
 
 echo.
 echo ==============================
-echo  Services starting:
-echo   Backend:  http://localhost:8000
-echo   API docs: http://localhost:8000/docs
-echo   Frontend: http://localhost:3000
+echo  All services started!
+echo   Frontend: http://localhost:6001
+echo   Backend:  http://localhost:6002
+echo   API docs: http://localhost:6002/docs
 echo.
 echo  Logs:
 echo   Backend:  %TEMP%\influencer-backend.log
 echo   Frontend: %TEMP%\influencer-frontend.log
+echo.
+echo  Press any key to stop all services...
 echo ==============================
 echo.
-pause
+pause >nul
+
+REM ---- 8. Cleanup: kill background services ----
+echo [INFO] Stopping services...
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":6002 " ^| findstr "LISTENING"') do taskkill /PID %%p /F >nul 2>&1
+for /f "tokens=5" %%p in ('netstat -ano ^| findstr ":6001 " ^| findstr "LISTENING"') do taskkill /PID %%p /F >nul 2>&1
+echo [OK] Services stopped.
+endlocal

@@ -1,0 +1,699 @@
+{
+  "common": {
+    "loading": "加载中…",
+    "cancel": "取消",
+    "save": "保存",
+    "delete": "删除",
+    "edit": "编辑",
+    "create": "创建",
+    "close": "关闭",
+    "prev": "上一页",
+    "next": "下一页",
+    "confirm": "确认",
+    "saving": "保存中…",
+    "ok": "成功",
+    "fail": "失败",
+    "test": "测试",
+    "apply": "应用",
+    "noDataYet": "暂无数据",
+    "loadFailed": "加载失败",
+    "saveFailed": "保存失败",
+    "pageOf": "第 {{current}} / {{total}} 页",
+    "status": {
+      "new": "新增",
+      "contacted": "已联系",
+      "replied": "已回复",
+      "archived": "已归档",
+      "pending": "待处理",
+      "sent": "已发送",
+      "delivered": "已送达",
+      "opened": "已打开",
+      "bounced": "退信",
+      "failed": "失败",
+      "active": "启用",
+      "disabled": "停用",
+      "inactive": "未激活"
+    },
+    "platform": {
+      "tiktok": "TikTok",
+      "instagram": "Instagram",
+      "youtube": "YouTube",
+      "twitter": "Twitter / X",
+      "facebook": "Facebook",
+      "other": "其他"
+    },
+    "priority": {
+      "high": "高",
+      "medium": "中",
+      "low": "低"
+    },
+    "role": {
+      "admin": "管理员",
+      "manager": "经理",
+      "operator": "操作员"
+    },
+    "intent": {
+      "interested": "感兴趣",
+      "pricing": "询价",
+      "declined": "拒绝",
+      "auto_reply": "自动回复",
+      "irrelevant": "无关"
+    },
+    "time": {
+      "justNow": "刚刚",
+      "minutesAgo": "{{n}}分钟前",
+      "hoursAgo": "{{n}}小时前"
+    }
+  },
+  "sidebar": {
+    "brand": "网红触发",
+    "dashboard": "仪表盘",
+    "scrape": "邮箱抓取",
+    "import": "数据导入",
+    "emails": "邮件管理",
+    "crm": "CRM",
+    "templates": "邮件模板",
+    "mailboxes": "发送邮箱",
+    "followUp": "自动追发",
+    "holidays": "节日祝福",
+    "settings": "系统设置",
+    "team": "团队管理",
+    "expand": "展开侧边栏",
+    "collapse": "收起侧边栏"
+  },
+  "login": {
+    "title": "Influencer Trigger",
+    "subtitle": "登录您的账户",
+    "username": "用户名",
+    "password": "密码",
+    "usernamePlaceholder": "admin",
+    "passwordPlaceholder": "••••••••",
+    "signIn": "登录",
+    "signingIn": "登录中…",
+    "loginFailed": "登录失败"
+  },
+  "mainLayout": {
+    "home": "首页",
+    "signOut": "退出登录",
+    "wsTooltip": "WebSocket: {{status}}",
+    "fallbackTitle": "Influencer Trigger",
+    "pageTitles": {
+      "dashboard": "仪表盘",
+      "scrape": "邮箱抓取",
+      "import": "数据导入",
+      "emails": "邮件管理",
+      "crm": "CRM",
+      "templates": "邮件模板",
+      "mailboxes": "发送邮箱",
+      "followUp": "自动追发",
+      "team": "团队管理",
+      "settings": "系统设置",
+      "holidays": "节日祝福",
+      "influencerDetail": "网红详情"
+    }
+  },
+  "notification": {
+    "title": "通知",
+    "unread": "{{count}} 条未读",
+    "markAllRead": "全部已读",
+    "loading": "加载中…",
+    "noNotifications": "暂无通知"
+  },
+  "dashboard": {
+    "title": "仪表盘",
+    "subtitle": "网红触达运营数据概览",
+    "totalInfluencers": "网红总数",
+    "thisWeek": "本周 +{{count}}",
+    "totalSent": "发送总量",
+    "sentThisWeek": "本周 {{count}}",
+    "replyRate": "回复率",
+    "repliedPerSent": "已回复 / 已发送",
+    "effectiveReplyRate": "有效回复率",
+    "interestedPricingPerSent": "感兴趣+询价 / 已发送",
+    "conversionRate": "转化率",
+    "collaborationsPerInfluencers": "合作数 / 网红数",
+    "trendTitle": "30天发送与回复趋势",
+    "chartSent": "已发送",
+    "chartReplied": "已回复",
+    "platformDistribution": "平台分布",
+    "mailboxHealth": "邮箱健康",
+    "noMailboxes": "暂未配置邮箱",
+    "colEmail": "邮箱",
+    "colUsage": "使用量",
+    "colBounce": "退信率",
+    "loadFailed": "仪表盘加载失败"
+  },
+  "scrape": {
+    "title": "邮箱抓取",
+    "subtitle": "自动抓取或手动导入网红邮箱",
+    "newTask": "新建任务",
+    "tabScrapeTasks": "抓取任务",
+    "tabCsvImport": "CSV / Excel 导入",
+    "wsHint": "抓取任务正在运行 — 进度通过 WebSocket 实时更新。",
+    "loading": "加载中…",
+    "emptyTitle": "暂无抓取任务",
+    "emptySubtitle": "创建任务开始抓取网红邮箱",
+    "table": {
+      "platforms": "平台",
+      "industry": "行业",
+      "status": "状态",
+      "progress": "进度",
+      "validEmails": "有效邮箱",
+      "target": "目标",
+      "created": "创建时间",
+      "found": "/ 已发现 {{count}}"
+    },
+    "status": {
+      "pending": "等待中",
+      "running": "运行中",
+      "done": "完成",
+      "failed": "失败",
+      "cancelled": "已取消"
+    },
+    "modal": {
+      "title": "新建抓取任务",
+      "platforms": "平台",
+      "csvOnly": "仅CSV",
+      "platformHint": "Instagram 和 YouTube 支持 Playwright 自动抓取。TikTok / Twitter / Facebook 需使用 CSV 导入。",
+      "industryLabel": "行业关键词 *",
+      "industryPlaceholder": "如：fitness, beauty, gaming",
+      "targetLabel": "目标邮箱数量 — {{count}}",
+      "cancel": "取消",
+      "startScraping": "开始抓取",
+      "targetMarket": "目标市场（可选）",
+      "noMarketFilter": "— 不限市场 —",
+      "competitorBrands": "竞品品牌（可选）",
+      "competitorPlaceholder": "如：GoingBus, GamsGo, FlixSeek"
+    },
+    "validation": {
+      "selectPlatform": "请至少选择一个平台",
+      "industryRequired": "行业关键词不能为空"
+    },
+    "createFailed": "创建任务失败"
+  },
+  "scrapeDetail": {
+    "title": "抓取结果 — #{{id}}",
+    "subtitle": "{{platforms}} · {{industry}} · {{count}} 个有效邮箱",
+    "loading": "正在加载结果…",
+    "notFound": "未找到该任务。",
+    "emptyTitle": "暂无结果",
+    "emptyInProgress": "正在抓取中 — 发现邮箱后结果将自动显示。",
+    "emptyNoResults": "该任务未找到网红邮箱。",
+    "selected": "已选 {{selected}} / {{total}}",
+    "sortMost": "粉丝数 ↑ 最多",
+    "sortLeast": "粉丝数 ↑ 最少",
+    "table": {
+      "name": "名称",
+      "platform": "平台",
+      "email": "邮箱",
+      "followers": "粉丝数",
+      "bio": "简介",
+      "relevance": "相关度",
+      "matchReason": "匹配理由"
+    },
+    "hint": "取消勾选不想联系的网红，然后点击「全部发送」。",
+    "sendAll": "全部发送 ({{count}})"
+  },
+  "import": {
+    "title": "导入网红",
+    "subtitle": "上传 CSV 或 Excel 文件批量导入网红联系方式。",
+    "dropHint": "拖拽文件到此处，或点击浏览",
+    "browseHint": "支持 .csv、.xlsx、.xls",
+    "parsing": "正在解析文件…",
+    "fileTypeError": "仅支持 .csv、.xlsx、.xls 文件。",
+    "columnMapping": "列映射",
+    "mapEmailHint": "请将一列映射为「邮箱」后再导入。",
+    "preview": "预览（前 {{shown}} / {{total}} 行）",
+    "invalidEmail": "邮箱格式无效",
+    "overwrite": "覆盖重复项",
+    "overwriteHint": "（不勾选 = 跳过已有邮箱）",
+    "importing": "导入中…",
+    "importRows": "导入 {{count}} 行",
+    "complete": "导入完成",
+    "imported": "已导入",
+    "duplicates": "重复",
+    "invalid": "无效",
+    "totalRows": "总行数",
+    "issues": "问题 ({{count}})",
+    "importAnother": "导入另一个文件",
+    "autoDetected": "自动识别列：email, nickname, platform, followers, profile_url, industry（支持中英文列名）",
+    "rowsDetected": "检测到 {{count}} 行",
+    "parseFailed": "文件解析失败",
+    "importFailed": "导入失败",
+    "skip": "— 跳过 —"
+  },
+  "emails": {
+    "tabStatus": "邮件状态",
+    "tabBatchSend": "批量发送",
+    "stats": {
+      "totalSent": "发送总量",
+      "delivered": "已送达",
+      "opened": "已打开",
+      "replied": "已回复",
+      "noReply": "未回复",
+      "bounced": "退信"
+    },
+    "filter": {
+      "allCampaigns": "全部活动",
+      "allPlatforms": "全部平台",
+      "allStatuses": "全部状态",
+      "clearFilters": "清除筛选"
+    },
+    "emailCount": "{{count}} 封邮件",
+    "table": {
+      "influencer": "网红",
+      "email": "邮箱",
+      "campaign": "活动",
+      "sentAt": "发送时间",
+      "status": "状态",
+      "lastUpdated": "最后更新"
+    },
+    "noEmails": "未找到邮件",
+    "prev": "上一页",
+    "pageOf": "第 {{current}} / {{total}} 页",
+    "next": "下一页",
+    "batch": {
+      "title": "批量发送",
+      "subtitle": "使用多邮箱轮换大规模发送个性化邮件。",
+      "noInfluencers": "未选择网红",
+      "noInfluencersHint": "前往「抓取」页面，打开任务，选择网红，然后点击「全部发送」。",
+      "configure": "批量发送",
+      "configureHint": "配置并启动您的邮件活动。",
+      "influencersSelected": "已选 {{count}} 位网红",
+      "campaignName": "活动名称",
+      "optional": "（可选）",
+      "emailTemplate": "邮件模板",
+      "noTemplates": "未找到模板。",
+      "createFirst": "请先创建一个。",
+      "selectTemplate": "选择模板…",
+      "sendFailed": "发送失败，请检查邮箱是否已配置。",
+      "starting": "启动中…",
+      "sendTo": "发送给 {{count}} 位网红",
+      "rateHint": "邮件以 30-60 秒间隔通过您的活跃邮箱发送。",
+      "complete": "活动完成",
+      "sending": "发送中…",
+      "done": "完成",
+      "running": "运行中",
+      "statsTotal": "总计",
+      "statsSent": "已发送",
+      "statsSuccess": "成功",
+      "statsFailed": "失败",
+      "percentComplete": "已完成 {{percent}}%",
+      "sendingTo": "正在发送至 {{email}}…",
+      "sendingHint": "以 30-60 秒间隔发送以避免触发限流，可能需要一些时间。",
+      "sendAnother": "发送另一批",
+      "loadTemplatesFailed": "加载模板失败"
+    }
+  },
+  "crm": {
+    "title": "CRM",
+    "totalCount": "共 {{count}} 位网红",
+    "exportCsv": "导出 CSV",
+    "tabAll": "全部网红",
+    "tabReplied": "已回复",
+    "search": "搜索名称或邮箱…",
+    "allPlatforms": "全部平台",
+    "allStatuses": "全部状态",
+    "followersMin": "粉丝数最小",
+    "followersMax": "最大",
+    "industry": "行业…",
+    "allIntents": "全部意向",
+    "table": {
+      "influencer": "网红",
+      "platform": "平台",
+      "email": "邮箱",
+      "followers": "粉丝数",
+      "status": "状态",
+      "tags": "标签",
+      "priority": "优先级",
+      "lastEmail": "最近邮件"
+    },
+    "loading": "加载中…",
+    "noInfluencers": "未找到网红",
+    "replied": {
+      "subtitle": "{{count}} 位已回复网红，按优先级排序",
+      "table": {
+        "influencer": "网红",
+        "platform": "平台",
+        "followers": "粉丝数",
+        "replyIntent": "回复意向",
+        "replySummary": "回复摘要",
+        "priority": "优先级"
+      },
+      "saving": "保存中…",
+      "loading": "加载中…",
+      "noReplied": "暂无已回复网红"
+    },
+    "batch": {
+      "selected": "已选 {{count}} 项",
+      "assignTags": "分配标签",
+      "archive": "归档",
+      "exportCsv": "导出 CSV"
+    },
+    "tagSelect": {
+      "allTags": "全部标签",
+      "noTags": "暂无标签"
+    },
+    "tagModal": {
+      "title": "分配标签",
+      "noTags": "暂无可用标签",
+      "cancel": "取消",
+      "apply": "应用"
+    }
+  },
+  "influencer": {
+    "loading": "加载中…",
+    "notFound": "未找到该网红",
+    "breadcrumb": "CRM",
+    "loadFailed": "加载网红信息失败",
+    "tabEmails": "邮件",
+    "tabTags": "标签",
+    "tabNotes": "备注",
+    "tabCollaborations": "合作",
+    "info": {
+      "platform": "平台",
+      "email": "邮箱",
+      "followers": "粉丝数",
+      "industry": "行业",
+      "intent": "意向",
+      "followUps": "追发次数",
+      "lastSent": "最近发送",
+      "created": "创建时间"
+    },
+    "bio": "简介",
+    "tags": {
+      "title": "标签",
+      "newTag": "新标签",
+      "tagPlaceholder": "标签名称",
+      "create": "创建",
+      "noTags": "暂无标签，请在上方创建。",
+      "deleteConfirm": "删除此标签？将从所有网红中移除。",
+      "selectHint": "选择要分配给此网红的标签"
+    },
+    "emails": {
+      "type": "类型：{{type}}",
+      "sent": "发送：{{date}}",
+      "opened": "打开：{{date}}",
+      "replied": "回复：{{date}}",
+      "bounced": "退信：{{date}}",
+      "replyFrom": "来自 {{name}} 的回复"
+    },
+    "notes": {
+      "placeholder": "添加备注…",
+      "saving": "保存中…",
+      "addNote": "添加备注",
+      "noNotes": "暂无备注"
+    },
+    "collaborations": {
+      "budget": "预算：{{budget}}",
+      "created": "创建：{{date}}"
+    }
+  },
+  "templates": {
+    "title": "邮件模板",
+    "subtitle": "支持变量替换的邮件模板",
+    "aiGenerate": "AI 生成",
+    "newTemplate": "新建模板",
+    "filter": "筛选：",
+    "all": "全部",
+    "loading": "加载中…",
+    "noTemplatesFor": "未找到「{{filter}}」相关模板。",
+    "noTemplates": "暂无模板，请创建或使用 AI 生成。",
+    "deleteConfirm": "删除此模板？",
+    "table": {
+      "name": "名称",
+      "subject": "主题",
+      "industry": "行业",
+      "style": "风格",
+      "created": "创建时间",
+      "actions": "操作"
+    },
+    "modal": {
+      "editTitle": "编辑模板",
+      "newTitle": "新建模板",
+      "editTab": "编辑",
+      "previewTab": "预览",
+      "subjectPreview": "主题预览",
+      "noSubject": "（无主题）",
+      "bodyPreview": "正文预览",
+      "sampleValues": "示例值：influencer_name=Jane, platform=Instagram, followers=50K, industry=Beauty",
+      "nameLabel": "模板名称 *",
+      "namePlaceholder": "如：Formal Fitness Pitch",
+      "industryLabel": "行业",
+      "industryPlaceholder": "fitness",
+      "styleLabel": "风格",
+      "anyStyle": "— 不限 —",
+      "formal": "正式",
+      "casual": "休闲",
+      "direct": "直接",
+      "languageLabel": "语言",
+      "languagePlaceholder": "en",
+      "subjectLabel": "主题 *",
+      "bodyLabel": "正文 HTML *",
+      "cancel": "取消",
+      "saveChanges": "保存修改",
+      "createTemplate": "创建模板",
+      "saveFailed": "保存失败"
+    },
+    "ai": {
+      "title": "AI 模板生成器",
+      "placeholder": "行业关键词，如：fitness, beauty, gaming",
+      "generate": "生成",
+      "generatedHint": "已生成 3 个模板 — 展开预览，点击「使用此模板」编辑并保存。",
+      "subject": "主题",
+      "preview": "预览",
+      "useTemplate": "使用此模板",
+      "generateFailed": "生成失败"
+    }
+  },
+  "mailboxes": {
+    "title": "发送邮箱",
+    "subtitle": "SMTP 配置的发送账户",
+    "addMailbox": "添加邮箱",
+    "loading": "加载中…",
+    "noMailboxes": "暂无邮箱，请添加一个。",
+    "deleteConfirm": "删除此邮箱？",
+    "table": {
+      "account": "账户",
+      "smtp": "SMTP",
+      "status": "状态",
+      "todayDaily": "今日 / 日限额",
+      "bounceRate": "退信率",
+      "actions": "操作"
+    },
+    "testTooltip": "测试 SMTP 连接",
+    "modal": {
+      "editTitle": "编辑邮箱",
+      "addTitle": "添加邮箱",
+      "emailLabel": "邮箱 *",
+      "displayName": "显示名称",
+      "smtpSection": "SMTP",
+      "hostLabel": "主机 *",
+      "hostPlaceholder": "smtp.gmail.com",
+      "portLabel": "端口",
+      "passwordLabel": "密码",
+      "keepCurrent": "（留空保持不变）",
+      "starttls": "STARTTLS",
+      "imapSection": "IMAP",
+      "imapOptional": "（可选）",
+      "imapHost": "主机",
+      "imapPlaceholder": "imap.gmail.com",
+      "imapPort": "端口",
+      "dailyLimit": "日限额",
+      "hourlyLimit": "小时限额",
+      "cancel": "取消",
+      "save": "保存",
+      "addMailbox": "添加邮箱",
+      "saveFailed": "保存失败"
+    }
+  },
+  "followUp": {
+    "title": "自动追发",
+    "subtitle": "为未回复网红配置自动月度追发，每次追发使用 GPT-4o 生成不同角度的内容。",
+    "strategy": {
+      "title": "追发策略",
+      "autoFollowUp": "自动追发",
+      "intervalLabel": "追发间隔（天）",
+      "intervalHint": "距上次邮件多少天后触发追发",
+      "maxLabel": "最大追发次数",
+      "maxHint": "超过此次数后网红将被归档",
+      "sendTimeLabel": "发送时间（UTC 小时）",
+      "sendTimeHint": "每天在此 UTC 时间执行追发检查",
+      "lastUpdated": "最后更新：{{date}}",
+      "saving": "保存中…",
+      "saved": "设置已保存",
+      "saveFailed": "保存设置失败",
+      "saveButton": "保存设置",
+      "loadFailed": "加载设置失败"
+    },
+    "log": {
+      "title": "追发日志",
+      "loading": "加载中…",
+      "noLogs": "暂无追发邮件。",
+      "noLogsHint": "追发每天在配置的 UTC 时间自动执行。",
+      "table": {
+        "influencer": "网红",
+        "platform": "平台",
+        "subject": "主题",
+        "followUpNum": "追发 #",
+        "status": "状态",
+        "sentAt": "发送时间"
+      },
+      "total": "共 {{count}} 条 · 第 {{current}}/{{pages}} 页"
+    }
+  },
+  "holidays": {
+    "title": "节日祝福",
+    "subtitle": "在国际节日自动发送祝福邮件",
+    "triggerNow": "立即触发",
+    "triggered": "已触发！",
+    "running": "运行中…",
+    "addHoliday": "添加节日",
+    "tabCalendar": "日历",
+    "tabManage": "管理",
+    "tabLogs": "祝福日志",
+    "loading": "加载中…",
+    "noHolidays": "暂未配置节日",
+    "loadFailed": "加载节日失败",
+    "table": {
+      "holiday": "节日",
+      "date": "日期",
+      "recurring": "重复",
+      "active": "启用",
+      "customTemplate": "自定义模板",
+      "annual": "每年",
+      "oneTime": "一次性",
+      "activeLabel": "启用",
+      "inactiveLabel": "停用",
+      "aiGenerated": "AI 生成"
+    },
+    "deleteModal": {
+      "title": "删除节日",
+      "message": "确定要删除此节日吗？此操作无法撤销。",
+      "cancel": "取消",
+      "delete": "删除"
+    },
+    "modal": {
+      "editTitle": "编辑节日",
+      "addTitle": "添加节日",
+      "nameLabel": "名称 *",
+      "namePlaceholder": "如：圣诞节",
+      "dateLabel": "日期 *",
+      "templateLabel": "自定义祝福模板",
+      "templatePlaceholder": "可选。使用 {name} 和 {holiday} 作为占位符。留空将使用 AI 生成的祝福语。",
+      "recurring": "每年重复",
+      "active": "启用",
+      "cancel": "取消",
+      "saving": "保存中…",
+      "save": "保存",
+      "saveFailed": "保存节日失败",
+      "nameRequired": "名称不能为空"
+    },
+    "logs": {
+      "loading": "加载中…",
+      "noLogs": "暂无节日祝福记录",
+      "table": {
+        "influencer": "网红",
+        "platform": "平台",
+        "subject": "主题",
+        "status": "状态",
+        "sentAt": "发送时间"
+      },
+      "totalGreetings": "共 {{count}} 条祝福",
+      "loadFailed": "加载祝福日志失败"
+    },
+    "months": {
+      "0": "一月", "1": "二月", "2": "三月", "3": "四月",
+      "4": "五月", "5": "六月", "6": "七月", "7": "八月",
+      "8": "九月", "9": "十月", "10": "十一月", "11": "十二月"
+    },
+    "days": {
+      "0": "日", "1": "一", "2": "二", "3": "三",
+      "4": "四", "5": "五", "6": "六"
+    }
+  },
+  "team": {
+    "title": "团队管理",
+    "memberCount": "{{count}} / 10 名成员",
+    "addMember": "添加成员",
+    "accessDenied": "仅管理员可访问",
+    "loading": "加载中…",
+    "noMembers": "暂无团队成员",
+    "permissions": {
+      "title": "角色权限",
+      "admin": "管理员",
+      "adminDesc": "完全访问 — 所有功能",
+      "manager": "经理",
+      "managerDesc": "仪表盘、CRM、模板",
+      "operator": "操作员",
+      "operatorDesc": "抓取任务、CRM、回复"
+    },
+    "table": {
+      "username": "用户名",
+      "email": "邮箱",
+      "role": "角色",
+      "status": "状态",
+      "actions": "操作",
+      "you": "（你）",
+      "active": "启用",
+      "disabled": "停用",
+      "disableTooltip": "停用成员",
+      "enableTooltip": "启用成员",
+      "disable": "停用",
+      "enable": "启用"
+    },
+    "modal": {
+      "title": "添加团队成员",
+      "username": "用户名",
+      "email": "邮箱",
+      "password": "密码",
+      "role": "角色",
+      "cancel": "取消",
+      "creating": "创建中…",
+      "create": "创建",
+      "createFailed": "创建成员失败"
+    }
+  },
+  "settings": {
+    "title": "系统设置",
+    "accessDenied": "系统设置 — 仅管理员和经理可访问",
+    "loading": "加载设置中…",
+    "loadFailed": "加载设置失败",
+    "save": {
+      "saving": "保存中…",
+      "saved": "✓ 已保存",
+      "failed": "保存失败",
+      "button": "保存设置"
+    },
+    "followUp": {
+      "title": "追发策略",
+      "enable": "启用自动追发",
+      "enableHint": "开启后定时检查并发送追发邮件",
+      "interval": "追发间隔天数",
+      "intervalHint": "距上次邮件多少天后触发追发",
+      "max": "最大追发次数",
+      "maxHint": "每位网红最多追发几封邮件",
+      "sendTime": "执行时间（UTC 小时）",
+      "sendTimeHint": "每天定时执行追发检查的 UTC 小时（0–23）"
+    },
+    "scrape": {
+      "title": "抓取配置",
+      "concurrency": "抓取并发数",
+      "concurrencyHint": "同时启动的 Playwright 浏览器实例数量"
+    },
+    "webhook": {
+      "title": "Webhook 通知",
+      "feishu": "飞书 Webhook",
+      "slack": "Slack Webhook",
+      "feishuPlaceholder": "https://open.feishu.cn/open-apis/bot/v2/hook/…",
+      "slackPlaceholder": "https://hooks.slack.com/services/…",
+      "test": {
+        "sending": "发送中…",
+        "success": "✓ 发送成功",
+        "failed": "✗ 发送失败",
+        "button": "测试"
+      }
+    },
+    "footer": "修改后点击右上角「保存设置」立即生效"
+  }
+}

@@ -29,18 +29,6 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
         pass
 
 
-def safe_print(*args, **kwargs):
-    """BrokenPipeError 安全的 print，防止管道截断导致进程退出"""
-    try:
-        print(*args, **kwargs)
-    except BrokenPipeError:
-        # 管道已断，降级为写日志文件
-        try:
-            log_path = Path(__file__).parent.resolve() / "ralph-output.log"
-            with open(log_path, "a", encoding="utf-8") as f:
-                f.write(" ".join(str(a) for a in args) + "\n")
-        except Exception:
-            pass
 
 try:
     import dashboard
@@ -62,6 +50,9 @@ TIMEOUT_SECONDS = 30 * 60          # 开发 Agent 超时：30 分钟
 VALIDATOR_TIMEOUT_SECONDS = 60 * 60  # Validator 超时：60 分钟
 MAX_BACKUPS = 10                   # prd.json 备份保留数量
 AUDIT_POLL_INTERVAL = 30           # 审计门禁轮询间隔（秒）
+AUDIT_TIMEOUT_SECONDS = 3600       # 审计门禁超时：1 小时（超时后标记异常并继续）
+MAX_RETRIES = 5                    # 单个 story 最大重试次数（确定性兜底，不依赖 LLM）
+MAX_PROGRESS_BYTES = 512 * 1024    # progress.txt 最大保留 512KB（超出时截断旧内容）
 
 # 参数解析：正确处理 --key value 格式，防止 value 被当作位置参数
 def _parse_args():
@@ -179,6 +170,37 @@ def read_prd() -> dict | None:
         return None
 
 
+def write_prd_safe(prd: dict) -> bool:
+    """
+    原子写入 prd.json：写入临时文件 → 校验 → 替换原文件。
+    防止写入中途崩溃导致 prd.json 损坏。返回是否成功。
+    """
+    content = json.dumps(prd, ensure_ascii=False, indent=2)
+    tmp_path = PRD_FILE.with_suffix(".json.tmp")
+    try:
+        tmp_path.write_text(content, encoding="utf-8")
+        # 校验临时文件合法性
+        if not validate_prd(tmp_path):
+            print("⚠️  write_prd_safe: 写入数据未通过校验，放弃写入")
+            tmp_path.unlink(missing_ok=True)
+            return False
+        # 原子替换（Windows 上 rename 不能覆盖，用 replace）
+        tmp_path.replace(PRD_FILE)
+        return True
+    except OSError as e:
+        # errno 28 = ENOSPC (磁盘满)
+        if hasattr(e, 'errno') and e.errno == 28:
+            print(f"❌ 磁盘空间不足，无法写入 prd.json: {e}")
+        else:
+            print(f"⚠️  write_prd_safe 写入失败: {e}")
+        tmp_path.unlink(missing_ok=True)
+        return False
+    except Exception as e:
+        print(f"⚠️  write_prd_safe 写入失败: {e}")
+        tmp_path.unlink(missing_ok=True)
+        return False
+
+
 def get_story_by_id(prd: dict, story_id: str) -> dict | None:
     """根据 ID 获取 story"""
     for story in prd.get("userStories", []):
@@ -219,6 +241,14 @@ def all_stories_resolved() -> bool:
     return True
 
 
+def any_story_passed() -> bool:
+    """检查是否至少有一个 story 已通过"""
+    prd = read_prd()
+    if not prd:
+        return False
+    return any(s.get("passes", False) for s in prd.get("userStories", []))
+
+
 # ─────────────────────────────────────────────
 # P0: prd.json 备份机制
 # ─────────────────────────────────────────────
@@ -231,24 +261,29 @@ def backup_prd(iteration: int) -> None:
         return
 
     BACKUP_DIR.mkdir(exist_ok=True)
+
+    # M2: 先清理旧备份腾出空间，再创建新备份（防止磁盘满时无法备份）
+    backups = sorted(BACKUP_DIR.glob("prd.json.bak.*"), key=lambda p: p.stat().st_mtime)
+    while len(backups) >= MAX_BACKUPS:
+        oldest = backups.pop(0)
+        try:
+            oldest.unlink()
+        except Exception:
+            pass
+
     timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     backup_name = f"prd.json.bak.{iteration:03d}.{timestamp}"
     backup_path = BACKUP_DIR / backup_name
 
     try:
         shutil.copy2(PRD_FILE, backup_path)
+    except OSError as e:
+        if hasattr(e, 'errno') and e.errno == 28:
+            print(f"❌ 磁盘空间不足，prd.json 备份失败: {e}")
+        else:
+            print(f"⚠️  prd.json 备份失败: {e}")
     except Exception as e:
         print(f"⚠️  prd.json 备份失败: {e}")
-        return
-
-    # 清理旧备份，保留最近 MAX_BACKUPS 个
-    backups = sorted(BACKUP_DIR.glob("prd.json.bak.*"), key=lambda p: p.stat().st_mtime)
-    while len(backups) > MAX_BACKUPS:
-        oldest = backups.pop(0)
-        try:
-            oldest.unlink()
-        except Exception:
-            pass
 
 
 # ─────────────────────────────────────────────
@@ -275,18 +310,22 @@ def is_pid_alive(pid: int) -> bool:
 
 
 def write_lock(iteration: int, phase: str, story_id: str | None) -> None:
-    """写入 lock file"""
+    """原子写入 lock file（temp + replace）"""
     lock_data = {
         "pid": os.getpid(),
         "iteration": iteration,
         "phase": phase,
         "story_id": story_id,
         "started_at": datetime.now().isoformat(),
+        "created_at": time.time(),  # C2: Unix 时间戳，用于竞态检测
     }
+    tmp_path = LOCK_FILE.with_suffix(".json.tmp")
     try:
-        LOCK_FILE.write_text(json.dumps(lock_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_path.write_text(json.dumps(lock_data, ensure_ascii=False, indent=2), encoding="utf-8")
+        tmp_path.replace(LOCK_FILE)
     except Exception as e:
         print(f"⚠️  写入 lock file 失败: {e}")
+        tmp_path.unlink(missing_ok=True)
 
 
 def read_lock() -> dict | None:
@@ -325,9 +364,17 @@ def check_crash_recovery() -> int:
 
     # 如果旧进程还活着，说明已经有一个 ralph 在跑
     if is_pid_alive(old_pid) and old_pid != os.getpid():
-        print(f"❌ 检测到另一个 Ralph 进程正在运行 (PID: {old_pid})")
-        print(f"   如果确认无残留进程，请删除 {LOCK_FILE}")
-        sys.exit(1)
+        # C2: 竞态保护 — 如果 lock 创建不到 60 秒，信任 PID；
+        # 超过 60 秒但 PID 存活可能是 PID 复用，给出警告但不阻断
+        lock_age = time.time() - lock.get("created_at", 0)
+        if lock_age < 60:
+            print(f"❌ 检测到另一个 Ralph 进程正在运行 (PID: {old_pid}, {int(lock_age)}s 前创建)")
+            print(f"   如果确认无残留进程，请运行: python scripts/ralph/ralph-tools.py clear-lock")
+            sys.exit(1)
+        else:
+            print(f"⚠️  检测到旧 lock (PID: {old_pid}, {int(lock_age)}s 前创建)")
+            print(f"   PID 仍存活但 lock 较旧，可能是 PID 复用。覆盖旧 lock 继续...")
+            # 不退出，视为崩溃恢复
 
     # 旧进程已死 → 崩溃恢复
     print(f"\n{'='*64}")
@@ -346,11 +393,8 @@ def check_crash_recovery() -> int:
             if s and s.get("passes", False) and old_phase != "waiting_audit":
                 s["passes"] = False
                 s["notes"] = (s.get("notes", "") + f"\n[崩溃恢复] {old_phase}阶段中断，passes 已重置为 false").strip()
-                try:
-                    PRD_FILE.write_text(json.dumps(prd, ensure_ascii=False, indent=2), encoding="utf-8")
+                if write_prd_safe(prd):
                     print(f"  ⚠️  已重置 {old_story} passes → false（{old_phase}阶段崩溃，验证未完成）")
-                except Exception:
-                    pass
 
     if old_phase == "developing":
         print(f"  → 开发阶段中断，将从迭代 {old_iteration} 重试 {old_story}")
@@ -363,8 +407,20 @@ def check_crash_recovery() -> int:
             clear_audit_gate()
         elif gate and gate.get("status") == "rejected":
             print(f"  → 审计被驳回（崩溃前），将在主循环中处理")
-        else:
+        elif gate and gate.get("status") == "pending":
             print(f"  → 审计等待中断，将在主循环中恢复等待 {old_story}")
+        else:
+            # H1: audit-gate.json 不存在或损坏，但 phase 是 waiting_audit
+            # story 已通过验证但审计信息丢失，重置 passes 让 Ralph 重新验证
+            print(f"  → 审计门禁文件缺失/损坏，重置 {old_story} passes → false 以重新验证")
+            if old_story and old_story != "unknown":
+                _prd = read_prd()
+                if _prd:
+                    _s = get_story_by_id(_prd, old_story)
+                    if _s and _s.get("passes", False):
+                        _s["passes"] = False
+                        _s["notes"] = (_s.get("notes", "") + "\n[崩溃恢复] waiting_audit 阶段中断且门禁文件缺失，passes 已重置").strip()
+                        write_prd_safe(_prd)
     else:
         print(f"  → 未知阶段 ({old_phase})，将从迭代 {old_iteration} 重新开始")
 
@@ -405,16 +461,19 @@ def print_cost_summary() -> None:
         entries = []
         for line in COST_LOG_FILE.read_text(encoding="utf-8").strip().split("\n"):
             if line.strip():
-                entries.append(json.loads(line))
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue  # 跳过损坏的行
 
         if not entries:
             return
 
-        total_dev = sum(e["duration_seconds"] for e in entries if e["phase"] == "developing")
-        total_val = sum(e["duration_seconds"] for e in entries if e["phase"] == "validating")
+        total_dev = sum(e.get("duration_seconds", 0) for e in entries if e.get("phase") == "developing")
+        total_val = sum(e.get("duration_seconds", 0) for e in entries if e.get("phase") == "validating")
         total = total_dev + total_val
-        dev_count = sum(1 for e in entries if e["phase"] == "developing")
-        val_count = sum(1 for e in entries if e["phase"] == "validating")
+        dev_count = sum(1 for e in entries if e.get("phase") == "developing")
+        val_count = sum(1 for e in entries if e.get("phase") == "validating")
 
         print(f"\n{'─'*48}")
         print(f"  📊 成本追踪摘要")
@@ -427,7 +486,7 @@ def print_cost_summary() -> None:
         story_times: dict[str, float] = {}
         for e in entries:
             sid = e.get("story_id", "unknown")
-            story_times[sid] = story_times.get(sid, 0) + e["duration_seconds"]
+            story_times[sid] = story_times.get(sid, 0) + e.get("duration_seconds", 0)
 
         if story_times:
             print(f"\n  按 Story 统计:")
@@ -452,46 +511,53 @@ def cascade_block_stories() -> None:
     if not prd:
         return
 
-    modified = False
-    for story in prd.get("userStories", []):
-        if story.get("passes", False) or story.get("blocked", False):
-            continue
+    any_modified = False
+    # 循环直到收敛，处理多层级联（A→B→C）
+    while True:
+        modified = False
+        for story in prd.get("userStories", []):
+            if story.get("passes", False) or story.get("blocked", False):
+                continue
 
-        for dep_id in story.get("depends_on", []):
-            dep_story = get_story_by_id(prd, dep_id)
-            if not dep_story or dep_story.get("blocked", False):
-                story["blocked"] = True
-                dep_reason = "不存在" if not dep_story else "已 blocked"
-                existing_notes = story.get("notes", "").strip()
-                new_note = f"[级联阻断] 依赖 {dep_id} {dep_reason}"
-                story["notes"] = f"{existing_notes}\n{new_note}".strip() if existing_notes else new_note
-                modified = True
-                print(f"  ⛔ {story.get('id')} 级联阻断: 依赖 {dep_id} {dep_reason}")
-                break
+            for dep_id in story.get("depends_on", []):
+                dep_story = get_story_by_id(prd, dep_id)
+                if not dep_story or dep_story.get("blocked", False):
+                    story["blocked"] = True
+                    dep_reason = "不存在" if not dep_story else "已 blocked"
+                    existing_notes = story.get("notes", "").strip()
+                    new_note = f"[级联阻断] 依赖 {dep_id} {dep_reason}"
+                    story["notes"] = f"{existing_notes}\n{new_note}".strip() if existing_notes else new_note
+                    modified = True
+                    any_modified = True
+                    print(f"  ⛔ {story.get('id')} 级联阻断: 依赖 {dep_id} {dep_reason}")
+                    break
+        if not modified:
+            break
 
-    if modified:
-        try:
-            PRD_FILE.write_text(json.dumps(prd, ensure_ascii=False, indent=2), encoding="utf-8")
-        except Exception as e:
-            print(f"⚠️  级联阻断更新 prd.json 失败: {e}")
+    if any_modified:
+        if not write_prd_safe(prd):
+            print(f"⚠️  级联阻断更新 prd.json 失败")
 
 
 # ─────────────────────────────────────────────
 # P0: Audit Gate - 审计门禁
 # ─────────────────────────────────────────────
 def write_audit_gate(story_id: str) -> bool:
-    """写入审计门禁文件，状态为 pending，等待 Opus 审查。返回是否写入成功。"""
+    """原子写入审计门禁文件，状态为 pending，等待 Opus 审查。返回是否写入成功。"""
     gate = {
         "story_id": story_id,
         "status": "pending",
         "timestamp": datetime.now().isoformat(),
     }
+    tmp_path = AUDIT_GATE_FILE.with_suffix(".json.tmp")
     try:
-        AUDIT_GATE_FILE.write_text(
+        tmp_path.write_text(
             json.dumps(gate, ensure_ascii=False, indent=2), encoding="utf-8"
         )
+        tmp_path.replace(AUDIT_GATE_FILE)
     except Exception as e:
         print(f"⚠️  写入审计门禁失败: {e}（跳过审计等待，直接继续）")
+        tmp_path.unlink(missing_ok=True)
         return False
 
     print(f"\n{'─'*48}")
@@ -511,10 +577,19 @@ def write_audit_gate(story_id: str) -> bool:
 
 
 def read_audit_gate() -> dict | None:
-    """读取审计门禁文件"""
+    """读取审计门禁文件，损坏时自动清除并警告"""
     try:
         if AUDIT_GATE_FILE.exists():
             return json.loads(AUDIT_GATE_FILE.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"⚠️  audit-gate.json 损坏 (JSONDecodeError: {e})，已清除")
+        try:
+            corrupted = AUDIT_GATE_FILE.with_suffix(".json.corrupted")
+            shutil.copy2(AUDIT_GATE_FILE, corrupted)
+            AUDIT_GATE_FILE.unlink()
+        except Exception:
+            pass
+        return None
     except Exception:
         pass
     return None
@@ -529,12 +604,15 @@ def clear_audit_gate() -> None:
         pass
 
 
-def wait_for_audit(story_id: str) -> str:
+def wait_for_audit(story_id: str, timeout: int | None = None) -> str:
     """
     轮询 audit-gate.json，等待 Opus 写入 approved 或 rejected。
-    返回 "approved" 或 "rejected"。
+    返回 "approved"、"rejected" 或 "timeout"。
+    timeout 默认使用 AUDIT_TIMEOUT_SECONDS（1 小时）。
     """
+    max_wait = timeout if timeout is not None else AUDIT_TIMEOUT_SECONDS
     poll_count = 0
+    start = time.time()
     while True:
         gate = read_audit_gate()
         if gate and gate.get("story_id") == story_id:
@@ -545,15 +623,23 @@ def wait_for_audit(story_id: str) -> str:
                 return "rejected"
 
         poll_count += 1
+        elapsed = time.time() - start
+
         if poll_count % 10 == 0:  # 每 5 分钟提醒一次
-            elapsed_min = (poll_count * AUDIT_POLL_INTERVAL) // 60
-            print(f"  ⏳ 已等待 {elapsed_min} 分钟，仍在等待 Opus 审计 {story_id}...")
+            elapsed_min = int(elapsed // 60)
+            remaining_min = max(0, int((max_wait - elapsed) // 60))
+            print(f"  ⏳ 已等待 {elapsed_min} 分钟，剩余 {remaining_min} 分钟超时 | 等待 Opus 审计 {story_id}...")
+
+        # 超时保护：防止无限等待
+        if elapsed >= max_wait:
+            print(f"  ⚠️  审计门禁等待超时 ({int(elapsed // 60)} 分钟)，{story_id} 跳过审计继续执行")
+            return "timeout"
 
         time.sleep(AUDIT_POLL_INTERVAL)
 
 
 def handle_audit_result(story_id: str) -> None:
-    """处理审计结果：approved 继续，rejected 重置 story 状态"""
+    """处理审计结果：approved 继续，rejected 重置 story 状态，timeout 记录并继续"""
     gate = read_audit_gate()
     if not gate:
         return
@@ -586,14 +672,25 @@ def handle_audit_result(story_id: str) -> None:
                 existing_notes = s.get("notes", "").strip()
                 new_note = f"[Opus 审计驳回] {feedback}"
                 s["notes"] = f"{existing_notes}\n{new_note}".strip() if existing_notes else new_note
-                try:
-                    PRD_FILE.write_text(
-                        json.dumps(prd, ensure_ascii=False, indent=2), encoding="utf-8"
-                    )
+                if write_prd_safe(prd):
                     print(f"     已重置 {story_id} passes → false，将在下一轮重新开发")
-                except Exception as e:
-                    print(f"     ⚠️  重置 passes 失败: {e}")
+                else:
+                    print(f"     ⚠️  重置 passes 失败")
 
+        clear_audit_gate()
+
+    elif status == "pending":
+        # wait_for_audit 返回 "timeout" 时，gate 仍为 pending
+        # 记录超时事件，清除门禁，让 Ralph 继续（story 保持 passes=true）
+        print(f"  ⏰ {story_id} 审计超时，保留当前状态继续执行")
+        prd = read_prd()
+        if prd:
+            s = get_story_by_id(prd, story_id)
+            if s:
+                existing_notes = s.get("notes", "").strip()
+                new_note = f"[审计超时] 等待超过 {AUDIT_TIMEOUT_SECONDS // 60} 分钟，自动跳过审计"
+                s["notes"] = f"{existing_notes}\n{new_note}".strip() if existing_notes else new_note
+                write_prd_safe(prd)
         clear_audit_gate()
 
 
@@ -734,26 +831,48 @@ def run_agent(prompt: str, label: str, timeout: int) -> tuple[bool, int | None, 
     prompt_file_path.write_text(prompt, encoding="utf-8")
     print(f"  📝 Prompt 已写入: {prompt_file_path} ({len(prompt)} 字符)")
 
+    # ★ 性能优化：Validator 不使用 max effort（机械执行 AC，不需要深思考）
+    #    开发 Agent 保留 max effort（需要判断/设计）
+    import os as _os
+    proc_env = _os.environ.copy()
+    if "验证" in label or "validat" in label.lower():
+        proc_env.pop("CLAUDE_CODE_EFFORT_LEVEL", None)
+        proc_env.pop("CLAUDE_CODE_DISABLE_ADAPTIVE_THINKING", None)
+        print(f"  ⚡ Validator 性能模式：关闭 max effort")
+
     start_time = time.time()
+    agent_log_file = None
     try:
         agent_log_file = open(agent_log_path, "w", encoding="utf-8")
         process = subprocess.Popen(
             cmd, cwd=str(PROJECT_ROOT),
             stdin=subprocess.PIPE,
             stdout=agent_log_file, stderr=subprocess.STDOUT,
+            env=proc_env,
         )
-        # 写入 prompt 并关闭 stdin，触发 EOF 让 claude 开始处理
-        try:
-            process.stdin.write(prompt.encode("utf-8"))
-            process.stdin.close()
-        except Exception as e:
-            print(f"  ⚠️  写入 prompt 到 stdin 失败: {e}")
+        # C5: 使用线程写入 stdin 防止大 prompt 阻塞管道
+        import threading
+        def _write_stdin():
+            try:
+                process.stdin.write(prompt.encode("utf-8"))
+                process.stdin.close()
+            except Exception as e:
+                print(f"  ⚠️  写入 prompt 到 stdin 失败: {e}")
+        stdin_thread = threading.Thread(target=_write_stdin, daemon=True)
+        stdin_thread.start()
+
+        # 等待 stdin 写入完成（防止大 prompt 未完全传递）
+        stdin_thread.join(timeout=30)
+
+        last_log_size = 0  # M5: 跟踪日志大小，检测 agent 无输出
+        no_output_warned = False
 
         while True:
             ret_code = process.poll()
             if ret_code is not None:
                 elapsed = time.time() - start_time
                 agent_log_file.close()
+                agent_log_file = None
                 # 读取日志尾部用于诊断
                 try:
                     log_tail = agent_log_path.read_text(encoding="utf-8", errors="replace")[-500:]
@@ -782,30 +901,80 @@ def run_agent(prompt: str, label: str, timeout: int) -> tuple[bool, int | None, 
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
-                agent_log_file.close()
                 print(f"   进程已终止, 日志: {agent_log_path}")
                 return True, None, elapsed
 
-            time.sleep(5)  # 5 秒轮询（之前 60s 太粗，导致无法及时检测异常退出）
+            # M5: 检测 agent 长时间无输出
+            try:
+                current_log_size = agent_log_path.stat().st_size
+                if current_log_size == last_log_size and elapsed > 300 and not no_output_warned:
+                    print(f"  ⚠️  Agent 已 5 分钟无新输出 (日志: {current_log_size} bytes)")
+                    no_output_warned = True
+                elif current_log_size != last_log_size:
+                    last_log_size = current_log_size
+                    no_output_warned = False
+            except Exception:
+                pass
+
+            time.sleep(5)  # 5 秒轮询
 
     except Exception as e:
         elapsed = time.time() - start_time
         print(f"\n❌ {label}错误: {e}")
         return False, None, elapsed
+    finally:
+        # M6: 确保日志文件句柄始终被关闭
+        if agent_log_file is not None:
+            try:
+                agent_log_file.close()
+            except Exception:
+                pass
 
 
-def run_developer(iteration: int, story_id: str | None) -> bool:
-    """调用开发 Agent，返回是否超时"""
+def _append_progress_marker(text: str) -> None:
+    """追加结构化进度标记到 progress.txt"""
+    try:
+        with open(PROGRESS_FILE, "a", encoding="utf-8") as f:
+            f.write(f"\n{text}\n")
+    except Exception:
+        pass
+
+
+def _truncate_progress_file() -> None:
+    """H4: 如果 progress.txt 超过 MAX_PROGRESS_BYTES，截断保留后半部分"""
+    try:
+        if not PROGRESS_FILE.exists():
+            return
+        size = PROGRESS_FILE.stat().st_size
+        if size <= MAX_PROGRESS_BYTES:
+            return
+        content = PROGRESS_FILE.read_text(encoding="utf-8", errors="replace")
+        # 保留后 MAX_PROGRESS_BYTES 的内容，从最近的换行符开始
+        keep = content[-(MAX_PROGRESS_BYTES):]
+        first_newline = keep.find("\n")
+        if first_newline > 0:
+            keep = keep[first_newline + 1:]
+        header = f"[progress.txt 已截断: 原 {size} bytes → {len(keep)} bytes]\n\n"
+        PROGRESS_FILE.write_text(header + keep, encoding="utf-8")
+    except Exception:
+        pass
+
+
+def run_developer(iteration: int, story_id: str | None) -> tuple[bool, bool]:
+    """调用开发 Agent，返回 (是否超时, 是否崩溃)"""
     print(f"\n{'='*64}\n  迭代 {iteration}/{MAX_ITERATIONS} | Story: {story_id or 'N/A'}\n{'='*64}")
 
     if not CLAUDE_INSTRUCTION_FILE.exists():
         print(f"❌ 错误: {CLAUDE_INSTRUCTION_FILE} 不存在")
-        return False
+        return False, True
 
     prompt = build_developer_prompt(story_id)
-    timed_out, _exit_code, duration = run_agent(prompt, "开发迭代", TIMEOUT_SECONDS)
+    timed_out, exit_code, duration = run_agent(prompt, "开发迭代", TIMEOUT_SECONDS)
     log_cost(story_id, "developing", duration, iteration)
-    return timed_out
+    crashed = (not timed_out and exit_code is not None and exit_code != 0)
+    if crashed:
+        print(f"  ⚠️  开发 Agent 异常退出 (code={exit_code})，跳过本轮验证")
+    return timed_out, crashed
 
 
 def run_validator(iteration: int, story_id: str | None) -> None:
@@ -836,11 +1005,10 @@ def run_validator(iteration: int, story_id: str | None) -> None:
             if s and s.get("passes", False):
                 s["passes"] = False
                 s["notes"] = (s.get("notes", "") + f"\n[Validator {reason}] 验证未完成，passes 已重置为 false").strip()
-                try:
-                    PRD_FILE.write_text(json.dumps(prd, ensure_ascii=False, indent=2), encoding="utf-8")
+                if write_prd_safe(prd):
                     print(f"   已重置 {story_id} passes → false（验证未完成，不可信任）")
-                except Exception as e:
-                    print(f"   ⚠️  重置 passes 失败: {e}")
+                else:
+                    print(f"   ⚠️  重置 passes 失败")
 
 
 # ─────────────────────────────────────────────
@@ -860,6 +1028,7 @@ def format_duration(seconds: float) -> str:
 
 
 LOG_FILE = SCRIPT_DIR / "ralph-output.log"
+LOG_MAX_BYTES = 50 * 1024 * 1024   # ralph-output.log 最大 50MB，超出时轮转
 
 
 class _TeeWriter:
@@ -869,6 +1038,29 @@ class _TeeWriter:
         self._stdout = original_stdout
         self._log = None
         try:
+            self._log = open(LOG_FILE, "a", encoding="utf-8")
+        except Exception:
+            pass
+
+    def rotate_if_needed(self):
+        """日志文件超过阈值时轮转：当前文件 → .bak，重新打开新文件"""
+        try:
+            if not LOG_FILE.exists():
+                return
+            if LOG_FILE.stat().st_size < LOG_MAX_BYTES:
+                return
+            # 关闭当前句柄
+            if self._log:
+                self._log.close()
+                self._log = None
+            # 轮转：覆盖旧 .bak
+            bak = LOG_FILE.with_suffix(".log.bak")
+            try:
+                LOG_FILE.replace(bak)
+            except OSError:
+                # Windows 上可能因句柄残留失败 → 截断代替轮转
+                LOG_FILE.write_bytes(b"")
+            # 重新打开
             self._log = open(LOG_FILE, "a", encoding="utf-8")
         except Exception:
             pass
@@ -925,7 +1117,12 @@ def _daemon_relaunch():
     child_args = [sys.executable, str(Path(__file__).resolve())]
     child_args += [a for a in sys.argv[1:] if a != "--daemon"]
 
-    log_handle = open(LOG_FILE, "a", encoding="utf-8")
+    try:
+        log_handle = open(LOG_FILE, "a", encoding="utf-8")
+    except OSError as e:
+        print(f"❌ 无法打开日志文件 {LOG_FILE}: {e}")
+        print("  可能被其他进程锁定。请检查是否有另一个 Ralph 实例正在运行。")
+        sys.exit(1)
 
     if platform.system() == "Windows":
         DETACHED_PROCESS = 0x00000008
@@ -948,6 +1145,10 @@ def _daemon_relaunch():
             start_new_session=True,
         )
 
+    # 父进程 Popen 后立即关闭文件句柄（子进程已继承，父进程不再需要）
+    # Windows 上不关闭会导致文件锁定，阻止日志轮转
+    log_handle.close()
+
     print(f"Ralph 已在后台启动 (PID: {proc.pid})")
     print(f"  日志: {LOG_FILE}")
     print(f"  进度: python scripts/ralph/ralph-tools.py status")
@@ -966,6 +1167,14 @@ def main():
         _daemon_relaunch()
         return  # unreachable, _daemon_relaunch calls sys.exit(0)
 
+    # 前置检查：Claude CLI 是否存在
+    import platform as _plat_check
+    cli_name = "claude.cmd" if _plat_check.system() == "Windows" else "claude"
+    if not shutil.which(cli_name):
+        print(f"❌ 错误: 未找到 '{cli_name}' 命令。请先安装 Claude Code CLI。")
+        print(f"  安装指南: https://docs.anthropic.com/en/docs/claude-code")
+        sys.exit(1)
+
     # 管道断裂防护：stdout 同时写屏幕和日志文件，管道断了也不影响执行
     tee = _TeeWriter(sys.stdout)
     sys.stdout = tee
@@ -978,14 +1187,21 @@ def main():
     # 崩溃恢复检查
     start_iteration = check_crash_recovery()
 
-    # 注册退出时清理 lock file
+    # 注册退出时清理 lock file + 关闭日志文件句柄
     atexit.register(clear_lock)
+    atexit.register(lambda: tee.close())
+    stderr_tee = sys.stderr
+    atexit.register(lambda: stderr_tee.close() if hasattr(stderr_tee, 'close') else None)
 
     total_start_time = time.time()
     dashboard.start(max_iterations=MAX_ITERATIONS)
 
     for i in range(start_iteration, MAX_ITERATIONS + 1):
         try:
+            # P-1: 日志轮转检查（每轮迭代开始时）
+            if hasattr(sys.stdout, 'rotate_if_needed'):
+                sys.stdout.rotate_if_needed()
+
             # P0: 审计门禁恢复检查（崩溃后重启时，若有未完成的审计则继续等待）
             if not NO_AUDIT_GATE:
                 gate = read_audit_gate()
@@ -1021,19 +1237,61 @@ def main():
                 if all_stories_resolved():
                     dashboard.set_state(phase="done")
                     elapsed = time.time() - total_start_time
-                    print("✅ 所有任务已完成或已标记为 BLOCKED!")
+                    has_pass = any_story_passed()
+                    if has_pass:
+                        print("✅ 所有任务已完成（部分可能 BLOCKED）!")
+                    else:
+                        print("⛔ 所有任务均已 BLOCKED，无一通过!")
                     print(f"⏱️  总运行时间: {format_duration(elapsed)}")
                     print_cost_summary()
                     clear_lock()
-                    sys.exit(0)
+                    sys.exit(0 if has_pass else 2)
                 else:
                     print("⚠️  未找到可执行的 story，但仍有未完成的 story，请检查 prd.json")
                     break
 
+            # P2: 确定性 MAX_RETRIES 兜底（不依赖 LLM Validator 的判断）
+            prd_check = read_prd()
+            if prd_check and current_story:
+                s_check = get_story_by_id(prd_check, current_story)
+                if s_check and s_check.get("retryCount", 0) >= MAX_RETRIES and not s_check.get("blocked", False):
+                    s_check["blocked"] = True
+                    existing = s_check.get("notes", "").strip()
+                    block_note = f"[编排器兜底] retryCount={s_check['retryCount']} >= MAX_RETRIES={MAX_RETRIES}，自动标记 blocked"
+                    s_check["notes"] = f"{existing}\n{block_note}".strip() if existing else block_note
+                    write_prd_safe(prd_check)
+                    print(f"  ⛔ {current_story} 已达到最大重试次数 ({MAX_RETRIES})，自动标记 blocked")
+                    cascade_block_stories()
+                    continue
+
+            # H3: 结构化进度标记 — iteration 开始
+            iter_start = time.time()
+            _append_progress_marker(f"--- [RALPH] Iteration {i} started: {current_story} at {datetime.now().strftime('%Y-%m-%d %H:%M')} ---")
+
             # ─── 第一步：开发 ───
             write_lock(i, "developing", current_story)
             dashboard.set_state(iteration=i, phase="developing", current_story=current_story)
-            timed_out = run_developer(i, current_story)
+            timed_out, crashed = run_developer(i, current_story)
+
+            if crashed:
+                # 开发 Agent 崩溃（非零退出码），重置 passes + 递增 retryCount 防止无限循环
+                if current_story:
+                    prd_crash = read_prd()
+                    if prd_crash:
+                        s_crash = get_story_by_id(prd_crash, current_story)
+                        if s_crash:
+                            if s_crash.get("passes", False):
+                                s_crash["passes"] = False
+                            s_crash["retryCount"] = s_crash.get("retryCount", 0) + 1
+                            existing = s_crash.get("notes", "").strip()
+                            note = f"[Developer 崩溃] Agent 非零退出码，passes 重置，retryCount +1"
+                            s_crash["notes"] = f"{existing}\n{note}".strip() if existing else note
+                            if not write_prd_safe(prd_crash):
+                                print(f"  ⚠️  write_prd_safe 失败，retryCount 未持久化")
+                dashboard.set_state(phase="idle")
+                print("⏭️  开发 Agent 崩溃，跳过验证，下一次迭代重试...")
+                time.sleep(2)
+                continue
 
             if timed_out:
                 # 安全措施：Developer 超时时可能已设 passes=true（执行到一半），必须重置
@@ -1043,11 +1301,10 @@ def main():
                     if s and s.get("passes", False):
                         s["passes"] = False
                         s["notes"] = (s.get("notes", "") + "\n[Developer 超时] 开发未完成，passes 已重置为 false").strip()
-                        try:
-                            PRD_FILE.write_text(json.dumps(prd, ensure_ascii=False, indent=2), encoding="utf-8")
+                        if write_prd_safe(prd):
                             print(f"   已重置 {current_story} passes → false（开发超时，不可信任）")
-                        except Exception as e:
-                            print(f"   ⚠️  重置 passes 失败: {e}")
+                        else:
+                            print(f"   ⚠️  重置 passes 失败")
                 dashboard.set_state(phase="idle")
                 print("⏭️  开发 Agent 超时，跳过验证，下一次迭代继续...")
                 time.sleep(2)
@@ -1058,9 +1315,10 @@ def main():
             dashboard.set_state(phase="validating")
             run_validator(i, current_story)
 
+            # H2: 强制重新读取 prd.json（Validator 可能已修改）
             # ─── 第三步：审计门禁 ───
             if not NO_AUDIT_GATE:
-                prd = read_prd()
+                prd = read_prd()  # H2: 每次重新读取，不依赖缓存
                 if prd and current_story:
                     s = get_story_by_id(prd, current_story)
                     if s and s.get("passes", False):
@@ -1069,19 +1327,33 @@ def main():
                         if gate_written:
                             write_lock(i, "waiting_audit", current_story)
                             dashboard.set_state(phase="waiting_audit")
-                            wait_for_audit(current_story)
+                            result = wait_for_audit(current_story)
+                            if result == "timeout":
+                                # 审计超时，handle_audit_result 会处理 pending 状态
+                                pass
                             handle_audit_result(current_story)
+
+            # H3: 结构化进度标记 — iteration 结束
+            iter_elapsed = time.time() - iter_start
+            _append_progress_marker(f"--- [RALPH] Iteration {i} ended: {current_story} ({format_duration(iter_elapsed)}) ---")
+            # H4: 定期截断 progress.txt
+            if i % 5 == 0:
+                _truncate_progress_file()
 
             # ─── 第四步：检查完成状态 ───
             dashboard.set_state(phase="idle")
             if all_stories_resolved():
                 dashboard.set_state(phase="done")
                 elapsed = time.time() - total_start_time
-                print("✅ 所有任务已完成或已标记为 BLOCKED!")
+                has_pass = any_story_passed()
+                if has_pass:
+                    print("✅ 所有任务已完成（部分可能 BLOCKED）!")
+                else:
+                    print("⛔ 所有任务均已 BLOCKED，无一通过!")
                 print(f"⏱️  总运行时间: {format_duration(elapsed)}")
                 print_cost_summary()
                 clear_lock()
-                sys.exit(0)
+                sys.exit(0 if has_pass else 2)
 
         except KeyboardInterrupt:
             elapsed = time.time() - total_start_time

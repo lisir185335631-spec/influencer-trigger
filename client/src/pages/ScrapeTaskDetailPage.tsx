@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   ArrowLeft,
   ArrowUpDown,
@@ -45,6 +46,7 @@ type SortDir = 'desc' | 'asc'
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ScrapeTaskDetailPage() {
+  const { t } = useTranslation()
   const { taskId } = useParams<{ taskId: string }>()
   const navigate = useNavigate()
   const id = Number(taskId)
@@ -115,7 +117,7 @@ export default function ScrapeTaskDetailPage() {
     return (
       <div className="flex items-center justify-center h-64 text-gray-400">
         <Loader2 size={20} className="animate-spin mr-2" />
-        <span className="text-sm">Loading results…</span>
+        <span className="text-sm">{t('scrapeDetail.loading')}</span>
       </div>
     )
   }
@@ -123,7 +125,7 @@ export default function ScrapeTaskDetailPage() {
   if (!task) {
     return (
       <div className="p-6">
-        <p className="text-sm text-red-500">Task not found.</p>
+        <p className="text-sm text-red-500">{t('scrapeDetail.notFound')}</p>
       </div>
     )
   }
@@ -142,10 +144,10 @@ export default function ScrapeTaskDetailPage() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="text-base font-semibold text-gray-900">
-            Scrape Results — #{task.id}
+            {t('scrapeDetail.title', { id: task.id })}
           </h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            {platforms.join(', ')} · {task.industry} · {task.valid_count} valid emails
+            {t('scrapeDetail.subtitle', { platforms: platforms.join(', '), industry: task.industry, count: task.valid_count })}
           </p>
         </div>
       </div>
@@ -154,11 +156,11 @@ export default function ScrapeTaskDetailPage() {
       {results.length === 0 && (
         <div className="py-16 text-center space-y-2">
           <Users size={32} className="mx-auto text-gray-200" />
-          <p className="text-sm text-gray-500">No results yet</p>
+          <p className="text-sm text-gray-500">{t('scrapeDetail.emptyTitle')}</p>
           <p className="text-xs text-gray-400">
             {task.status === 'running' || task.status === 'pending'
-              ? 'Scraping in progress — results will appear when emails are found.'
-              : 'This task found no influencer emails.'}
+              ? t('scrapeDetail.emptyInProgress')
+              : t('scrapeDetail.emptyNoResults')}
           </p>
         </div>
       )}
@@ -169,14 +171,14 @@ export default function ScrapeTaskDetailPage() {
           {/* Table controls */}
           <div className="flex items-center justify-between">
             <p className="text-xs text-gray-500">
-              <span className="font-medium text-gray-800">{selected.size}</span> of {results.length} selected
+              {t('scrapeDetail.selected', { selected: selected.size, total: results.length })}
             </p>
             <button
               onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
               className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 transition-colors px-2 py-1 rounded hover:bg-gray-100"
             >
               {sortDir === 'desc' ? <ArrowDown size={12} /> : <ArrowUp size={12} />}
-              Followers {sortDir === 'desc' ? '↑ Most' : '↑ Least'}
+              {sortDir === 'desc' ? t('scrapeDetail.sortMost') : t('scrapeDetail.sortLeast')}
               <ArrowUpDown size={10} className="opacity-40" />
             </button>
           </div>
@@ -196,17 +198,19 @@ export default function ScrapeTaskDetailPage() {
                       )}
                     </button>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Name</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Platform</th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Email</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.name')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.platform')}</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.email')}</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 cursor-pointer select-none"
                       onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}>
                     <span className="flex items-center justify-end gap-1">
-                      Followers
+                      {t('scrapeDetail.table.followers')}
                       {sortDir === 'desc' ? <ArrowDown size={11} /> : <ArrowUp size={11} />}
                     </span>
                   </th>
-                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Bio</th>
+                  <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.bio')}</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('scrapeDetail.table.relevance')}</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('scrapeDetail.table.matchReason')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
@@ -259,6 +263,22 @@ export default function ScrapeTaskDetailPage() {
                       <td className="px-4 py-3 text-xs text-gray-400 truncate max-w-[200px]">
                         {inf.bio ? inf.bio.slice(0, 80) + (inf.bio.length > 80 ? '…' : '') : '—'}
                       </td>
+                      <td className="px-3 py-2 text-sm">
+                        {inf.relevance_score != null ? (
+                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                            inf.relevance_score >= 0.7 ? 'bg-green-50 text-green-700' :
+                            inf.relevance_score >= 0.4 ? 'bg-yellow-50 text-yellow-700' :
+                            'bg-gray-50 text-gray-500'
+                          }`}>
+                            {(inf.relevance_score * 100).toFixed(0)}%
+                          </span>
+                        ) : (
+                          <span className="text-gray-300">—</span>
+                        )}
+                      </td>
+                      <td className="px-3 py-2 text-sm text-gray-600 max-w-[200px] truncate" title={inf.match_reason || ''}>
+                        {inf.match_reason ? inf.match_reason : <span className="text-gray-300">—</span>}
+                      </td>
                     </tr>
                   )
                 })}
@@ -269,7 +289,7 @@ export default function ScrapeTaskDetailPage() {
           {/* Bottom action bar */}
           <div className="flex items-center justify-between pt-1">
             <p className="text-xs text-gray-400">
-              Uncheck influencers you don't want to contact, then click Send All.
+              {t('scrapeDetail.hint')}
             </p>
             <button
               onClick={handleSendAll}
@@ -277,7 +297,7 @@ export default function ScrapeTaskDetailPage() {
               className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
             >
               <Send size={13} />
-              Send All ({selected.size})
+              {t('scrapeDetail.sendAll', { count: selected.size })}
             </button>
           </div>
         </>

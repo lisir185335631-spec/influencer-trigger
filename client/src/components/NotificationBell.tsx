@@ -1,5 +1,6 @@
 import { Bell, Check, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { notificationsApi, NotificationItem } from '../api/notifications'
 import { useWebSocketContext } from '../stores/WebSocketContext'
@@ -39,17 +40,18 @@ function sortNotifications(items: NotificationItem[]): NotificationItem[] {
   })
 }
 
-function formatTime(iso: string): string {
+function formatTime(iso: string, t: (key: string, opts?: Record<string, unknown>) => string): string {
   const d = new Date(iso)
   const now = Date.now()
   const diff = now - d.getTime()
-  if (diff < 60_000) return 'just now'
-  if (diff < 3_600_000) return `${Math.floor(diff / 60_000)}m ago`
-  if (diff < 86_400_000) return `${Math.floor(diff / 3_600_000)}h ago`
+  if (diff < 60_000) return t('common.time.justNow')
+  if (diff < 3_600_000) { const m = Math.floor(diff / 60_000); return t('common.time.minutesAgo', { n: m }) }
+  if (diff < 86_400_000) { const h = Math.floor(diff / 3_600_000); return t('common.time.hoursAgo', { n: h }) }
   return d.toLocaleDateString()
 }
 
 export default function NotificationBell() {
+  const { t } = useTranslation()
   const [open, setOpen] = useState(false)
   const [notifications, setNotifications] = useState<NotificationItem[]>([])
   const [unreadCount, setUnreadCount] = useState(0)
@@ -137,7 +139,7 @@ export default function NotificationBell() {
       <button
         onClick={() => setOpen((o) => !o)}
         className="relative p-2 text-gray-400 hover:text-gray-700 transition-colors"
-        aria-label="Notifications"
+        aria-label={t('notification.title')}
       >
         <Bell size={18} />
         {unreadCount > 0 && (
@@ -153,10 +155,10 @@ export default function NotificationBell() {
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-gray-100">
             <span className="text-sm font-semibold text-gray-800">
-              Notifications
+              {t('notification.title')}
               {unreadCount > 0 && (
                 <span className="ml-2 text-xs font-normal text-rose-500">
-                  {unreadCount} unread
+                  {t('notification.unread', { count: unreadCount })}
                 </span>
               )}
             </span>
@@ -167,13 +169,13 @@ export default function NotificationBell() {
                   className="flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 transition-colors"
                 >
                   <Check size={12} />
-                  Mark all read
+                  {t('notification.markAllRead')}
                 </button>
               )}
               <button
                 onClick={() => setOpen(false)}
                 className="text-gray-300 hover:text-gray-600 transition-colors"
-                aria-label="Close"
+                aria-label={t('common.close')}
               >
                 <X size={14} />
               </button>
@@ -183,11 +185,11 @@ export default function NotificationBell() {
           {/* Notification list */}
           <div className="max-h-[420px] overflow-y-auto divide-y divide-gray-50">
             {loading && (
-              <div className="px-4 py-10 text-center text-sm text-gray-400">Loading…</div>
+              <div className="px-4 py-10 text-center text-sm text-gray-400">{t('notification.loading')}</div>
             )}
             {!loading && notifications.length === 0 && (
               <div className="px-4 py-10 text-center text-sm text-gray-400">
-                No notifications yet
+                {t('notification.noNotifications')}
               </div>
             )}
             {!loading &&
@@ -237,7 +239,7 @@ export default function NotificationBell() {
                           </span>
                         )}
                         <span className="text-[10px] text-gray-300 ml-auto flex-shrink-0">
-                          {formatTime(item.created_at)}
+                          {formatTime(item.created_at, t)}
                         </span>
                       </div>
                     </div>

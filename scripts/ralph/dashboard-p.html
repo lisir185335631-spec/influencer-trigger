@@ -339,11 +339,24 @@ function getRuntime() {
 function getStoryState(story) {
   const runtime = getRuntime();
   const gate = dashboardData.auditGate;
-  // passes/blocked 优先于运行时状态，防止 Ralph 退出后冻结的 current_story 覆盖真实结果
-  if (story.passes === true) return 'passed';
   if (story.blocked) return 'blocked';
-  if (story.id === runtime.current_story) return 'active';
-  if (gate && gate.story_id === story.id && gate.status === 'pending') return 'auditing';
+  const isCurrent = story.id === runtime.current_story;
+
+  if (isCurrent) {
+    // audit-gate 权威
+    if (gate && gate.story_id === story.id) {
+      if (gate.status === 'pending') return 'auditing';
+      if (gate.status === 'approved') return 'passed';
+    }
+    // 按 phase 细化
+    if (runtime.phase === 'developing') return 'developing';
+    if (runtime.phase === 'validating') return 'validating';
+    if (runtime.phase === 'waiting_audit') return 'auditing';
+    return 'active';
+  }
+
+  // 非当前 story：passes=true 说明已 approved
+  if (story.passes === true) return 'passed';
   if (story.passes === false && (story.retryCount > 0 || story.notes)) return 'failed';
   return 'pending';
 }
@@ -354,8 +367,8 @@ function formatElapsed(sec) {
   return Math.floor(sec/3600) + 'h ' + Math.floor((sec%3600)/60) + 'm';
 }
 
-const stateLabel = { active:'进行中', auditing:'审查中', passed:'已通过', failed:'未通过', blocked:'已阻塞', pending:'待执行' };
-const stateColor = { active:'#4a9eff', auditing:'#a855f7', passed:'#4ade80', failed:'#f87171', blocked:'#fb923c', pending:'#6b7280' };
+const stateLabel = { developing:'开发中', validating:'验证中', auditing:'审查中', active:'进行中', passed:'已通过', failed:'未通过', blocked:'已阻塞', pending:'待执行' };
+const stateColor = { developing:'#4a9eff', validating:'#fb923c', auditing:'#a855f7', active:'#4a9eff', passed:'#4ade80', failed:'#f87171', blocked:'#fb923c', pending:'#6b7280' };
 const phaseEmoji = { idle:'⏸', developing:'🤖', validating:'🔍', waiting_audit:'🔒', done:'✅', error:'❌' };
 const phaseText = { idle:'等待启动', developing:'开发中', validating:'验证中', waiting_audit:'等待Opus审计', done:'全部完成', error:'出现错误' };
 
@@ -425,7 +438,7 @@ function scheduleIdleActions() {
       if (!currentStory || !charStates[story.id]) return;
 
       const state = getStoryState(currentStory);
-      if (state === 'active' || state === 'auditing' || state === 'blocked') return;
+      if (['developing','validating','active','auditing','blocked'].includes(state)) return;
       if (Math.random() < 0.35) {
         const action = IDLE_ACTIONS[Math.floor(Math.random() * IDLE_ACTIONS.length)];
         charStates[story.id].idleAction = action;
@@ -453,12 +466,16 @@ setInterval(() => {
 }, 1000);
 
 async function poll() {
-  if (!useFallback) {
-    try {
-      const res = await fetch('/api/state');
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      dashboardData = await res.json();
-    } catch (e) {
+  // 每次 poll 都尝试真实 API，不 stick 在 fallback
+  try {
+    const res = await fetch('/api/state', { cache: 'no-store' });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    dashboardData = await res.json();
+    useFallback = false;
+  } catch (e) {
+    console.warn('fetch /api/state failed:', e);
+    // 仅首次加载时才用 fallback 占位；之后保持上次数据
+    if (!dashboardData || !dashboardData.stories) {
       useFallback = true;
       dashboardData = cloneFallback();
     }
@@ -492,7 +509,7 @@ function render() {
     </div>
     <div class="hud-right">
       <span class="hud-phase">${phaseEmoji[runtime.phase]||'⏸'} ${phaseText[runtime.phase]||'等待启动'}${runtime.current_story ? ' · '+runtime.current_story : ''}${isActive ? '<span class="loading-dots"></span>' : ''}</span>
-      <span class="hud-meta">Round ${runtime.iteration}/${runtime.max_iterations} · ${formatElapsed(runtime.elapsed)}</span>
+      <span class="hud-meta">Round ${runtime.iteration}/${runtime.max_iterations} · ${formatElapsed(runtime.elapsed)}${runtime.phase_elapsed ? ' · ⏱'+formatElapsed(runtime.phase_elapsed) : ''}${runtime.screenshots_count > 0 ? ' · 📸'+runtime.screenshots_count : ''}${runtime.log_bytes !== undefined && runtime.log_bytes > 0 ? ' · 📄'+runtime.log_bytes+'B' : ''}</span>
     </div>
   </div>`;
 
@@ -504,11 +521,16 @@ function render() {
     const isSel = selectedStory === story.id;
     const cacheKey = cs.spriteKey + '_' + i;
 
-    const screenColor = state==='active'?'#1a3a5e':state==='auditing'?'#2d1a4e':state==='passed'?'#1a3e1a':state==='failed'?'#3e1a1a':state==='blocked'?'#3e2e1a':'#1a1a1a';
-    const glowColor = state==='active'?'rgba(74,158,255,0.4)':state==='auditing'?'rgba(168,85,247,0.4)':state==='passed'?'rgba(74,222,128,0.3)':state==='failed'?'rgba(248,113,113,0.3)':state==='blocked'?'rgba(251,146,60,0.3)':'rgba(100,100,100,0.1)';
+    // developing / active 用蓝色；validating 用橙色；auditing 用紫色
+    const isDev = state==='developing' || state==='active';
+    const isVal = state==='validating';
+
+    const screenColor = isDev?'#1a3a5e':isVal?'#3e2e1a':state==='auditing'?'#2d1a4e':state==='passed'?'#1a3e1a':state==='failed'?'#3e1a1a':state==='blocked'?'#3e2e1a':'#1a1a1a';
+    const glowColor = isDev?'rgba(74,158,255,0.4)':isVal?'rgba(251,146,60,0.4)':state==='auditing'?'rgba(168,85,247,0.4)':state==='passed'?'rgba(74,222,128,0.3)':state==='failed'?'rgba(248,113,113,0.3)':state==='blocked'?'rgba(251,146,60,0.3)':'rgba(100,100,100,0.1)';
 
     let screenInner = '';
-    if (state==='active') screenInner='<div class="screen-code"><span class="code-line"></span><span class="code-line short"></span><span class="code-line"></span></div>';
+    if (isDev) screenInner='<div class="screen-code"><span class="code-line"></span><span class="code-line short"></span><span class="code-line"></span></div>';
+    else if (isVal) screenInner='<span class="screen-icon screen-audit" style="color:#fb923c">🔍</span>';
     else if (state==='auditing') screenInner='<span class="screen-icon screen-audit">🔍</span>';
     else if (state==='passed') screenInner='<span class="screen-icon screen-check">✓</span>';
     else if (state==='failed') screenInner='<span class="screen-icon screen-x">✗</span>';
@@ -518,7 +540,8 @@ function render() {
     let indicators = '';
     if (cs.idleAction==='coffee') indicators='<div class="char-accessory char-coffee">☕</div>';
     else if (cs.idleAction==='walk') indicators='<div class="char-accessory char-music">♪</div>';
-    else if (state==='active') indicators='<div class="char-indicator char-ind-active">⚡</div>';
+    else if (isDev) indicators='<div class="char-indicator char-ind-active">⚡</div>';
+    else if (isVal) indicators='<div class="char-indicator char-ind-audit" style="color:#fb923c">🔍</div>';
     else if (state==='auditing') indicators='<div class="char-indicator char-ind-audit">🔍</div>';
     else if (state==='passed') indicators='<div class="char-indicator char-ind-pass">★</div>';
     else if (state==='failed') indicators='<div class="char-indicator char-ind-fail">!</div>';
