@@ -37,7 +37,7 @@ async def create_task(
             detail=f"Unsupported platforms: {invalid}. Supported: {sorted(supported)}",
         )
 
-    user_id = int(current_user.sub) if current_user.sub else None
+    user_id = current_user.user_id
     task = await create_scrape_task(db, body, user_id)
 
     # Fire scraper in background

@@ -43,7 +43,7 @@ async def send_batch(
     if not body.influencer_ids:
         raise HTTPException(status_code=400, detail="influencer_ids cannot be empty")
 
-    user_id = int(current_user.sub) if current_user.sub else None
+    user_id = current_user.user_id
     campaign = await create_campaign(db, body, user_id)
 
     background_tasks.add_task(

@@ -173,7 +173,7 @@ async def add_note_endpoint(
     detail = await get_influencer_detail(db, influencer_id)
     if not detail:
         raise HTTPException(status_code=404, detail="Influencer not found")
-    user_id = int(current_user.sub) if current_user.sub else None
+    user_id = current_user.user_id
     return await add_note(db, influencer_id, body, user_id)
 
 
