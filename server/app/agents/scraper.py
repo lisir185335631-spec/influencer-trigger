@@ -622,18 +622,30 @@ async def run_scraper_agent(task_id: int) -> None:
         industry = task.industry
         target_per_platform = max(1, task.target_count // max(1, len(platforms)))
 
-        # LLM: generate expanded search queries
+        # Phase 1/5: starting (0%)
+        await update_task_status(db, task, ScrapeTaskStatus.running, progress=0)
+        await manager.broadcast("scrape:progress", {
+            "task_id": task_id,
+            "status": "running",
+            "progress": 0,
+            "phase": "starting",
+            "found_count": 0,
+            "valid_count": 0,
+        })
+
+        # Phase 2/5: LLM 生成搜索策略 (5%)
         search_queries = await _generate_search_strategy(
             task.industry, platforms, task.target_market, task.competitor_brands
         )
         task.search_keywords = json.dumps(search_queries, ensure_ascii=False)
         await db.commit()
 
-        await update_task_status(db, task, ScrapeTaskStatus.running, progress=0)
+        await update_task_status(db, task, ScrapeTaskStatus.running, progress=5)
         await manager.broadcast("scrape:progress", {
             "task_id": task_id,
             "status": "running",
-            "progress": 0,
+            "progress": 5,
+            "phase": "strategy_ready",
             "found_count": 0,
             "valid_count": 0,
         })
@@ -707,7 +719,8 @@ async def run_scraper_agent(task_id: int) -> None:
                             await db.commit()
                         valid_total += 1
 
-                    progress = min(99, int((valid_total / task.target_count) * 100))
+                    # Phase 3/5: crawling — progress ramps 15% to 80% based on valid emails collected
+                    progress = min(79, 15 + int((valid_total / task.target_count) * 65))
                     await update_task_status(
                         db, task, ScrapeTaskStatus.running,
                         progress=progress,
@@ -718,6 +731,7 @@ async def run_scraper_agent(task_id: int) -> None:
                         "task_id": task_id,
                         "status": "running",
                         "progress": progress,
+                        "phase": "crawling",
                         "found_count": found_total,
                         "valid_count": valid_total,
                         "latest_email": email,
@@ -741,6 +755,16 @@ async def run_scraper_agent(task_id: int) -> None:
                     await _scrape_stub(platform)
 
         try:
+            # Phase 3/5 continues: actual channel crawling now
+            await manager.broadcast("scrape:progress", {
+                "task_id": task_id,
+                "status": "running",
+                "progress": 15,
+                "phase": "crawling",
+                "found_count": 0,
+                "valid_count": 0,
+            })
+
             async with async_playwright() as pw:
                 browser: Browser = await pw.chromium.launch(
                     headless=True,
@@ -755,9 +779,20 @@ async def run_scraper_agent(task_id: int) -> None:
                 finally:
                     await browser.close()
 
-            # LLM: enrich scraped results
+            # Phase 4/5: LLM enrichment (relevance scoring)
+            await update_task_status(db, task, ScrapeTaskStatus.running, progress=85)
+            await manager.broadcast("scrape:progress", {
+                "task_id": task_id,
+                "status": "running",
+                "progress": 85,
+                "phase": "enriching",
+                "found_count": found_total,
+                "valid_count": valid_total,
+            })
+
             await _enrich_results(task.id, task.industry, task.target_market)
 
+            # Phase 5/5: completed
             await update_task_status(
                 db, task, ScrapeTaskStatus.completed,
                 progress=100,
@@ -768,6 +803,7 @@ async def run_scraper_agent(task_id: int) -> None:
                 "task_id": task_id,
                 "status": "completed",
                 "progress": 100,
+                "phase": "completed",
                 "found_count": found_total,
                 "valid_count": valid_total,
             })

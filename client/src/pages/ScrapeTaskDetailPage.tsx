@@ -52,6 +52,7 @@ type LiveProgress = {
   task_id: number
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   progress: number
+  phase?: 'starting' | 'strategy_ready' | 'crawling' | 'enriching' | 'completed'
   found_count: number
   valid_count: number
   latest_email?: string
@@ -102,22 +103,31 @@ export default function ScrapeTaskDetailPage() {
   const [emailStream, setEmailStream] = useState<{ email: string; at: number }[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
 
-  const fetchData = useCallback(async () => {
+  const fetchData = useCallback(async (silent = false) => {
     if (!id) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     try {
       const [taskData, resultsData] = await Promise.all([
         scrapeApi.getTask(id),
         scrapeApi.getTaskResults(id, 'followers'),
       ])
       setTask(taskData)
-      setResults(resultsData)
-      // Select all by default
-      setSelected(new Set(resultsData.map((r) => r.id)))
+      setResults((prev) => {
+        // Keep the same array reference if content hasn't changed (prevents table flicker)
+        if (prev.length === resultsData.length && prev.every((r, i) => r.id === resultsData[i].id && r.relevance_score === resultsData[i].relevance_score)) {
+          return prev
+        }
+        return resultsData
+      })
+      setSelected((prev) => {
+        // Only reset selection on initial (non-silent) load to avoid losing user's uncheck state
+        if (silent && prev.size > 0) return prev
+        return new Set(resultsData.map((r) => r.id))
+      })
     } catch {
       /* silent */
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [id])
 
@@ -139,18 +149,18 @@ export default function ScrapeTaskDetailPage() {
     }
   }, [id]))
 
-  // ── Poll results every 3s while running ────────────────────────────────────
+  // ── Poll results every 3s while running (SILENT refresh, no loading flash) ─
   useEffect(() => {
     const currentStatus = live?.status ?? task?.status
     if (currentStatus !== 'running' && currentStatus !== 'pending') return
-    const timer = setInterval(() => { fetchData() }, 3000)
+    const timer = setInterval(() => { fetchData(true) }, 3000)
     return () => clearInterval(timer)
   }, [live?.status, task?.status, fetchData])
 
-  // ── Final refresh when task completes or fails ─────────────────────────────
+  // ── Final refresh when task completes or fails (also silent) ───────────────
   useEffect(() => {
     if (live?.status === 'completed' || live?.status === 'failed') {
-      const timer = setTimeout(() => { fetchData() }, 1500)
+      const timer = setTimeout(() => { fetchData(true) }, 1500)
       return () => clearTimeout(timer)
     }
   }, [live?.status, fetchData])
@@ -254,6 +264,13 @@ export default function ScrapeTaskDetailPage() {
               style={{ width: `${live?.progress ?? task.progress}%` }}
             />
           </div>
+
+          {/* Phase text (under progress bar) */}
+          {live?.phase && (live?.status === 'running' || live?.status === 'pending') && (
+            <p className="text-xs text-gray-500 -mt-2 transition-opacity">
+              {t(`scrapeDetail.live.phases.${live.phase}`)}
+            </p>
+          )}
 
           {/* 4 stat cards */}
           <div className="grid grid-cols-4 gap-3">

@@ -236,7 +236,14 @@
       },
       "recentEmails": "最新抓到",
       "showingCount": "共 {{count}} 条",
-      "errorLabel": "错误"
+      "errorLabel": "错误",
+      "phases": {
+        "starting": "正在启动…",
+        "strategy_ready": "搜索策略已生成",
+        "crawling": "正在抓取频道并提取邮箱…",
+        "enriching": "正在用 LLM 打分评估…",
+        "completed": "已完成"
+      }
     }
   },
   "import": {

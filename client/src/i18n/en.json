@@ -236,7 +236,14 @@
       },
       "recentEmails": "Recent Emails",
       "showingCount": "Showing {{count}}",
-      "errorLabel": "Error"
+      "errorLabel": "Error",
+      "phases": {
+        "starting": "Initializing…",
+        "strategy_ready": "Search strategy generated",
+        "crawling": "Crawling channels & extracting emails…",
+        "enriching": "Scoring relevance with LLM…",
+        "completed": "Completed"
+      }
     }
   },
   "import": {
