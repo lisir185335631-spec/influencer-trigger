@@ -213,7 +213,19 @@
       "matchReason": "Match Reason"
     },
     "hint": "Uncheck influencers you don't want to contact, then click Send All.",
-    "sendAll": "Send All ({{count}})"
+    "sendAll": "Send All ({{count}})",
+    "live": {
+      "progress": "Progress",
+      "stats": {
+        "target": "Target",
+        "found": "Found",
+        "valid": "Valid",
+        "platforms": "Platforms"
+      },
+      "recentEmails": "Recent Emails",
+      "showingCount": "Showing {{count}}",
+      "errorLabel": "Error"
+    }
   },
   "import": {
     "title": "Import Influencers",

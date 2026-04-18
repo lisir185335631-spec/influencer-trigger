@@ -614,6 +614,7 @@ export default function ScrapePage() {
   function handleCreated(task: ScrapeTask) {
     setTasks((prev) => [task, ...prev])
     setShowCreate(false)
+    navigate(`/scrape/tasks/${task.id}`)
   }
 
   // Merge live WS data into task display

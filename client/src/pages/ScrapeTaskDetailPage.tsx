@@ -14,6 +14,7 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { scrapeApi, ScrapeTask, ScrapeInfluencerResult, parsePlatforms } from '../api/scrape'
+import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -43,6 +44,45 @@ function PlatformBadge({ platform }: { platform: string | null }) {
 
 type SortDir = 'desc' | 'asc'
 
+// ── Live Progress Types & Helpers ─────────────────────────────────────────────
+
+type LiveProgress = {
+  task_id: number
+  status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
+  progress: number
+  found_count: number
+  valid_count: number
+  latest_email?: string
+  error?: string
+}
+
+function StatusPill({ status }: { status: string }) {
+  const { t } = useTranslation()
+  const styles: Record<string, string> = {
+    pending: 'bg-gray-100 text-gray-600',
+    running: 'bg-blue-50 text-blue-700 animate-pulse',
+    completed: 'bg-emerald-50 text-emerald-700',
+    failed: 'bg-red-50 text-red-700',
+    cancelled: 'bg-gray-100 text-gray-500',
+  }
+  return (
+    <span className={`inline-flex items-center px-3 py-1 text-xs font-medium rounded-full ${styles[status] ?? styles.pending}`}>
+      {t(`scrape.status.${status === 'completed' ? 'done' : status}`)}
+    </span>
+  )
+}
+
+function StatCard({ label, value, highlight }: { label: string; value: number; highlight?: boolean }) {
+  return (
+    <div className={`px-4 py-3 rounded-xl ${highlight ? 'bg-blue-50' : 'bg-white border border-gray-100'}`}>
+      <div className={`text-2xl font-bold tabular-nums ${highlight ? 'text-blue-700' : 'text-gray-900'}`}>
+        {value}
+      </div>
+      <div className="text-[11px] text-gray-500 mt-0.5">{label}</div>
+    </div>
+  )
+}
+
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function ScrapeTaskDetailPage() {
@@ -56,6 +96,8 @@ export default function ScrapeTaskDetailPage() {
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<Set<number>>(new Set())
   const [sortDir, setSortDir] = useState<SortDir>('desc')
+  const [live, setLive] = useState<LiveProgress | null>(null)
+  const [emailStream, setEmailStream] = useState<{ email: string; at: number }[]>([])
 
   const fetchData = useCallback(async () => {
     if (!id) return
@@ -77,6 +119,38 @@ export default function ScrapeTaskDetailPage() {
   }, [id])
 
   useEffect(() => { fetchData() }, [fetchData])
+
+  // ── WebSocket: subscribe to scrape:progress for this task ──────────────────
+  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+  useWebSocket(wsUrl, useCallback((msg: WsMessage) => {
+    if (msg.event !== 'scrape:progress') return
+    const evt = msg.data as LiveProgress
+    if (evt.task_id !== id) return
+    setLive(evt)
+    if (evt.latest_email) {
+      setEmailStream((prev) => {
+        if (prev.some((e) => e.email === evt.latest_email)) return prev
+        const next = [{ email: evt.latest_email!, at: Date.now() }, ...prev]
+        return next.slice(0, 20)
+      })
+    }
+  }, [id]))
+
+  // ── Poll results every 3s while running ────────────────────────────────────
+  useEffect(() => {
+    const currentStatus = live?.status ?? task?.status
+    if (currentStatus !== 'running' && currentStatus !== 'pending') return
+    const timer = setInterval(() => { fetchData() }, 3000)
+    return () => clearInterval(timer)
+  }, [live?.status, task?.status, fetchData])
+
+  // ── Final refresh when task completes or fails ─────────────────────────────
+  useEffect(() => {
+    if (live?.status === 'completed' || live?.status === 'failed') {
+      const timer = setTimeout(() => { fetchData() }, 1500)
+      return () => clearTimeout(timer)
+    }
+  }, [live?.status, fetchData])
 
   // ── Sort client-side for asc/desc toggle ───────────────────────────────────
   const sorted = [...results].sort((a, b) => {
@@ -151,6 +225,78 @@ export default function ScrapeTaskDetailPage() {
           </p>
         </div>
       </div>
+
+      {/* Live progress dashboard */}
+      {task && (task.status === 'running' || task.status === 'pending' || live) && (
+        <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-2xl p-6 space-y-5">
+          {/* Status pill + big percentage */}
+          <div className="flex items-center justify-between">
+            <StatusPill status={(live?.status ?? task.status) as string} />
+            <div className="text-right">
+              <div className="text-3xl font-bold text-gray-900 tabular-nums">
+                {live?.progress ?? task.progress}%
+              </div>
+              <div className="text-xs text-gray-400 mt-0.5">{t('scrapeDetail.live.progress')}</div>
+            </div>
+          </div>
+
+          {/* Large progress bar */}
+          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+            <div
+              className={`h-full transition-all duration-500 ease-out ${
+                (live?.status ?? task.status) === 'completed' ? 'bg-emerald-500' :
+                (live?.status ?? task.status) === 'failed' ? 'bg-red-500' :
+                'bg-blue-500'
+              }`}
+              style={{ width: `${live?.progress ?? task.progress}%` }}
+            />
+          </div>
+
+          {/* 4 stat cards */}
+          <div className="grid grid-cols-4 gap-3">
+            <StatCard label={t('scrapeDetail.live.stats.target')} value={task.target_count} />
+            <StatCard label={t('scrapeDetail.live.stats.found')} value={live?.found_count ?? task.found_count} />
+            <StatCard label={t('scrapeDetail.live.stats.valid')} value={live?.valid_count ?? task.valid_count} highlight />
+            <StatCard label={t('scrapeDetail.live.stats.platforms')} value={platforms.length} />
+          </div>
+
+          {/* Live email stream */}
+          {emailStream.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-100 p-4 space-y-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  {t('scrapeDetail.live.recentEmails')}
+                </span>
+                <span className="text-[10px] text-gray-400">
+                  {t('scrapeDetail.live.showingCount', { count: emailStream.length })}
+                </span>
+              </div>
+              <div className="space-y-1 max-h-48 overflow-y-auto">
+                {emailStream.map((item, i) => (
+                  <div
+                    key={i}
+                    className={`flex items-center gap-2 text-xs font-mono ${i === 0 ? 'text-gray-900' : 'text-gray-500'}`}
+                  >
+                    <span className="text-green-500">●</span>
+                    <span className="truncate">{item.email}</span>
+                    <span className="text-gray-300 ml-auto shrink-0">
+                      {new Date(item.at).toLocaleTimeString()}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Error message when failed */}
+          {(live?.status === 'failed' || task.status === 'failed') && (task.error_message || live?.error) && (
+            <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-xs text-red-700">
+              <strong>{t('scrapeDetail.live.errorLabel')}:</strong>{' '}
+              {live?.error ?? task.error_message}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Empty state */}
       {results.length === 0 && (

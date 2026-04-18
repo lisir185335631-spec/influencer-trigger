@@ -213,7 +213,19 @@
       "matchReason": "匹配理由"
     },
     "hint": "取消勾选不想联系的网红，然后点击「全部发送」。",
-    "sendAll": "全部发送 ({{count}})"
+    "sendAll": "全部发送 ({{count}})",
+    "live": {
+      "progress": "进度",
+      "stats": {
+        "target": "目标",
+        "found": "已发现",
+        "valid": "已入库",
+        "platforms": "平台数"
+      },
+      "recentEmails": "最新抓到",
+      "showingCount": "共 {{count}} 条",
+      "errorLabel": "错误"
+    }
   },
   "import": {
     "title": "导入网红",
