@@ -743,7 +743,7 @@
       "overview": "总览",
       "users": "用户管理",
       "emails": "已发邮件管理",
-      "mailboxes": "邮箱池",
+      "mailboxes": "发件邮箱池",
       "influencers": "网红邮箱库",
       "scrape": "抓取任务",
       "templates": "模板库",
@@ -991,7 +991,7 @@
       }
     },
     "mailboxes": {
-      "title": "邮箱池管理",
+      "title": "发件邮箱池管理",
       "subtitle": "监控所有发送邮箱的 SMTP / IMAP 健康状态",
       "noMailboxes": "暂无邮箱。",
       "smtpOk": "{{email}} SMTP 正常",

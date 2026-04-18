@@ -743,7 +743,7 @@
       "overview": "Overview",
       "users": "Users",
       "emails": "Sent Emails",
-      "mailboxes": "Mailboxes",
+      "mailboxes": "Sending Mailboxes",
       "influencers": "Influencer Emails",
       "scrape": "Scrape",
       "templates": "Templates",
@@ -991,7 +991,7 @@
       }
     },
     "mailboxes": {
-      "title": "Mailbox Admin",
+      "title": "Sending Mailbox Admin",
       "subtitle": "Monitor SMTP / IMAP health across all sending mailboxes",
       "noMailboxes": "No mailboxes found.",
       "smtpOk": "SMTP OK for {{email}}",
