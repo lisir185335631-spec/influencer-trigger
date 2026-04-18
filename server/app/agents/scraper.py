@@ -182,50 +182,69 @@ async def _scrape_youtube(
         search_queries = queries or [f"{industry} creator contact email"]
         all_channel_links: list[str] = []
 
+        # YouTube is an SPA: search results live inside the `ytInitialData`
+        # JS blob, NOT in rendered <a> tags. DOM selectors always returned 0.
+        # We regex the canonicalBaseUrl / url occurrences of /@<handle> from
+        # the raw HTML — this is resilient to YouTube's DOM schema changes.
+        _YT_CHANNEL_PATH_RE = re.compile(r'"(?:canonicalBaseUrl|url)":"(/@[A-Za-z0-9_.\-]+)"')
+
         for query in search_queries:
             search_url = f"https://www.youtube.com/results?search_query={query}"
-            logger.info("[YouTube] Navigating to search: %s", search_url)
+            logger.info("[YouTube] search query: %r", query)
             await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
             await _random_delay()
 
-            # Collect channel links from search results
-            channel_links: list[str] = []
-            for _ in range(3):  # scroll up to 3 times to load more
-                links = await page.eval_on_selector_all(
-                    "a#channel-name, a.yt-simple-endpoint[href*='/@'], a.yt-simple-endpoint[href*='/channel/']",
-                    "els => els.map(e => e.href)",
+            # Extract channels from this page. Scroll a few times to trigger
+            # lazy-load appends to ytInitialData.
+            found_this_query: set[str] = set()
+            for scroll_i in range(3):
+                html = await page.content()
+                matches = _YT_CHANNEL_PATH_RE.findall(html)
+                new_count = 0
+                for path in matches:
+                    full_url = f"https://www.youtube.com{path}"
+                    if full_url not in found_this_query:
+                        found_this_query.add(full_url)
+                        new_count += 1
+                logger.info(
+                    "[YouTube] scroll #%d: html_len=%d regex_hits=%d new_channels=%d total_this_query=%d",
+                    scroll_i + 1, len(html), len(matches), new_count, len(found_this_query),
                 )
-                for link in links:
-                    if link not in channel_links:
-                        channel_links.append(link)
-                if len(channel_links) >= target_count * 2:
+                if len(found_this_query) >= target_count * 3:
                     break
-                await page.evaluate("window.scrollBy(0, 1200)")
-                await asyncio.sleep(1.5)
+                await page.evaluate("window.scrollBy(0, 1800)")
+                await asyncio.sleep(2)
 
-            for link in channel_links:
+            for link in found_this_query:
                 if link not in all_channel_links:
                     all_channel_links.append(link)
 
-            if len(all_channel_links) >= target_count * 2:
+            if len(all_channel_links) >= target_count * 3:
                 break
 
-        logger.info("[YouTube] Found %d channel links (across %d queries)", len(all_channel_links), len(search_queries))
+        logger.info(
+            "[YouTube] collected %d channel links across %d queries",
+            len(all_channel_links), len(search_queries),
+        )
 
         found = 0
-        for ch_url in all_channel_links[:target_count * 2]:
+        max_to_visit = min(len(all_channel_links), target_count * 3)
+        for ch_idx, ch_url in enumerate(all_channel_links[:max_to_visit]):
             if found >= target_count:
                 break
             try:
                 # Normalize to /about tab
                 about_url = ch_url.rstrip("/") + "/about"
+                logger.info("[YouTube] [%d/%d] visiting %s", ch_idx + 1, max_to_visit, about_url)
                 await page.goto(about_url, wait_until="domcontentloaded", timeout=20000)
                 await _random_delay()
 
                 # Try clicking "View email address" button if present
+                view_email_btn_count = 0
                 try:
                     btn = page.locator("button:has-text('View email address')")
-                    if await btn.count() > 0:
+                    view_email_btn_count = await btn.count()
+                    if view_email_btn_count > 0:
                         await btn.first.click(timeout=3000)
                         await asyncio.sleep(1)
                 except Exception:
@@ -233,6 +252,11 @@ async def _scrape_youtube(
 
                 content = await page.content()
                 emails = _extract_emails(content)
+
+                logger.info(
+                    "[YouTube] [%d] html_len=%d view_email_btn=%d emails_found=%d",
+                    ch_idx + 1, len(content), view_email_btn_count, len(emails),
+                )
 
                 # Also grab channel name
                 name = ""
