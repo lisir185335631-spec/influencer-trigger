@@ -75,40 +75,10 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     await create_tables()
     logger.info("Database tables created/verified.")
 
-    # Migrate: add new columns to existing tables (SQLite)
-    from sqlalchemy import text as sa_text
-    async with AsyncSessionLocal() as _mig_db:
-        for stmt in [
-            "ALTER TABLE scrape_tasks ADD COLUMN target_market VARCHAR(64)",
-            "ALTER TABLE scrape_tasks ADD COLUMN search_keywords TEXT",
-            "ALTER TABLE scrape_tasks ADD COLUMN competitor_brands VARCHAR(256)",
-            "ALTER TABLE influencers ADD COLUMN relevance_score FLOAT",
-            "ALTER TABLE influencers ADD COLUMN match_reason TEXT",
-            "ALTER TABLE users ADD COLUMN token_version INTEGER DEFAULT 0",
-            "ALTER TABLE templates ADD COLUMN is_published BOOLEAN DEFAULT 1 NOT NULL",
-            "ALTER TABLE templates ADD COLUMN compliance_flags VARCHAR(1024) DEFAULT '' NOT NULL",
-            "CREATE TABLE IF NOT EXISTS agent_runs (id INTEGER PRIMARY KEY AUTOINCREMENT, agent_name VARCHAR(64) NOT NULL, task_id VARCHAR(128), state VARCHAR(16) NOT NULL DEFAULT 'pending', input_snapshot TEXT, output_snapshot TEXT, error_message TEXT, error_stack TEXT, started_at DATETIME, finished_at DATETIME, duration_ms INTEGER, token_cost_usd REAL, llm_calls_count INTEGER DEFAULT 0)",
-            "CREATE INDEX IF NOT EXISTS ix_agent_runs_agent_started ON agent_runs (agent_name, started_at)",
-            "CREATE INDEX IF NOT EXISTS ix_agent_runs_state_started ON agent_runs (state, started_at)",
-            "CREATE TABLE IF NOT EXISTS usage_metrics (id INTEGER PRIMARY KEY AUTOINCREMENT, metric_date DATE NOT NULL, metric_type VARCHAR(32) NOT NULL, sub_key VARCHAR(128), value REAL NOT NULL DEFAULT 0, cost_usd REAL, created_at DATETIME, CONSTRAINT ix_usage_metric_date_type_key UNIQUE (metric_date, metric_type, sub_key))",
-            "CREATE TABLE IF NOT EXISTS usage_budgets (id INTEGER PRIMARY KEY AUTOINCREMENT, month VARCHAR(7) NOT NULL UNIQUE, budget_usd REAL NOT NULL DEFAULT 0, alert_threshold_pct REAL NOT NULL DEFAULT 80, created_at DATETIME)",
-            "ALTER TABLE holidays ADD COLUMN sensitive_regions VARCHAR(512) DEFAULT '' NOT NULL",
-            "ALTER TABLE system_settings ADD COLUMN webhook_default_url VARCHAR(512) DEFAULT '' NOT NULL",
-            "ALTER TABLE system_settings ADD COLUMN default_daily_quota INTEGER DEFAULT 100 NOT NULL",
-            "CREATE TABLE IF NOT EXISTS feature_flags (id INTEGER PRIMARY KEY AUTOINCREMENT, flag_key VARCHAR(128) NOT NULL UNIQUE, enabled BOOLEAN NOT NULL DEFAULT 0, description VARCHAR(512) NOT NULL DEFAULT '', rollout_percentage INTEGER NOT NULL DEFAULT 100, target_roles VARCHAR(256) NOT NULL DEFAULT '', updated_by_user_id INTEGER, created_at DATETIME DEFAULT CURRENT_TIMESTAMP, updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-            "CREATE UNIQUE INDEX IF NOT EXISTS ix_feature_flags_key ON feature_flags (flag_key)",
-            "CREATE TABLE IF NOT EXISTS security_alerts (id INTEGER PRIMARY KEY AUTOINCREMENT, alert_type VARCHAR(64) NOT NULL, user_id INTEGER, details_json TEXT, acknowledged BOOLEAN NOT NULL DEFAULT 0, acknowledged_by INTEGER, acknowledged_at DATETIME, created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-            "CREATE INDEX IF NOT EXISTS ix_security_alerts_user_id ON security_alerts (user_id)",
-            "CREATE INDEX IF NOT EXISTS ix_security_alerts_created_at ON security_alerts (created_at)",
-            "CREATE TABLE IF NOT EXISTS key_rotation_history (id INTEGER PRIMARY KEY AUTOINCREMENT, rotated_by_user_id INTEGER NOT NULL, rotated_by_username VARCHAR(128) NOT NULL, note VARCHAR(512), created_at DATETIME DEFAULT CURRENT_TIMESTAMP)",
-            "CREATE INDEX IF NOT EXISTS ix_key_rotation_created_at ON key_rotation_history (created_at)",
-            "ALTER TABLE system_settings ADD COLUMN security_config TEXT",
-        ]:
-            try:
-                await _mig_db.execute(sa_text(stmt))
-                await _mig_db.commit()
-            except Exception:
-                await _mig_db.rollback()
+    # Schema changes are managed by Alembic migrations.
+    # To add a column:  cd server && alembic revision --autogenerate -m "desc"
+    #                   cd server && alembic upgrade head
+    # See server/alembic/README.md
 
     scheduler.add_job(
         _reset_today_sent_job,
