@@ -1,24 +1,43 @@
 import { NavLink } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Globe } from 'lucide-react'
+import {
+  Globe,
+  LayoutDashboard,
+  Users,
+  Mail,
+  Inbox,
+  Star,
+  Radar,
+  FileText,
+  Bot,
+  TrendingUp,
+  Repeat,
+  Calendar,
+  Settings,
+  Shield,
+  FileSearch,
+  Activity,
+  ArrowLeft,
+  type LucideIcon,
+} from 'lucide-react'
 
-const NAV_KEYS: { key: string; path: string }[] = [
-  { key: 'overview', path: '/admin/overview' },
-  { key: 'users', path: '/admin/users' },
-  { key: 'emails', path: '/admin/emails' },
-  { key: 'mailboxes', path: '/admin/mailboxes' },
-  { key: 'influencers', path: '/admin/influencers' },
-  { key: 'scrape', path: '/admin/scrape' },
-  { key: 'templates', path: '/admin/templates' },
-  { key: 'agents', path: '/admin/agents' },
-  { key: 'usage', path: '/admin/usage' },
-  { key: 'followup', path: '/admin/followup' },
-  { key: 'holidays', path: '/admin/holidays' },
-  { key: 'settings', path: '/admin/settings' },
-  { key: 'security', path: '/admin/security' },
-  { key: 'audit', path: '/admin/audit' },
-  { key: 'diagnostics', path: '/admin/diagnostics' },
-  { key: 'backToApp', path: '/dashboard' },
+const NAV_KEYS: { key: string; path: string; Icon: LucideIcon }[] = [
+  { key: 'overview', path: '/admin/overview', Icon: LayoutDashboard },
+  { key: 'users', path: '/admin/users', Icon: Users },
+  { key: 'emails', path: '/admin/emails', Icon: Mail },
+  { key: 'mailboxes', path: '/admin/mailboxes', Icon: Inbox },
+  { key: 'influencers', path: '/admin/influencers', Icon: Star },
+  { key: 'scrape', path: '/admin/scrape', Icon: Radar },
+  { key: 'templates', path: '/admin/templates', Icon: FileText },
+  { key: 'agents', path: '/admin/agents', Icon: Bot },
+  { key: 'usage', path: '/admin/usage', Icon: TrendingUp },
+  { key: 'followup', path: '/admin/followup', Icon: Repeat },
+  { key: 'holidays', path: '/admin/holidays', Icon: Calendar },
+  { key: 'settings', path: '/admin/settings', Icon: Settings },
+  { key: 'security', path: '/admin/security', Icon: Shield },
+  { key: 'audit', path: '/admin/audit', Icon: FileSearch },
+  { key: 'diagnostics', path: '/admin/diagnostics', Icon: Activity },
+  { key: 'backToApp', path: '/dashboard', Icon: ArrowLeft },
 ]
 
 export default function AdminSidebar() {
@@ -26,19 +45,20 @@ export default function AdminSidebar() {
 
   return (
     <nav className="flex flex-col h-full py-4">
-      {NAV_KEYS.map(({ key, path }) => (
+      {NAV_KEYS.map(({ key, path, Icon }) => (
         <NavLink
           key={path}
           to={path}
           className={({ isActive }) =>
-            `px-5 py-2 text-sm font-medium transition-colors ${
+            `flex items-center gap-3 px-5 py-2 text-sm font-medium transition-colors ${
               isActive
                 ? 'bg-slate-700 text-white'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800'
             }`
           }
         >
-          {t(`admin.sidebar.${key}`)}
+          <Icon size={16} className="shrink-0" />
+          <span>{t(`admin.sidebar.${key}`)}</span>
         </NavLink>
       ))}
 
