@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import Date, and_, case, cast, func, select
+from sqlalchemy import and_, case, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin.deps import require_admin
@@ -164,9 +164,13 @@ async def get_metrics(current_user: TokenData = Depends(require_admin)) -> dict:
         )).scalar_one()
 
         # ── Query 6a: email_trend sent — GROUP BY sent_at date ─────────────
+        # Note: func.date(col) returns 'YYYY-MM-DD' string on SQLite; we avoid
+        # cast(col, Date) because SQLAlchemy's Date type-converter passes a
+        # datetime (not str) to fromisoformat via aiosqlite, which crashes.
+        sent_date = func.date(Email.sent_at)
         sent_trend_rows = (await db.execute(
             select(
-                cast(Email.sent_at, Date).label("d"),
+                sent_date.label("d"),
                 func.count(Email.id).label("sent"),
             )
             .where(
@@ -174,13 +178,14 @@ async def get_metrics(current_user: TokenData = Depends(require_admin)) -> dict:
                 Email.sent_at >= trend_start,
                 Email.sent_at < tomorrow_start,
             )
-            .group_by(cast(Email.sent_at, Date))
+            .group_by(sent_date)
         )).all()
 
         # ── Query 6b: email_trend replied — GROUP BY replied_at date ───────
+        replied_date = func.date(Email.replied_at)
         replied_trend_rows = (await db.execute(
             select(
-                cast(Email.replied_at, Date).label("d"),
+                replied_date.label("d"),
                 func.count(Email.id).label("replied"),
             )
             .where(
@@ -188,38 +193,41 @@ async def get_metrics(current_user: TokenData = Depends(require_admin)) -> dict:
                 Email.replied_at >= trend_start,
                 Email.replied_at < tomorrow_start,
             )
-            .group_by(cast(Email.replied_at, Date))
+            .group_by(replied_date)
         )).all()
 
+        # Keys are 'YYYY-MM-DD' strings; Python-side date lookup uses isoformat.
         sent_map = {r.d: r.sent for r in sent_trend_rows}
         replied_map = {r.d: r.replied for r in replied_trend_rows}
         email_trend = []
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
+            d_iso = d.isoformat()
             email_trend.append({
                 "date": d.strftime("%m/%d"),
-                "sent": sent_map.get(d, 0),
-                "replied": replied_map.get(d, 0),
+                "sent": sent_map.get(d_iso, 0),
+                "replied": replied_map.get(d_iso, 0),
             })
 
         # ── Query 7: scrape_trend 7 days — GROUP BY created_at date ───────
+        scrape_date = func.date(ScrapeTask.created_at)
         scrape_trend_rows = (await db.execute(
             select(
-                cast(ScrapeTask.created_at, Date).label("d"),
+                scrape_date.label("d"),
                 func.count(ScrapeTask.id).label("tasks"),
             )
             .where(
                 ScrapeTask.created_at >= trend_start,
                 ScrapeTask.created_at < tomorrow_start,
             )
-            .group_by(cast(ScrapeTask.created_at, Date))
+            .group_by(scrape_date)
         )).all()
 
         scrape_by_date = {r.d: r.tasks for r in scrape_trend_rows}
         scrape_trend = []
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
-            scrape_trend.append({"date": d.strftime("%m/%d"), "tasks": scrape_by_date.get(d, 0)})
+            scrape_trend.append({"date": d.strftime("%m/%d"), "tasks": scrape_by_date.get(d.isoformat(), 0)})
 
         # ── Query 8: Platform distribution ────────────────────────────────
         platform_rows = (await db.execute(
