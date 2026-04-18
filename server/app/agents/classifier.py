@@ -12,23 +12,23 @@ Intent categories:
   auto_reply   — out-of-office / automated acknowledgment
   irrelevant   — spam or unrelated
 """
+import json
 import logging
 from typing import Optional
 
-from langchain_core.prompts import ChatPromptTemplate
-from langchain_openai import ChatOpenAI
 from langgraph.graph import END, START, StateGraph
 from pydantic import BaseModel, Field
 from typing_extensions import TypedDict
 
 from app.config import get_settings
 from app.models.influencer import ReplyIntent
+from app.tools import llm_client
 
 logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
-# Output schema (Pydantic v2, compatible with with_structured_output)
+# Output schema (Pydantic v2)
 # ---------------------------------------------------------------------------
 
 class ClassifyResult(BaseModel):
@@ -67,15 +67,12 @@ Classify the influencer's reply email into exactly ONE of these 5 categories:
 - auto_reply : automated out-of-office, vacation notice, or auto-acknowledgment
 - irrelevant : spam, unrelated content, or cannot be categorised above
 
-Return ONLY valid JSON with these three keys:
-  "intent"     : one of the 5 categories (string)
+You MUST return a strict JSON object with exactly these three keys:
+  "intent"     : one of the 5 categories above (string)
   "confidence" : float 0.0–1.0
-  "summary"    : one-sentence English description of the reply (max 100 chars)"""
+  "summary"    : one-sentence English description of the reply (max 100 chars)
 
-_PROMPT = ChatPromptTemplate.from_messages([
-    ("system", _SYSTEM_PROMPT),
-    ("human", "Reply content:\n{reply_content}"),
-])
+Example: {"intent": "interested", "confidence": 0.95, "summary": "Influencer expressed enthusiasm and asked for campaign details."}"""
 
 _VALID_INTENTS = {e.value for e in ReplyIntent}
 
@@ -85,20 +82,22 @@ _VALID_INTENTS = {e.value for e in ReplyIntent}
 # ---------------------------------------------------------------------------
 
 def _build_graph():
-    settings = get_settings()
-
-    llm = ChatOpenAI(
-        model=settings.openai_classifier_model,
-        api_key=settings.openai_api_key,
-        temperature=0,
-    ).with_structured_output(ClassifyResult)
-
     async def classify_node(state: ClassifierState) -> dict:
+        settings = get_settings()
+        messages = [
+            {"role": "system", "content": _SYSTEM_PROMPT},
+            {"role": "user", "content": f"Reply content:\n{state['reply_content'][:2000]}"},
+        ]
         try:
-            chain = _PROMPT | llm
-            result: ClassifyResult = await chain.ainvoke(
-                {"reply_content": state["reply_content"][:2000]}
+            raw = await llm_client.chat(
+                model=settings.openai_classifier_model,
+                messages=messages,
+                temperature=0,
+                response_format={"type": "json_object"},
+                agent_name="classifier",
             )
+            data = json.loads(raw)
+            result = ClassifyResult(**data)
             # Sanitise intent in case the model returns an unexpected value
             if result.intent not in _VALID_INTENTS:
                 logger.warning(
