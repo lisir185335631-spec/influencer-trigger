@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   AlertTriangle,
   CheckCircle,
@@ -120,6 +121,7 @@ function HealthIndicator({ label, status, sub }: HealthIndicatorProps) {
 
 // ── Main Page ──────────────────────────────────────────────────────────────────
 export default function AdminOverviewPage() {
+  const { t } = useTranslation()
   const [metrics, setMetrics] = useState<OverviewMetrics | null>(null)
   const [health, setHealth] = useState<HealthStatus | null>(null)
   const [events, setEvents] = useState<RecentEvent[]>([])
@@ -167,12 +169,12 @@ export default function AdminOverviewPage() {
   if (!metrics || !health) {
     return (
       <div className="flex flex-col items-center justify-center h-64 gap-3">
-        <p className="text-sm text-gray-400">Failed to load overview data.</p>
+        <p className="text-sm text-gray-400">{t('admin.overview.failedToLoad')}</p>
         <button
           onClick={() => fetchAll(true)}
           className="text-sm text-indigo-600 hover:text-indigo-800 underline"
         >
-          Retry
+          {t('admin.overview.retry')}
         </button>
       </div>
     )
@@ -183,21 +185,21 @@ export default function AdminOverviewPage() {
 
   const mailboxStatusLabel =
     h.mailbox_pool.status === 'green'
-      ? 'Healthy'
+      ? t('admin.overview.health.mailboxHealthy')
       : h.mailbox_pool.status === 'yellow'
-      ? 'Degraded'
-      : 'Unavailable'
+      ? t('admin.overview.health.mailboxDegraded')
+      : t('admin.overview.health.mailboxUnavailable')
 
   return (
     <div className="p-6 space-y-6 max-w-screen-xl mx-auto">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Platform Overview</h1>
+          <h1 className="text-xl font-semibold text-gray-900">{t('admin.overview.title')}</h1>
           <p className="text-xs text-gray-400 mt-0.5">
             {lastRefreshed
-              ? `Last updated ${lastRefreshed.toLocaleTimeString()} · auto-refresh 30s`
-              : 'Loading…'}
+              ? t('admin.overview.lastUpdated', { time: lastRefreshed.toLocaleTimeString() })
+              : t('admin.overview.loading')}
           </p>
         </div>
         <button
@@ -206,35 +208,35 @@ export default function AdminOverviewPage() {
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 disabled:opacity-50 transition-colors"
         >
           <RefreshCw className={`w-4 h-4 ${refreshing ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('admin.common.refresh')}
         </button>
       </div>
 
       {/* Top 4 Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <MetricCard
-          label="Emails Sent Today"
+          label={t('admin.overview.metrics.emailsSentToday')}
           value={m.emails_sent.today}
           icon={<Mail className="w-5 h-5" />}
-          sub={`${m.emails_sent.this_week} this week`}
+          sub={t('admin.overview.metrics.thisWeek', { count: m.emails_sent.this_week })}
         />
         <MetricCard
-          label="New Influencers Today"
+          label={t('admin.overview.metrics.newInfluencersToday')}
           value={m.influencers.today}
           icon={<Users className="w-5 h-5" />}
-          sub={`${m.influencers.total} total`}
+          sub={t('admin.overview.metrics.total', { count: m.influencers.total })}
         />
         <MetricCard
-          label="Replies Today"
+          label={t('admin.overview.metrics.repliesToday')}
           value={m.emails_replied.today}
           icon={<CheckCircle className="w-5 h-5" />}
-          sub={`${m.emails_replied.this_week} this week`}
+          sub={t('admin.overview.metrics.thisWeek', { count: m.emails_replied.this_week })}
         />
         <MetricCard
-          label="Active Agents"
+          label={t('admin.overview.metrics.activeAgents')}
           value={m.agent_tasks.today}
           icon={<Zap className="w-5 h-5" />}
-          sub={`${m.errors.today} errors today`}
+          sub={t('admin.overview.metrics.errorsToday', { count: m.errors.today })}
         />
       </div>
 
@@ -242,37 +244,37 @@ export default function AdminOverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* 7-day email trend */}
         <div className="lg:col-span-1 bg-white border border-gray-100 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Email Trend (7d)</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">{t('admin.overview.charts.emailTrend')}</h2>
           <ResponsiveContainer width="100%" height={180}>
             <LineChart data={m.charts.email_trend}>
               <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={28} />
               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }} />
               <Legend wrapperStyle={{ fontSize: 12 }} />
-              <Line type="monotone" dataKey="sent" stroke="#6366f1" strokeWidth={2} dot={false} name="Sent" />
-              <Line type="monotone" dataKey="replied" stroke="#10b981" strokeWidth={2} dot={false} name="Replied" />
+              <Line type="monotone" dataKey="sent" stroke="#6366f1" strokeWidth={2} dot={false} name={t('admin.overview.charts.sent')} />
+              <Line type="monotone" dataKey="replied" stroke="#10b981" strokeWidth={2} dot={false} name={t('admin.overview.charts.replied')} />
             </LineChart>
           </ResponsiveContainer>
         </div>
 
         {/* 7-day scrape task bar chart */}
         <div className="lg:col-span-1 bg-white border border-gray-100 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Scrape Tasks (7d)</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">{t('admin.overview.charts.scrapeTasks')}</h2>
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={m.charts.scrape_trend}>
               <XAxis dataKey="date" tick={{ fontSize: 11 }} tickLine={false} axisLine={false} />
               <YAxis tick={{ fontSize: 11 }} tickLine={false} axisLine={false} width={28} />
               <Tooltip contentStyle={{ fontSize: 12, borderRadius: 8, border: '1px solid #e5e7eb' }} />
-              <Bar dataKey="tasks" fill="#6366f1" radius={[3, 3, 0, 0]} name="Tasks" />
+              <Bar dataKey="tasks" fill="#6366f1" radius={[3, 3, 0, 0]} name={t('admin.overview.charts.tasks')} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
         {/* Platform distribution donut */}
         <div className="lg:col-span-1 bg-white border border-gray-100 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">Influencers by Platform</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">{t('admin.overview.charts.influencersByPlatform')}</h2>
           {m.charts.platform_dist.length === 0 ? (
-            <div className="flex items-center justify-center h-[180px] text-sm text-gray-400">No data</div>
+            <div className="flex items-center justify-center h-[180px] text-sm text-gray-400">{t('admin.common.noData')}</div>
           ) : (
             <ResponsiveContainer width="100%" height={180}>
               <PieChart>
@@ -311,27 +313,27 @@ export default function AdminOverviewPage() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         {/* System Health */}
         <div className="bg-white border border-gray-100 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">System Health</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t('admin.overview.health.title')}</h2>
           <div className="divide-y divide-gray-50">
             <HealthIndicator
               label={h.db.label}
               status={h.db.ok}
-              sub={h.db.ok ? 'Connected' : 'Unreachable'}
+              sub={h.db.ok ? t('admin.overview.health.connected') : t('admin.overview.health.unreachable')}
             />
             <HealthIndicator
               label={h.scheduler.label}
               status={h.scheduler.ok}
-              sub={h.scheduler.ok ? 'Running' : 'Stopped'}
+              sub={h.scheduler.ok ? t('admin.overview.health.running') : t('admin.overview.health.stopped')}
             />
             <HealthIndicator
               label={h.monitor.label}
               status={h.monitor.ok}
-              sub={h.monitor.ok ? 'Running' : 'Stopped'}
+              sub={h.monitor.ok ? t('admin.overview.health.running') : t('admin.overview.health.stopped')}
             />
             <HealthIndicator
               label={h.websocket.label}
               status={h.websocket.ok}
-              sub={`${h.websocket.count} active connection${h.websocket.count !== 1 ? 's' : ''}`}
+              sub={t('admin.overview.health.activeConnections', { count: h.websocket.count })}
             />
             <HealthIndicator
               label={h.mailbox_pool.label}
@@ -343,10 +345,10 @@ export default function AdminOverviewPage() {
 
         {/* Recent Events */}
         <div className="lg:col-span-2 bg-white border border-gray-100 rounded-xl p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-3">Recent Events</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-3">{t('admin.overview.events.title')}</h2>
           {events.length === 0 ? (
             <div className="flex items-center justify-center h-32 text-sm text-gray-400">
-              No recent events
+              {t('admin.overview.events.noEvents')}
             </div>
           ) : (
             <div className="space-y-1 max-h-80 overflow-y-auto pr-1">

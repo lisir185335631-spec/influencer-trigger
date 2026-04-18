@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   CartesianGrid,
   Cell,
@@ -26,11 +27,7 @@ import {
 
 const PIE_COLORS = ['#3b82f6', '#10b981', '#f59e0b', '#ef4444', '#8b5cf6', '#06b6d4']
 
-const PERIODS = [
-  { label: 'Today', value: 'day' },
-  { label: 'This Week', value: 'week' },
-  { label: 'This Month', value: 'month' },
-] as const
+const PERIOD_VALUES = ['day', 'week', 'month'] as const
 
 function MetricCard({
   label,
@@ -51,6 +48,7 @@ function MetricCard({
 }
 
 export default function UsagePage() {
+  const { t } = useTranslation()
   const [period, setPeriod] = useState<'day' | 'week' | 'month'>('month')
   const [summary, setSummary] = useState<UsageSummary | null>(null)
   const [trend, setTrend] = useState<TrendPoint[]>([])
@@ -108,19 +106,19 @@ export default function UsagePage() {
   return (
     <div className="p-6 space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Cost & Usage</h1>
+        <h1 className="text-xl font-semibold text-gray-900">{t('admin.usage.title')}</h1>
         <div className="flex items-center gap-2">
-          {PERIODS.map((p) => (
+          {PERIOD_VALUES.map((v) => (
             <button
-              key={p.value}
-              onClick={() => setPeriod(p.value)}
+              key={v}
+              onClick={() => setPeriod(v)}
               className={`px-3 py-1.5 text-sm rounded-md transition-colors ${
-                period === p.value
+                period === v
                   ? 'bg-gray-900 text-white'
                   : 'bg-white border border-gray-200 text-gray-600 hover:bg-gray-50'
               }`}
             >
-              {p.label}
+              {t(`admin.usage.periods.${v}`)}
             </button>
           ))}
         </div>
@@ -129,24 +127,24 @@ export default function UsagePage() {
       {/* Metric Cards */}
       <div className="grid grid-cols-2 xl:grid-cols-4 gap-4">
         <MetricCard
-          label="Total Cost (period)"
+          label={t('admin.usage.metrics.totalCost')}
           value={loading ? '—' : `$${summary?.total_cost_usd.toFixed(4) ?? '0'}`}
-          sub="USD"
+          sub={t('admin.usage.metrics.usd')}
         />
         <MetricCard
-          label="LLM Tokens"
+          label={t('admin.usage.metrics.llmTokens')}
           value={loading ? '—' : (summary?.llm_tokens ?? 0).toLocaleString()}
-          sub="tokens consumed"
+          sub={t('admin.usage.metrics.tokensConsumed')}
         />
         <MetricCard
-          label="Emails Sent"
+          label={t('admin.usage.metrics.emailsSent')}
           value={loading ? '—' : (summary?.emails_sent ?? 0).toLocaleString()}
-          sub="outreach emails"
+          sub={t('admin.usage.metrics.outreachEmails')}
         />
         <MetricCard
-          label="Storage"
+          label={t('admin.usage.metrics.storage')}
           value={loading ? '—' : `${summary?.storage_mb.toFixed(1) ?? '0'} MB`}
-          sub="database size"
+          sub={t('admin.usage.metrics.dbSize')}
         />
       </div>
 
@@ -154,7 +152,7 @@ export default function UsagePage() {
       {alerts && (
         <div className="bg-white border border-gray-100 rounded-lg p-5">
           <div className="flex items-center justify-between mb-3">
-            <h2 className="text-sm font-semibold text-gray-700">Budget & Alerts</h2>
+            <h2 className="text-sm font-semibold text-gray-700">{t('admin.usage.budget.title')}</h2>
             <button
               onClick={() => {
                 setBudgetUsd(alerts.budget?.budget_usd.toString() ?? '')
@@ -163,20 +161,19 @@ export default function UsagePage() {
               }}
               className="text-xs px-3 py-1.5 bg-gray-900 text-white rounded-md hover:bg-gray-700 transition-colors"
             >
-              Set Budget
+              {t('admin.usage.budget.setBudget')}
             </button>
           </div>
           <div className="flex gap-6 text-sm text-gray-600 mb-3">
             <span>
-              Month cost: <strong>${alerts.month_cost_usd.toFixed(4)}</strong>
+              {t('admin.usage.budget.monthCost')} <strong>${alerts.month_cost_usd.toFixed(4)}</strong>
             </span>
             <span>
-              Today: <strong>${alerts.today_cost_usd.toFixed(4)}</strong>
+              {t('admin.usage.budget.today')} <strong>${alerts.today_cost_usd.toFixed(4)}</strong>
             </span>
             {alerts.budget && (
               <span>
-                Budget: <strong>${alerts.budget.budget_usd.toFixed(2)}</strong> (alert at{' '}
-                {alerts.budget.alert_threshold_pct}%)
+                {t('admin.usage.budget.budgetLabel')} <strong>${alerts.budget.budget_usd.toFixed(2)}</strong> ({t('admin.usage.budget.alertAt', { pct: alerts.budget.alert_threshold_pct })})
               </span>
             )}
           </div>
@@ -196,7 +193,7 @@ export default function UsagePage() {
               ))}
             </div>
           ) : (
-            <p className="text-xs text-gray-400">No active alerts</p>
+            <p className="text-xs text-gray-400">{t('admin.usage.budget.noActiveAlerts')}</p>
           )}
         </div>
       )}
@@ -205,7 +202,7 @@ export default function UsagePage() {
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* 30-day cost trend */}
         <div className="bg-white border border-gray-100 rounded-lg p-5">
-          <h2 className="text-sm font-semibold text-gray-700 mb-4">30-Day LLM Cost Trend</h2>
+          <h2 className="text-sm font-semibold text-gray-700 mb-4">{t('admin.usage.charts.llmCostTrend')}</h2>
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={trend} margin={{ top: 4, right: 8, left: 0, bottom: 4 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
@@ -216,8 +213,8 @@ export default function UsagePage() {
               />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} width={48} />
               <Tooltip
-                formatter={(v) => [`$${Number(v).toFixed(4)}`, 'Cost']}
-                labelFormatter={(l) => `Date: ${l}`}
+                formatter={(v) => [`$${Number(v).toFixed(4)}`, t('admin.usage.charts.cost')]}
+                labelFormatter={(l) => t('admin.usage.charts.date', { date: l })}
               />
               <Line
                 type="monotone"
@@ -233,11 +230,11 @@ export default function UsagePage() {
         {/* Model breakdown donut */}
         <div className="bg-white border border-gray-100 rounded-lg p-5">
           <h2 className="text-sm font-semibold text-gray-700 mb-4">
-            Model Cost Distribution (This Month)
+            {t('admin.usage.charts.modelCostDist')}
           </h2>
           {breakdown.length === 0 ? (
             <div className="flex items-center justify-center h-[220px] text-gray-400 text-sm">
-              No data yet
+              {t('admin.usage.charts.noDataYet')}
             </div>
           ) : (
             <ResponsiveContainer width="100%" height={220}>
@@ -273,17 +270,17 @@ export default function UsagePage() {
       {/* Top users table */}
       <div className="bg-white border border-gray-100 rounded-lg p-5">
         <h2 className="text-sm font-semibold text-gray-700 mb-4">
-          Top 10 Users by Cost (This Month)
+          {t('admin.usage.topUsers.title')}
         </h2>
         {userBreakdown.length === 0 ? (
-          <p className="text-sm text-gray-400">No usage data recorded yet.</p>
+          <p className="text-sm text-gray-400">{t('admin.usage.topUsers.noData')}</p>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="text-left py-2 text-xs text-gray-400 font-medium">#</th>
-                <th className="text-left py-2 text-xs text-gray-400 font-medium">User</th>
-                <th className="text-right py-2 text-xs text-gray-400 font-medium">Emails Sent</th>
+                <th className="text-left py-2 text-xs text-gray-400 font-medium">{t('admin.usage.topUsers.rank')}</th>
+                <th className="text-left py-2 text-xs text-gray-400 font-medium">{t('admin.usage.topUsers.user')}</th>
+                <th className="text-right py-2 text-xs text-gray-400 font-medium">{t('admin.usage.topUsers.emailsSent')}</th>
               </tr>
             </thead>
             <tbody>
@@ -305,11 +302,11 @@ export default function UsagePage() {
       {budgetModal && (
         <div className="fixed inset-0 bg-black/40 flex items-center justify-center z-50">
           <div className="bg-white rounded-xl shadow-lg w-full max-w-sm p-6 space-y-4">
-            <h3 className="font-semibold text-gray-900">Set Monthly Budget</h3>
+            <h3 className="font-semibold text-gray-900">{t('admin.usage.budget.modalTitle')}</h3>
             <div className="space-y-3">
               <div>
                 <label className="text-xs text-gray-500 block mb-1">
-                  Budget (USD) for {new Date().toISOString().slice(0, 7)}
+                  {t('admin.usage.budget.budgetUsdLabel', { month: new Date().toISOString().slice(0, 7) })}
                 </label>
                 <input
                   type="number"
@@ -318,12 +315,12 @@ export default function UsagePage() {
                   value={budgetUsd}
                   onChange={(e) => setBudgetUsd(e.target.value)}
                   className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="e.g. 50.00"
+                  placeholder={t('admin.usage.budget.budgetUsdPlaceholder')}
                 />
               </div>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">
-                  Alert threshold (%)
+                  {t('admin.usage.budget.alertThresholdLabel')}
                 </label>
                 <input
                   type="number"
@@ -332,7 +329,7 @@ export default function UsagePage() {
                   value={budgetThreshold}
                   onChange={(e) => setBudgetThreshold(e.target.value)}
                   className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
-                  placeholder="80"
+                  placeholder={t('admin.usage.budget.alertThresholdPlaceholder')}
                 />
               </div>
             </div>
@@ -341,14 +338,14 @@ export default function UsagePage() {
                 onClick={() => setBudgetModal(false)}
                 className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-md text-gray-600 hover:bg-gray-50"
               >
-                Cancel
+                {t('admin.common.cancel')}
               </button>
               <button
                 onClick={handleSaveBudget}
                 disabled={budgetSaving || !budgetUsd}
                 className="flex-1 px-4 py-2 text-sm bg-gray-900 text-white rounded-md hover:bg-gray-700 disabled:opacity-50"
               >
-                {budgetSaving ? 'Saving…' : 'Save'}
+                {budgetSaving ? t('admin.usage.budget.saving') : t('admin.common.save')}
               </button>
             </div>
           </div>

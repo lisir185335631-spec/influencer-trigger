@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, CheckCircle, Clock, Key, RefreshCw, Shield, X } from 'lucide-react'
 import {
   type KeyRotationHistoryOut,
@@ -25,13 +26,14 @@ function RotateKeysModal({
   onClose: () => void
   onSuccess: () => void
 }) {
+  const { t } = useTranslation()
   const [password, setPassword] = useState('')
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
   const handleRotate = async () => {
     if (!password.trim()) {
-      setErr('Admin password is required')
+      setErr(t('admin.security.rotateModal.adminPasswordRequired'))
       return
     }
     setLoading(true)
@@ -41,7 +43,7 @@ function RotateKeysModal({
       onSuccess()
     } catch (e: unknown) {
       const msg = (e as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setErr(msg ?? 'Key rotation failed')
+      setErr(msg ?? t('admin.security.rotateModal.rotationFailed'))
     } finally {
       setLoading(false)
     }
@@ -52,7 +54,7 @@ function RotateKeysModal({
       <div className="bg-white rounded-2xl shadow-xl p-7 w-[480px] max-w-[92vw]">
         <div className="flex items-center justify-between mb-4">
           <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-            <Key size={16} className="text-orange-500" /> Rotate System Keys
+            <Key size={16} className="text-orange-500" /> {t('admin.security.rotateModal.title')}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={16} />
@@ -60,14 +62,14 @@ function RotateKeysModal({
         </div>
 
         <div className="bg-orange-50 border border-orange-200 rounded-lg p-4 mb-5 text-sm text-orange-800">
-          <p className="font-medium mb-1">⚠ Destructive Operation</p>
+          <p className="font-medium mb-1">{t('admin.security.rotateModal.destructiveTitle')}</p>
           <ul className="list-disc list-inside space-y-1 text-xs">
-            <li>JWT SECRET and Fernet encryption key will be regenerated</li>
-            <li>All active user sessions will be immediately invalidated</li>
-            <li>Users will need to log in again</li>
+            <li>{t('admin.security.rotateModal.warningJwt')}</li>
+            <li>{t('admin.security.rotateModal.warningSessions')}</li>
+            <li>{t('admin.security.rotateModal.warningLogin')}</li>
             {keyAgeDays !== null && keyAgeDays > 90 && (
               <li className="text-orange-700 font-medium">
-                Current keys are {keyAgeDays} days old — rotation recommended
+                {t('admin.security.rotateModal.warningOldKeys', { count: keyAgeDays })}
               </li>
             )}
           </ul>
@@ -75,14 +77,14 @@ function RotateKeysModal({
 
         <div className="mb-5">
           <label className="block text-xs font-medium text-gray-600 mb-1">
-            Admin Password (confirm identity)
+            {t('admin.security.rotateModal.adminPasswordLabel')}
           </label>
           <input
             type="password"
             className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            placeholder="Enter your admin password"
+            placeholder={t('admin.security.rotateModal.adminPasswordPlaceholder')}
             onKeyDown={e => e.key === 'Enter' && handleRotate()}
           />
         </div>
@@ -94,14 +96,14 @@ function RotateKeysModal({
             onClick={onClose}
             className="px-4 py-2 text-sm border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50"
           >
-            Cancel
+            {t('admin.common.cancel')}
           </button>
           <button
             onClick={handleRotate}
             disabled={loading}
             className="px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600 disabled:opacity-50"
           >
-            {loading ? 'Rotating…' : 'Confirm Rotate Keys'}
+            {loading ? t('admin.security.rotateModal.rotating') : t('admin.security.rotateModal.confirmRotate')}
           </button>
         </div>
       </div>
@@ -112,6 +114,7 @@ function RotateKeysModal({
 // ─── Alerts Tab ───────────────────────────────────────────────────────────────
 
 function AlertsTab() {
+  const { t } = useTranslation()
   const [alerts, setAlerts] = useState<SecurityAlertOut[]>([])
   const [loading, setLoading] = useState(true)
   const [expanded, setExpanded] = useState<Set<number>>(new Set())
@@ -153,13 +156,13 @@ function AlertsTab() {
   const alertTypeLabel = (t: string) =>
     t === 'brute_force' ? '暴力破解' : t === 'new_ip' ? '新 IP 登录' : t
 
-  if (loading) return <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
+  if (loading) return <p className="text-sm text-gray-400 py-8 text-center">{t('admin.common.loading')}</p>
 
   if (!alerts.length)
     return (
       <div className="py-16 text-center">
         <CheckCircle size={36} className="mx-auto text-emerald-400 mb-3" />
-        <p className="text-sm text-gray-500">No security alerts detected</p>
+        <p className="text-sm text-gray-500">{t('admin.security.alerts.noAlerts')}</p>
       </div>
     )
 
@@ -196,11 +199,11 @@ function AlertsTab() {
                 onClick={e => { e.stopPropagation(); handleAck(alert.id) }}
                 className="text-xs px-2 py-1 bg-white border border-red-200 text-red-600 rounded hover:bg-red-50 shrink-0"
               >
-                Mark handled
+                {t('admin.security.alerts.markHandled')}
               </button>
             )}
             {alert.acknowledged && (
-              <span className="text-xs text-gray-400 shrink-0">✓ handled</span>
+              <span className="text-xs text-gray-400 shrink-0">{t('admin.security.alerts.handled')}</span>
             )}
           </div>
           {expanded.has(alert.id) && alert.details_json && (
@@ -210,7 +213,7 @@ function AlertsTab() {
               </pre>
               {alert.acknowledged_at && (
                 <p className="text-xs text-gray-400 mt-2">
-                  Handled at {new Date(alert.acknowledged_at).toLocaleString()}
+                  {t('admin.security.alerts.handledAt', { time: new Date(alert.acknowledged_at).toLocaleString() })}
                 </p>
               )}
             </div>
@@ -224,6 +227,7 @@ function AlertsTab() {
 // ─── 2FA Tab ──────────────────────────────────────────────────────────────────
 
 function TwoFATab() {
+  const { t } = useTranslation()
   const [config, setConfig] = useState<TwoFAConfig | null>(null)
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
@@ -248,16 +252,16 @@ function TwoFATab() {
     }
   }
 
-  if (!config) return <p className="text-sm text-gray-400 py-8 text-center">Loading…</p>
+  if (!config) return <p className="text-sm text-gray-400 py-8 text-center">{t('admin.common.loading')}</p>
 
   return (
     <div className="space-y-5 max-w-lg">
       <div className="bg-white border border-gray-100 rounded-lg divide-y divide-gray-100">
         <div className="flex items-start justify-between px-5 py-4">
           <div>
-            <p className="text-sm font-medium text-gray-900">Sensitive Operation Re-auth</p>
+            <p className="text-sm font-medium text-gray-900">{t('admin.security.twofa.sensitiveReauthTitle')}</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              Require admin password re-entry for key rotation, bulk deletes, and other destructive operations
+              {t('admin.security.twofa.sensitiveReauthDesc')}
             </p>
           </div>
           <button
@@ -276,9 +280,9 @@ function TwoFATab() {
         </div>
         <div className="flex items-start justify-between px-5 py-4">
           <div>
-            <p className="text-sm font-medium text-gray-900">TOTP Two-Factor Authentication</p>
+            <p className="text-sm font-medium text-gray-900">{t('admin.security.twofa.totpTitle')}</p>
             <p className="text-xs text-gray-500 mt-0.5">
-              Enable TOTP (Google Authenticator / Authy) for admin login. Setup required per user.
+              {t('admin.security.twofa.totpDesc')}
             </p>
           </div>
           <button
@@ -298,7 +302,7 @@ function TwoFATab() {
       </div>
       {saved && (
         <p className="text-xs text-emerald-600 flex items-center gap-1">
-          <CheckCircle size={12} /> Saved
+          <CheckCircle size={12} /> {t('admin.security.twofa.saved')}
         </p>
       )}
     </div>
@@ -308,6 +312,7 @@ function TwoFATab() {
 // ─── Keys Tab ─────────────────────────────────────────────────────────────────
 
 function KeysTab() {
+  const { t } = useTranslation()
   const [history, setHistory] = useState<KeyRotationHistoryOut[]>([])
   const [keyAgeDays, setKeyAgeDays] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
@@ -329,7 +334,7 @@ function KeysTab() {
 
   const handleSuccess = () => {
     setShowModal(false)
-    setSuccessMsg('Keys rotated successfully. All sessions invalidated.')
+    setSuccessMsg(t('admin.security.keys.rotateSuccess'))
     setTimeout(() => setSuccessMsg(''), 5000)
     load()
   }
@@ -346,21 +351,21 @@ function KeysTab() {
 
       <div className="flex items-start justify-between mb-5">
         <div>
-          <h3 className="text-sm font-semibold text-gray-900">System Key Status</h3>
+          <h3 className="text-sm font-semibold text-gray-900">{t('admin.security.keys.systemKeyStatus')}</h3>
           {keyAgeDays !== null ? (
             <p className={`text-xs mt-1 ${keyAgeDays > 90 ? 'text-orange-600 font-medium' : 'text-gray-500'}`}>
-              {keyAgeDays > 90 && '⚠ '}Current keys are {keyAgeDays} day{keyAgeDays !== 1 ? 's' : ''} old
-              {keyAgeDays > 90 && ' — rotation recommended'}
+              {keyAgeDays > 90 && '⚠ '}{t('admin.security.keys.keyAgeDays', { count: keyAgeDays })}
+              {keyAgeDays > 90 && t('admin.security.keys.rotationRecommended')}
             </p>
           ) : (
-            <p className="text-xs text-gray-400 mt-1">No rotation history — keys may be at default values</p>
+            <p className="text-xs text-gray-400 mt-1">{t('admin.security.keys.noHistory')}</p>
           )}
         </div>
         <button
           onClick={() => setShowModal(true)}
           className="flex items-center gap-2 px-4 py-2 text-sm bg-orange-500 text-white rounded-lg hover:bg-orange-600"
         >
-          <RefreshCw size={14} /> Rotate Keys
+          <RefreshCw size={14} /> {t('admin.security.keys.rotateKeys')}
         </button>
       </div>
 
@@ -370,14 +375,14 @@ function KeysTab() {
         </div>
       )}
 
-      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Rotation History</h3>
+      <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">{t('admin.security.keys.rotationHistory')}</h3>
 
       {loading ? (
-        <p className="text-sm text-gray-400">Loading…</p>
+        <p className="text-sm text-gray-400">{t('admin.common.loading')}</p>
       ) : !history.length ? (
         <div className="text-center py-12 text-gray-400">
           <Clock size={32} className="mx-auto mb-2 opacity-40" />
-          <p className="text-sm">No rotation history yet</p>
+          <p className="text-sm">{t('admin.security.keys.noRotationHistory')}</p>
         </div>
       ) : (
         <div className="space-y-2">
@@ -386,7 +391,7 @@ function KeysTab() {
               <Key size={14} className="text-gray-400 mt-0.5 shrink-0" />
               <div className="flex-1 min-w-0">
                 <p className="text-sm text-gray-900">
-                  Rotated by <span className="font-medium">{item.rotated_by_username}</span>
+                  {t('admin.security.keys.rotatedBy')} <span className="font-medium">{item.rotated_by_username}</span>
                 </p>
                 {item.note && <p className="text-xs text-gray-500 mt-0.5">{item.note}</p>}
               </div>
@@ -403,28 +408,29 @@ function KeysTab() {
 
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
-const TABS: { id: Tab; label: string; icon: typeof Shield }[] = [
-  { id: 'alerts', label: 'Alerts', icon: AlertTriangle },
-  { id: '2fa', label: '2FA Config', icon: Shield },
-  { id: 'keys', label: 'Key Rotation', icon: Key },
+const TABS: { id: Tab; labelKey: string; icon: typeof Shield }[] = [
+  { id: 'alerts', labelKey: 'admin.security.tabs.alerts', icon: AlertTriangle },
+  { id: '2fa', labelKey: 'admin.security.tabs.twofa', icon: Shield },
+  { id: 'keys', labelKey: 'admin.security.tabs.keys', icon: Key },
 ]
 
 export default function SecurityPage() {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<Tab>('alerts')
 
   return (
     <div className="p-6">
       <div className="mb-6">
         <h1 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          <Shield size={20} className="text-indigo-500" /> Security &amp; Compliance
+          <Shield size={20} className="text-indigo-500" /> {t('admin.security.title')}
         </h1>
         <p className="text-sm text-gray-500 mt-1">
-          Monitor anomalous logins, configure two-factor authentication, and manage system key rotation.
+          {t('admin.security.subtitle')}
         </p>
       </div>
 
       <div className="flex gap-1 border-b border-gray-200 mb-6">
-        {TABS.map(({ id, label, icon: Icon }) => (
+        {TABS.map(({ id, labelKey, icon: Icon }) => (
           <button
             key={id}
             onClick={() => setTab(id)}
@@ -435,7 +441,7 @@ export default function SecurityPage() {
             }`}
           >
             <Icon size={14} />
-            {label}
+            {t(labelKey)}
           </button>
         ))}
       </div>

@@ -757,6 +757,199 @@
       "adminPasswordRequired": "需要管理员密码",
       "operationSuccess": "操作成功",
       "operationFailed": "操作失败"
+    },
+    "overview": {
+      "title": "平台总览",
+      "lastUpdated": "最后更新 {{time}} · 每 30 秒自动刷新",
+      "loading": "加载中…",
+      "failedToLoad": "总览数据加载失败。",
+      "retry": "重试",
+      "metrics": {
+        "emailsSentToday": "今日发送邮件",
+        "thisWeek": "本周 {{count}} 封",
+        "newInfluencersToday": "今日新增网红",
+        "total": "共 {{count}} 位",
+        "repliesToday": "今日回复",
+        "activeAgents": "活跃 Agent",
+        "errorsToday": "今日 {{count}} 个错误"
+      },
+      "charts": {
+        "emailTrend": "邮件趋势（近 7 天）",
+        "scrapeTasks": "抓取任务（近 7 天）",
+        "influencersByPlatform": "网红平台分布",
+        "sent": "已发送",
+        "replied": "已回复",
+        "tasks": "任务数"
+      },
+      "health": {
+        "title": "系统健康",
+        "connected": "已连接",
+        "unreachable": "无法访问",
+        "running": "运行中",
+        "stopped": "已停止",
+        "activeConnections": "{{count}} 个活跃连接",
+        "activeConnections_plural": "{{count}} 个活跃连接",
+        "mailboxHealthy": "正常",
+        "mailboxDegraded": "降级",
+        "mailboxUnavailable": "不可用"
+      },
+      "events": {
+        "title": "最近事件",
+        "noEvents": "暂无最近事件"
+      }
+    },
+    "usage": {
+      "title": "用量与成本",
+      "periods": {
+        "day": "今天",
+        "week": "本周",
+        "month": "本月"
+      },
+      "metrics": {
+        "totalCost": "总费用（当前周期）",
+        "usd": "美元",
+        "llmTokens": "LLM Token 数",
+        "tokensConsumed": "已消耗 Token",
+        "emailsSent": "发送邮件数",
+        "outreachEmails": "触达邮件",
+        "storage": "存储空间",
+        "dbSize": "数据库大小"
+      },
+      "budget": {
+        "title": "预算与告警",
+        "setBudget": "设置预算",
+        "monthCost": "本月费用：",
+        "today": "今日：",
+        "budgetLabel": "预算：",
+        "alertAt": "触警阈值 {{pct}}%",
+        "noActiveAlerts": "当前无告警",
+        "modalTitle": "设置月度预算",
+        "budgetUsdLabel": "{{month}} 预算（美元）",
+        "budgetUsdPlaceholder": "如：50.00",
+        "alertThresholdLabel": "告警阈值（%）",
+        "alertThresholdPlaceholder": "80",
+        "saving": "保存中…"
+      },
+      "charts": {
+        "llmCostTrend": "近 30 天 LLM 费用趋势",
+        "modelCostDist": "模型费用分布（本月）",
+        "cost": "费用",
+        "date": "日期：{{date}}",
+        "noDataYet": "暂无数据"
+      },
+      "topUsers": {
+        "title": "本月费用 Top 10 用户",
+        "rank": "#",
+        "user": "用户",
+        "emailsSent": "发送邮件数",
+        "noData": "暂无用量数据。"
+      }
+    },
+    "agents": {
+      "title": "Agent 监控",
+      "successRate": "成功率",
+      "avgDuration": "平均耗时",
+      "running": "运行中",
+      "lastRun": "最近运行",
+      "allAgents": "全部 Agent",
+      "allStates": "全部状态",
+      "runsTotal": "共 {{count}} 次运行",
+      "noRunsFound": "未找到运行记录",
+      "retryFailed": "重试失败",
+      "input": "输入",
+      "errorStack": "错误堆栈",
+      "retry": "重试",
+      "table": {
+        "id": "ID",
+        "agent": "Agent",
+        "task": "任务",
+        "state": "状态",
+        "started": "开始时间",
+        "duration": "耗时",
+        "error": "错误"
+      },
+      "pagination": {
+        "pageOf": "{{current}} / {{total}}"
+      }
+    },
+    "followup": {
+      "title": "追发策略",
+      "subtitle": "全局自动追发策略与 Responder 审计",
+      "emergencyPause": "紧急暂停",
+      "resumeAll": "恢复全部",
+      "confirmAction": "确认操作",
+      "pauseMessage": "此操作将立即停用所有自动追发邮件，影响全局所有网红。",
+      "resumeMessage": "此操作将重新开启全局自动追发邮件。",
+      "followupPaused": "追发邮件当前已全局暂停。",
+      "strategyConfig": "策略配置",
+      "masterToggle": "总开关",
+      "runHourUtc": "执行时间（UTC 小时）",
+      "maxFollowupsLabel": "每位网红最大追发次数",
+      "intervalDaysLabel": "追发间隔（天）",
+      "saveSettings": "保存设置",
+      "saving": "保存中…",
+      "responder": {
+        "title": "Responder 行为审计",
+        "subtitle": "Responder Agent 生成的追发邮件 — 共 {{count}} 条",
+        "influencer": "网红",
+        "originalReply": "原始回复",
+        "followupSubject": "追发主题",
+        "status": "状态",
+        "sentAt": "发送时间",
+        "noLogs": "暂无追发日志",
+        "noReplyRecorded": "无回复记录"
+      },
+      "pagination": {
+        "pageOf": "第 {{current}} / {{total}} 页"
+      }
+    },
+    "security": {
+      "title": "安全合规",
+      "subtitle": "监控异常登录、配置双因素认证并管理系统密钥轮换。",
+      "tabs": {
+        "alerts": "告警",
+        "twofa": "2FA 配置",
+        "keys": "密钥轮换"
+      },
+      "alerts": {
+        "noAlerts": "未检测到安全告警",
+        "markHandled": "标记已处理",
+        "handled": "✓ 已处理",
+        "handledAt": "处理时间：{{time}}"
+      },
+      "twofa": {
+        "sensitiveReauthTitle": "敏感操作二次验证",
+        "sensitiveReauthDesc": "密钥轮换、批量删除等高危操作前要求重新输入管理员密码",
+        "totpTitle": "TOTP 双因素认证",
+        "totpDesc": "为管理员登录启用 TOTP（Google Authenticator / Authy），每位用户需单独配置。",
+        "saved": "已保存"
+      },
+      "keys": {
+        "systemKeyStatus": "系统密钥状态",
+        "keyAgeDays": "当前密钥已使用 {{count}} 天",
+        "keyAgeDays_plural": "当前密钥已使用 {{count}} 天",
+        "rotationRecommended": "，建议轮换",
+        "noHistory": "无轮换记录 — 密钥可能仍为默认值",
+        "rotateKeys": "轮换密钥",
+        "rotationHistory": "轮换历史",
+        "noRotationHistory": "暂无轮换记录",
+        "rotatedBy": "操作人",
+        "rotateSuccess": "密钥轮换成功，所有会话已失效。"
+      },
+      "rotateModal": {
+        "title": "轮换系统密钥",
+        "destructiveTitle": "⚠ 高危操作",
+        "warningJwt": "JWT SECRET 和 Fernet 加密密钥将被重新生成",
+        "warningSessions": "所有活跃用户会话将立即失效",
+        "warningLogin": "用户需要重新登录",
+        "warningOldKeys": "当前密钥已使用 {{count}} 天，建议轮换",
+        "adminPasswordLabel": "管理员密码（身份确认）",
+        "adminPasswordPlaceholder": "请输入管理员密码",
+        "adminPasswordRequired": "管理员密码不能为空",
+        "rotating": "轮换中…",
+        "confirmRotate": "确认轮换密钥",
+        "rotationFailed": "密钥轮换失败"
+      }
     }
   }
 }

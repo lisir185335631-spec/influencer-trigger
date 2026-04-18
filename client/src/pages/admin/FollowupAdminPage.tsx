@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Pause, Play, Save } from 'lucide-react'
 import {
   type FollowUpSettings,
@@ -21,12 +22,13 @@ function ConfirmModal({
   onConfirm: () => void
   onCancel: () => void
 }) {
+  const { t } = useTranslation()
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-2xl shadow-xl p-7 w-[420px] max-w-[92vw]">
         <div className="flex items-center gap-3 mb-4">
           <AlertTriangle size={20} className="text-red-500 shrink-0" />
-          <h2 className="text-base font-semibold text-gray-900">Confirm Action</h2>
+          <h2 className="text-base font-semibold text-gray-900">{t('admin.followup.confirmAction')}</h2>
         </div>
         <p className="text-sm text-gray-600 mb-6">{message}</p>
         <div className="flex justify-end gap-3">
@@ -34,13 +36,13 @@ function ConfirmModal({
             onClick={onCancel}
             className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
           >
-            Cancel
+            {t('admin.common.cancel')}
           </button>
           <button
             onClick={onConfirm}
             className="px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600"
           >
-            Confirm
+            {t('admin.common.confirm')}
           </button>
         </div>
       </div>
@@ -70,6 +72,7 @@ function StatusBadge({ status }: { status: string }) {
 // ─── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function FollowupAdminPage() {
+  const { t } = useTranslation()
   const [settings, setSettings] = useState<FollowUpSettings | null>(null)
   const [logs, setLogs] = useState<ResponderLogItem[]>([])
   const [logsTotal, setLogsTotal] = useState(0)
@@ -131,7 +134,7 @@ export default function FollowupAdminPage() {
   }
 
   if (loading && !settings) {
-    return <div className="text-center py-16 text-gray-400 text-sm">Loading...</div>
+    return <div className="text-center py-16 text-gray-400 text-sm">{t('admin.common.loading')}</div>
   }
 
   const totalPages = Math.ceil(logsTotal / 20)
@@ -140,14 +143,14 @@ export default function FollowupAdminPage() {
     <>
       {confirmModal === 'pause' && (
         <ConfirmModal
-          message="This will immediately disable all automatic follow-up emails. This affects all influencers globally."
+          message={t('admin.followup.pauseMessage')}
           onConfirm={handlePause}
           onCancel={() => setConfirmModal(null)}
         />
       )}
       {confirmModal === 'resume' && (
         <ConfirmModal
-          message="This will re-enable automatic follow-up emails globally."
+          message={t('admin.followup.resumeMessage')}
           onConfirm={handleResume}
           onCancel={() => setConfirmModal(null)}
         />
@@ -157,8 +160,8 @@ export default function FollowupAdminPage() {
         {/* Header */}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-gray-900">Follow-up Strategy</h1>
-            <p className="text-sm text-gray-500 mt-0.5">Global auto follow-up policy and Responder audit</p>
+            <h1 className="text-xl font-semibold text-gray-900">{t('admin.followup.title')}</h1>
+            <p className="text-sm text-gray-500 mt-0.5">{t('admin.followup.subtitle')}</p>
           </div>
           <div className="flex items-center gap-3">
             {settings?.enabled ? (
@@ -167,7 +170,7 @@ export default function FollowupAdminPage() {
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-500 rounded-lg hover:bg-red-600"
               >
                 <Pause size={14} />
-                Emergency Pause
+                {t('admin.followup.emergencyPause')}
               </button>
             ) : (
               <button
@@ -175,7 +178,7 @@ export default function FollowupAdminPage() {
                 className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-emerald-500 rounded-lg hover:bg-emerald-600"
               >
                 <Play size={14} />
-                Resume All
+                {t('admin.followup.resumeAll')}
               </button>
             )}
           </div>
@@ -185,16 +188,16 @@ export default function FollowupAdminPage() {
         {settings && !settings.enabled && (
           <div className="flex items-center gap-3 p-4 bg-red-50 border border-red-100 rounded-xl">
             <AlertTriangle size={16} className="text-red-500 shrink-0" />
-            <p className="text-sm text-red-700 font-medium">Follow-up emails are currently <strong>paused</strong> globally.</p>
+            <p className="text-sm text-red-700 font-medium">{t('admin.followup.followupPaused')}</p>
           </div>
         )}
 
         {/* Strategy Config Card */}
         <div className="bg-white border border-gray-100 rounded-xl p-6">
-          <h2 className="text-sm font-semibold text-gray-900 mb-5">Strategy Configuration</h2>
+          <h2 className="text-sm font-semibold text-gray-900 mb-5">{t('admin.followup.strategyConfig')}</h2>
           <div className="grid grid-cols-2 gap-5">
             <div>
-              <label className="block text-xs text-gray-500 mb-1.5">Master Toggle</label>
+              <label className="block text-xs text-gray-500 mb-1.5">{t('admin.followup.masterToggle')}</label>
               <div className="flex items-center gap-3">
                 <button
                   type="button"
@@ -203,11 +206,11 @@ export default function FollowupAdminPage() {
                 >
                   <span className={`absolute top-0.5 left-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${form.enabled ? 'translate-x-5' : ''}`} />
                 </button>
-                <span className="text-sm text-gray-700">{form.enabled ? 'Enabled' : 'Disabled'}</span>
+                <span className="text-sm text-gray-700">{form.enabled ? t('admin.common.enabled') : t('admin.common.disabled')}</span>
               </div>
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1.5">Run Hour (UTC)</label>
+              <label className="block text-xs text-gray-500 mb-1.5">{t('admin.followup.runHourUtc')}</label>
               <input
                 type="number"
                 min={0}
@@ -218,7 +221,7 @@ export default function FollowupAdminPage() {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1.5">Max Follow-ups per Influencer</label>
+              <label className="block text-xs text-gray-500 mb-1.5">{t('admin.followup.maxFollowupsLabel')}</label>
               <input
                 type="number"
                 min={1}
@@ -229,7 +232,7 @@ export default function FollowupAdminPage() {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1.5">Interval Days (between follow-ups)</label>
+              <label className="block text-xs text-gray-500 mb-1.5">{t('admin.followup.intervalDaysLabel')}</label>
               <input
                 type="number"
                 min={1}
@@ -247,7 +250,7 @@ export default function FollowupAdminPage() {
               className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-800 disabled:opacity-50"
             >
               <Save size={14} />
-              {saving ? 'Saving…' : 'Save Settings'}
+              {saving ? t('admin.followup.saving') : t('admin.followup.saveSettings')}
             </button>
           </div>
         </div>
@@ -255,24 +258,24 @@ export default function FollowupAdminPage() {
         {/* Responder Logs */}
         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-50">
-            <h2 className="text-sm font-semibold text-gray-900">Responder Behavior Audit</h2>
-            <p className="text-xs text-gray-400 mt-0.5">Follow-up emails generated by the Responder Agent — {logsTotal} total</p>
+            <h2 className="text-sm font-semibold text-gray-900">{t('admin.followup.responder.title')}</h2>
+            <p className="text-xs text-gray-400 mt-0.5">{t('admin.followup.responder.subtitle', { count: logsTotal })}</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-50 text-xs text-gray-400 uppercase tracking-wide">
-                  <th className="text-left py-3 px-4 font-medium">Influencer</th>
-                  <th className="text-left py-3 px-4 font-medium">Original Reply</th>
-                  <th className="text-left py-3 px-4 font-medium">Follow-up Subject</th>
-                  <th className="text-center py-3 px-4 font-medium">Status</th>
-                  <th className="text-right py-3 px-4 font-medium">Sent At</th>
+                  <th className="text-left py-3 px-4 font-medium">{t('admin.followup.responder.influencer')}</th>
+                  <th className="text-left py-3 px-4 font-medium">{t('admin.followup.responder.originalReply')}</th>
+                  <th className="text-left py-3 px-4 font-medium">{t('admin.followup.responder.followupSubject')}</th>
+                  <th className="text-center py-3 px-4 font-medium">{t('admin.followup.responder.status')}</th>
+                  <th className="text-right py-3 px-4 font-medium">{t('admin.followup.responder.sentAt')}</th>
                 </tr>
               </thead>
               <tbody>
                 {logs.length === 0 && (
                   <tr>
-                    <td colSpan={5} className="text-center py-10 text-gray-400 text-xs">No follow-up logs yet</td>
+                    <td colSpan={5} className="text-center py-10 text-gray-400 text-xs">{t('admin.followup.responder.noLogs')}</td>
                   </tr>
                 )}
                 {logs.map(log => (
@@ -285,7 +288,7 @@ export default function FollowupAdminPage() {
                       {log.original_reply ? (
                         <p className="text-xs text-gray-600 line-clamp-2">{log.original_reply}</p>
                       ) : (
-                        <span className="text-xs text-gray-300 italic">No reply recorded</span>
+                        <span className="text-xs text-gray-300 italic">{t('admin.followup.responder.noReplyRecorded')}</span>
                       )}
                     </td>
                     <td className="py-3 px-4 text-gray-700 max-w-[200px] truncate">{log.follow_up_subject}</td>
@@ -302,21 +305,21 @@ export default function FollowupAdminPage() {
           </div>
           {totalPages > 1 && (
             <div className="flex items-center justify-between px-6 py-3 border-t border-gray-50 text-xs text-gray-500">
-              <span>Page {logsPage} of {totalPages}</span>
+              <span>{t('admin.followup.pagination.pageOf', { current: logsPage, total: totalPages })}</span>
               <div className="flex gap-2">
                 <button
                   disabled={logsPage <= 1}
                   onClick={() => setLogsPage(p => p - 1)}
                   className="px-3 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
                 >
-                  Prev
+                  {t('admin.common.previous')}
                 </button>
                 <button
                   disabled={logsPage >= totalPages}
                   onClick={() => setLogsPage(p => p + 1)}
                   className="px-3 py-1 border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
                 >
-                  Next
+                  {t('admin.common.next')}
                 </button>
               </div>
             </div>

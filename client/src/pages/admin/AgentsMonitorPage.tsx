@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { ChevronDown, ChevronRight, RefreshCw, RotateCcw } from 'lucide-react'
 import {
   type AgentRunDetail,
@@ -55,6 +56,7 @@ function StatusDot({ state }: { state: string }) {
 // ── Agent Status Cards ────────────────────────────────────────────────────────
 
 function AgentCard({ name, status }: { name: string; status: AgentStatus | undefined }) {
+  const { t } = useTranslation()
   const rate = status?.success_rate
   const rateStr = rate !== null && rate !== undefined ? `${(rate * 100).toFixed(0)}%` : '—'
   const running = status?.running_count ?? 0
@@ -67,13 +69,13 @@ function AgentCard({ name, status }: { name: string; status: AgentStatus | undef
         <StatusDot state={running > 0 ? 'running' : (status?.recent_total ? 'success' : 'pending')} />
       </div>
       <div className="grid grid-cols-2 gap-y-1.5 text-xs text-gray-500">
-        <span>Success rate</span>
+        <span>{t('admin.agents.successRate')}</span>
         <span className="text-right font-medium text-gray-800">{rateStr}</span>
-        <span>Avg duration</span>
+        <span>{t('admin.agents.avgDuration')}</span>
         <span className="text-right font-medium text-gray-800">{formatDuration(status?.avg_duration_ms ?? null)}</span>
-        <span>Running</span>
+        <span>{t('admin.agents.running')}</span>
         <span className={`text-right font-medium ${running > 0 ? 'text-blue-600' : 'text-gray-800'}`}>{running}</span>
-        <span>Last run</span>
+        <span>{t('admin.agents.lastRun')}</span>
         <span className="text-right font-medium text-gray-800">{formatTs(status?.last_run_at ?? null)}</span>
       </div>
     </div>
@@ -89,6 +91,7 @@ function RunDetailRow({
   run: AgentRunItem
   onRetry: (id: number) => void
 }) {
+  const { t } = useTranslation()
   const [expanded, setExpanded] = useState(false)
   const [detail, setDetail] = useState<AgentRunDetail | null>(null)
   const [loadingDetail, setLoadingDetail] = useState(false)
@@ -129,7 +132,7 @@ function RunDetailRow({
               onClick={e => { e.stopPropagation(); onRetry(run.id) }}
               className="flex items-center gap-1 px-2.5 py-1 text-xs rounded-lg bg-amber-50 text-amber-700 hover:bg-amber-100 border border-amber-200 font-medium"
             >
-              <RotateCcw size={11} /> Retry
+              <RotateCcw size={11} /> {t('admin.agents.retry')}
             </button>
           )}
         </td>
@@ -138,12 +141,12 @@ function RunDetailRow({
         <tr>
           <td colSpan={9} className="px-4 pb-4 pt-0 bg-gray-50">
             {loadingDetail ? (
-              <p className="text-xs text-gray-400 py-2">Loading…</p>
+              <p className="text-xs text-gray-400 py-2">{t('admin.common.loading')}</p>
             ) : detail ? (
               <div className="grid grid-cols-1 gap-3 mt-2">
                 {detail.input_snapshot && (
                   <div>
-                    <p className="text-xs font-semibold text-gray-600 mb-1">Input</p>
+                    <p className="text-xs font-semibold text-gray-600 mb-1">{t('admin.agents.input')}</p>
                     <pre className="text-xs bg-white border border-gray-200 rounded-lg p-3 overflow-x-auto max-h-40 text-gray-700">
                       {tryPrettyJson(detail.input_snapshot)}
                     </pre>
@@ -151,7 +154,7 @@ function RunDetailRow({
                 )}
                 {detail.error_stack && (
                   <div>
-                    <p className="text-xs font-semibold text-red-600 mb-1">Error Stack</p>
+                    <p className="text-xs font-semibold text-red-600 mb-1">{t('admin.agents.errorStack')}</p>
                     <pre className="text-xs bg-red-50 border border-red-100 rounded-lg p-3 overflow-x-auto max-h-48 text-red-700 whitespace-pre-wrap">
                       {detail.error_stack}
                     </pre>
@@ -173,6 +176,7 @@ function tryPrettyJson(s: string): string {
 // ── Main Page ─────────────────────────────────────────────────────────────────
 
 export default function AgentsMonitorPage() {
+  const { t } = useTranslation()
   const [statusMap, setStatusMap] = useState<Record<string, AgentStatus>>({})
   const [runs, setRuns] = useState<AgentRunItem[]>([])
   const [total, setTotal] = useState(0)
@@ -217,7 +221,7 @@ export default function AgentsMonitorPage() {
       await loadRuns(page, filterAgent, filterState)
       await loadStatus()
     } catch {
-      alert('Retry failed')
+      alert(t('admin.agents.retryFailed'))
     } finally {
       setRetrying(null)
     }
@@ -228,12 +232,12 @@ export default function AgentsMonitorPage() {
   return (
     <div className="p-6 max-w-[1200px] mx-auto space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold text-gray-900">Agent Monitor</h1>
+        <h1 className="text-xl font-semibold text-gray-900">{t('admin.agents.title')}</h1>
         <button
           onClick={() => { loadStatus(); loadRuns(page, filterAgent, filterState) }}
           className="flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
         >
-          <RefreshCw size={14} /> Refresh
+          <RefreshCw size={14} /> {t('admin.common.refresh')}
         </button>
       </div>
 
@@ -252,7 +256,7 @@ export default function AgentsMonitorPage() {
             onChange={e => { setFilterAgent(e.target.value); setPage(1) }}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
           >
-            <option value="">All Agents</option>
+            <option value="">{t('admin.agents.allAgents')}</option>
             {ALL_AGENTS.map(a => <option key={a} value={a} className="capitalize">{a}</option>)}
           </select>
           <select
@@ -260,12 +264,12 @@ export default function AgentsMonitorPage() {
             onChange={e => { setFilterState(e.target.value); setPage(1) }}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm text-gray-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
           >
-            <option value="">All States</option>
+            <option value="">{t('admin.agents.allStates')}</option>
             {['running', 'success', 'failed', 'pending', 'cancelled'].map(s => (
               <option key={s} value={s} className="capitalize">{s}</option>
             ))}
           </select>
-          <span className="ml-auto text-xs text-gray-400 self-center">{total} runs total</span>
+          <span className="ml-auto text-xs text-gray-400 self-center">{t('admin.agents.runsTotal', { count: total })}</span>
         </div>
 
         {/* Table */}
@@ -273,7 +277,7 @@ export default function AgentsMonitorPage() {
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="border-b border-gray-100">
-                {['', 'ID', 'Agent', 'Task', 'State', 'Started', 'Duration', 'Error', ''].map((h, i) => (
+                {(['', t('admin.agents.table.id'), t('admin.agents.table.agent'), t('admin.agents.table.task'), t('admin.agents.table.state'), t('admin.agents.table.started'), t('admin.agents.table.duration'), t('admin.agents.table.error'), '']).map((h, i) => (
                   <th key={i} className="px-4 py-2 text-xs font-semibold text-gray-500 uppercase tracking-wider whitespace-nowrap">
                     {h}
                   </th>
@@ -283,11 +287,11 @@ export default function AgentsMonitorPage() {
             <tbody className="divide-y divide-gray-50">
               {loading ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">Loading…</td>
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">{t('admin.common.loading')}</td>
                 </tr>
               ) : runs.length === 0 ? (
                 <tr>
-                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">No runs found</td>
+                  <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">{t('admin.agents.noRunsFound')}</td>
                 </tr>
               ) : (
                 runs.map(run => (
@@ -310,15 +314,15 @@ export default function AgentsMonitorPage() {
               onClick={() => setPage(p => p - 1)}
               className="px-3 py-1 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
             >
-              Prev
+              {t('admin.common.previous')}
             </button>
-            <span className="text-sm text-gray-600">{page} / {totalPages}</span>
+            <span className="text-sm text-gray-600">{t('admin.agents.pagination.pageOf', { current: page, total: totalPages })}</span>
             <button
               disabled={page >= totalPages}
               onClick={() => setPage(p => p + 1)}
               className="px-3 py-1 text-sm rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50 disabled:opacity-40"
             >
-              Next
+              {t('admin.common.next')}
             </button>
           </div>
         )}
