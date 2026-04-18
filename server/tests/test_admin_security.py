@@ -107,3 +107,40 @@ async def test_rotate_keys_increments_all_token_versions(async_client, admin_use
         headers={"Authorization": f"Bearer {stale_token}"},
     )
     assert r.status_code == 401, f"Expected 401 for stale token, got {r.status_code}: {r.text}"
+
+
+@pytest.mark.asyncio
+async def test_rotate_keys_invalidates_old_admin_token(async_client, admin_user, monkeypatch):
+    """After rotate-keys, the admin's own previously-issued JWT should fail with 401
+    because token_version has incremented."""
+    from app.services.auth_service import create_access_token
+    from sqlalchemy import select
+    from app.database import AsyncSessionLocal
+    from app.models.user import User
+
+    # 1. Take admin's current token_version and generate token_A
+    async with AsyncSessionLocal() as db:
+        u = (await db.execute(select(User).where(User.id == admin_user.id))).scalar_one()
+        tv_before = u.token_version
+    token_a = create_access_token(admin_user.id, admin_user.username, admin_user.role.value, tv_before)
+    headers_a = {"Authorization": f"Bearer {token_a}"}
+
+    # 2. token_A must work before rotation
+    r1 = await async_client.get("/api/admin/overview/metrics", headers=headers_a)
+    assert r1.status_code == 200, r1.text
+
+    # 3. Patch out the .env write side-effect
+    import app.api.admin.security as sec_mod
+    monkeypatch.setattr(sec_mod, "_update_env_key", lambda *a, **k: None)
+
+    # 4. Trigger rotate-keys (bumps token_version for ALL users including admin)
+    r2 = await async_client.post(
+        "/api/admin/security/rotate-keys",
+        json={"admin_password": "admin_pw_2026"},
+        headers=headers_a,
+    )
+    assert r2.status_code == 200, r2.text
+
+    # 5. Same token_A must now be rejected — token_version mismatch
+    r3 = await async_client.get("/api/admin/overview/metrics", headers=headers_a)
+    assert r3.status_code == 401, f"expected 401 after rotate, got {r3.status_code}: {r3.text[:200]}"

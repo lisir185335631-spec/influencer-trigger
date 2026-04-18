@@ -159,6 +159,22 @@ async def admin_headers(admin_token):
     return {"Authorization": f"Bearer {admin_token}"}
 
 
+@pytest_asyncio.fixture(scope="session")
+async def operator_token(operator_user):
+    from app.services.auth_service import create_access_token
+    return create_access_token(
+        operator_user.id,
+        operator_user.username,
+        operator_user.role.value,
+        operator_user.token_version,
+    )
+
+
+@pytest_asyncio.fixture(scope="session")
+async def operator_headers(operator_token):
+    return {"Authorization": f"Bearer {operator_token}"}
+
+
 @pytest_asyncio.fixture
 async def fresh_admin_headers(admin_user):
     """Re-fetches admin from DB so token_version is current. Use when token_version may have changed."""
