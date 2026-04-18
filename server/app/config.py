@@ -45,6 +45,9 @@ class Settings(BaseSettings):
     openai_model: str = "gpt-4o"
     openai_classifier_model: str = "gpt-4o-mini"
 
+    # Business context — determines which <brand>.business.md is loaded for LLM prompts
+    active_business: str = "premlogin"
+
     # SendGrid
     sendgrid_api_key: str = ""
 

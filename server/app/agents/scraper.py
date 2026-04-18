@@ -352,39 +352,42 @@ async def _generate_search_strategy(
     if not settings.openai_api_key:
         return _fallback_queries(industry, platforms)
 
-    market_hint = f"\nTarget market: {target_market}. Translate keywords to the local language of this market while keeping English brand names." if target_market else ""
-    competitor_hint = f"\nAlso find creators who mention these competitor brands: {competitor_brands}" if competitor_brands else ""
+    from app.prompts import load_prompt
+    try:
+        business_ctx = load_prompt(f"scraper/_shared/{settings.active_business}.business")
+        system = load_prompt("scraper/search_strategy.system", business_context=business_ctx)
+    except FileNotFoundError as e:
+        logger.warning("Prompt template not found, using fallback: %s", e)
+        return _fallback_queries(industry, platforms)
 
-    prompt = (
-        f'You are an expert at finding KOL/creators on social media.\n'
-        f'Industry keyword: "{industry}"{market_hint}{competitor_hint}\n'
-        f'Platforms: {", ".join(platforms)}\n\n'
-        f'Generate expanded search queries for each platform:\n'
-        f'1. Expand keywords into brand name variants (e.g. GPT -> GPT, ChatGPT, ChatGPT Plus)\n'
-        f'2. Add combination words: tutorial, review, recommendation, comparison, tips, guide, subscription, deals\n'
-        f'3. For YouTube: 3-5 search queries to find relevant creators\n'
-        f'4. For Instagram: 3-5 hashtags (without #) that creators in this niche use\n'
-        f'5. For other platforms: 3-5 general search keywords\n\n'
-        f'Output ONLY valid JSON, no markdown:\n'
-        f'{{"youtube": ["query1", "query2"], "instagram": ["hashtag1", "hashtag2"]}}'
-    )
+    user_lines = [
+        f"Industry keyword: {industry}",
+        f"Platforms: {', '.join(platforms)}",
+    ]
+    if target_market:
+        user_lines.append(f"Target market: {target_market}")
+    if competitor_brands:
+        user_lines.append(f"Competitor brands: {competitor_brands}")
+    user = "\n".join(user_lines)
 
     try:
         from app.tools.llm_client import chat as llm_chat
         content = await llm_chat(
             model=settings.openai_classifier_model,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": user},
+            ],
             temperature=0.7,
             max_tokens=500,
+            response_format={"type": "json_object"},
+            agent_name="scraper.search_strategy",
         )
-        content = content.strip()
-        if content.startswith("```"):
-            content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-        result = json.loads(content)
+        result = json.loads(content.strip())
         for p in platforms:
             if p not in result:
                 result[p] = _fallback_queries(industry, [p])[p]
-        logger.info("LLM search strategy generated: %s", result)
+        logger.info("LLM search strategy generated (business=%s): %s", settings.active_business, result)
         return result
     except Exception as e:
         logger.warning("LLM search strategy failed, using fallback: %s", e)
@@ -413,6 +416,14 @@ async def _enrich_results(
     settings = get_settings()
     if not settings.openai_api_key:
         logger.info("No OpenAI API key, skipping result enrichment")
+        return
+
+    from app.prompts import load_prompt
+    try:
+        business_ctx = load_prompt(f"scraper/_shared/{settings.active_business}.business")
+        system = load_prompt("scraper/enrich_results.system", business_context=business_ctx)
+    except FileNotFoundError as e:
+        logger.warning("Prompt template not found, skipping result enrichment: %s", e)
         return
 
     async with AsyncSessionLocal() as db:
@@ -444,26 +455,27 @@ async def _enrich_results(
                 for inf in batch
             ]
 
-            market_ctx = f"Target market: {target_market}." if target_market else ""
-            prompt = (
-                f'Analyze these creators for relevance to "{industry}". {market_ctx}\n\n'
-                f'Creators:\n{json.dumps(profiles, ensure_ascii=False)}\n\n'
-                f'For each, output relevance_score (0.0-1.0) and match_reason (1-2 sentences).\n'
-                f'Output ONLY a JSON array, no markdown:\n'
-                f'[{{"id": 1, "relevance_score": 0.85, "match_reason": "..."}}]'
+            user = (
+                f"Please score these {len(batch)} influencers:\n\n"
+                f"{json.dumps(profiles, ensure_ascii=False)}"
             )
+            if target_market:
+                user = f"Target market: {target_market}\n\n" + user
 
             try:
                 content = await llm_chat(
                     model=settings.openai_classifier_model,
-                    messages=[{"role": "user", "content": prompt}],
+                    messages=[
+                        {"role": "system", "content": system},
+                        {"role": "user", "content": user},
+                    ],
                     temperature=0.3,
                     max_tokens=1000,
+                    response_format={"type": "json_object"},
+                    agent_name="scraper.enrich_results",
                 )
-                content = content.strip()
-                if content.startswith("```"):
-                    content = content.split("\n", 1)[1].rsplit("```", 1)[0].strip()
-                enrichments = json.loads(content)
+                data = json.loads(content.strip())
+                enrichments = data.get("results", [])
 
                 for item in enrichments:
                     inf_id = item.get("id")
