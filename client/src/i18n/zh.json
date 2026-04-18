@@ -1171,6 +1171,294 @@
         "keyRequired": "开关 Key 不能为空",
         "deleteConfirm": "删除功能开关「{{key}}」？"
       }
+    },
+    "templates": {
+      "title": "模板管理",
+      "subtitle": "审核模板、管理合规、追踪用量",
+      "tabs": {
+        "review": "模板审核",
+        "ranking": "使用排行",
+        "keywords": "关键词库"
+      },
+      "status": {
+        "published": "已发布",
+        "unpublished": "未发布"
+      },
+      "review": {
+        "colTemplate": "模板",
+        "colCreator": "创建人",
+        "colUsage": "用量",
+        "colSuccess": "成功率",
+        "colFlags": "合规标记",
+        "clean": "干净",
+        "noTemplates": "暂无模板"
+      },
+      "actions": {
+        "preview": "预览",
+        "scan": "合规扫描",
+        "publish": "发布",
+        "unpublish": "下架"
+      },
+      "preview": {
+        "subject": "主题"
+      },
+      "ranking": {
+        "colRank": "排名",
+        "colTemplate": "模板",
+        "colIndustry": "行业",
+        "colUsage": "用量",
+        "usageBarName": "用量"
+      },
+      "keywords": {
+        "labelKeyword": "关键词",
+        "labelCategory": "分类",
+        "labelSeverity": "严重程度",
+        "keywordPlaceholder": "输入关键词…",
+        "colAdded": "添加时间",
+        "deleteTitle": "删除关键词",
+        "deleteMessage": "该关键词将从合规词库中移除。",
+        "noKeywords": "暂无关键词",
+        "severity": {
+          "low": "低",
+          "medium": "中",
+          "high": "高"
+        }
+      }
+    },
+    "emails": {
+      "title": "邮件管理",
+      "subtitle": "全局邮件流水与黑名单管理",
+      "tabs": {
+        "flow": "邮件流水",
+        "blacklist": "黑名单"
+      },
+      "stats": {
+        "todaySent": "今日发送",
+        "bounceRate": "退信率",
+        "openRate": "打开率",
+        "replyRate": "回复率",
+        "ofTotalSent": "共发送 {{count}} 封"
+      },
+      "filter": {
+        "allStatuses": "全部状态",
+        "senderEmail": "发件人邮箱",
+        "recipient": "收件人",
+        "sentFrom": "发送开始",
+        "sentTo": "发送截止",
+        "reset": "重置"
+      },
+      "table": {
+        "time": "时间",
+        "recipient": "收件人",
+        "sender": "发件人",
+        "template": "模板",
+        "opened": "已打开",
+        "replied": "已回复",
+        "yes": "是"
+      },
+      "flow": {
+        "batchCancel": "批量取消",
+        "clearSelection": "清除选择",
+        "noEmails": "暂无邮件。",
+        "pageInfo": "第 {{page}} / {{totalPages}} 页 · 共 {{total}} 封"
+      },
+      "blacklist": {
+        "addTitle": "加入黑名单",
+        "reasonPlaceholder": "原因（可选）",
+        "adding": "添加中…",
+        "empty": "黑名单为空。",
+        "colEmail": "邮箱",
+        "colReason": "原因",
+        "colAddedAt": "添加时间",
+        "removeTooltip": "移除"
+      },
+      "confirmCancel": {
+        "title": "批量取消邮件",
+        "irreversible": "此操作不可撤销。",
+        "message": "即将取消 {{count}} 封邮件，仅影响待发/排队中的邮件。",
+        "andMore": "…以及另外 {{count}} 封",
+        "cancelling": "取消中…",
+        "confirm": "确认取消"
+      }
+    },
+    "users": {
+      "title": "用户管理",
+      "totalCount": "共 {{count}} 名用户",
+      "newUser": "新建用户",
+      "searchPlaceholder": "按用户名或邮箱搜索",
+      "allRoles": "全部角色",
+      "noUsers": "暂无用户",
+      "roles": {
+        "admin": "管理员",
+        "manager": "经理",
+        "operator": "操作员"
+      },
+      "status": {
+        "frozen": "已冻结"
+      },
+      "table": {
+        "colUser": "用户",
+        "colRole": "角色",
+        "colLastLogin": "最近登录"
+      },
+      "modal": {
+        "editTitle": "编辑用户",
+        "newTitle": "新建用户",
+        "username": "用户名",
+        "email": "邮箱",
+        "password": "密码",
+        "role": "角色",
+        "saving": "保存中…"
+      },
+      "actions": {
+        "resetPassword": "重置密码",
+        "freeze": "冻结",
+        "unfreeze": "解冻",
+        "forceLogout": "强制下线",
+        "loginHistory": "登录历史"
+      },
+      "destructive": {
+        "adminPasswordLabel": "管理员密码",
+        "adminPasswordPlaceholder": "请输入密码确认",
+        "processing": "处理中…"
+      },
+      "resetPassword": {
+        "title": "重置密码",
+        "description": "为用户 {{username}} 设置新密码。",
+        "confirm": "重置密码",
+        "newPasswordLabel": "新密码",
+        "newPasswordPlaceholder": "输入新密码"
+      },
+      "forceLogout": {
+        "title": "强制下线",
+        "description": "撤销 {{username}} 的所有活跃会话，用户需重新登录。",
+        "confirm": "强制下线"
+      },
+      "freeze": {
+        "titleFreeze": "冻结账号",
+        "titleUnfreeze": "解冻账号",
+        "descriptionFreeze": "冻结 {{username}} 的账号，该用户将无法登录。",
+        "descriptionUnfreeze": "恢复 {{username}} 的账号访问权限。"
+      },
+      "loginHistory": {
+        "title": "登录历史",
+        "noHistory": "暂无登录记录",
+        "colTime": "时间",
+        "colIp": "IP",
+        "colReason": "失败原因",
+        "ok": "成功",
+        "failed": "失败"
+      }
+    },
+    "holidays": {
+      "title": "节假日管理",
+      "subtitle": "管理节日邮件活动与敏感地区配置",
+      "addHoliday": "添加节日",
+      "viewList": "列表",
+      "viewCalendar": "日历",
+      "noHolidays": "暂无节日配置",
+      "deleteConfirm": "删除该节日？",
+      "table": {
+        "colHoliday": "节日",
+        "colDate": "日期",
+        "colSent": "发送量",
+        "colOpenPct": "打开率",
+        "colReplyPct": "回复率",
+        "colRegions": "敏感地区",
+        "noRegions": "无"
+      },
+      "actions": {
+        "sensitiveRegions": "敏感地区"
+      },
+      "modal": {
+        "editTitle": "编辑节日",
+        "addTitle": "添加节日",
+        "nameLabel": "名称",
+        "namePlaceholder": "如：圣诞节",
+        "dateLabel": "日期",
+        "greetingLabel": "自定义祝福语（可选）",
+        "greetingPlaceholder": "自定义祝福消息…",
+        "recurringLabel": "每年重复",
+        "activeLabel": "启用",
+        "saving": "保存中…"
+      },
+      "sensitiveRegions": {
+        "title": "敏感地区",
+        "hint": "逗号分隔的地区/国家代码。这些地区的用户将不会收到该节日邮件。",
+        "placeholder": "如：CN,KP,IR"
+      },
+      "report": {
+        "loading": "加载报告中…",
+        "noData": "暂无历史发送数据",
+        "title": "历年投放报告",
+        "labelSent": "发送量",
+        "labelOpenRate": "打开率",
+        "labelReplyRate": "回复率",
+        "yearSummary": "{{sent}} 封 · 打开 {{openRate}}% · 回复 {{replyRate}}%"
+      },
+      "calendar": {
+        "blocked": "屏蔽：{{regions}}",
+        "sentCount": "{{count}} 封"
+      }
+    },
+    "influencers": {
+      "title": "网红库管理",
+      "subtitle": "去重、监控数据质量、批量验证邮箱域名",
+      "tabs": {
+        "all": "全量列表",
+        "duplicates": "重复数据",
+        "quality": "质量报告"
+      },
+      "all": {
+        "searchPlaceholder": "按姓名或邮箱搜索…",
+        "colName": "名称",
+        "colEmail": "邮箱",
+        "colPlatform": "平台",
+        "colFollowers": "粉丝数",
+        "colEmailsSent": "已发邮件",
+        "colTasks": "任务",
+        "colTags": "标签",
+        "total": "共 {{count}} 位"
+      },
+      "merge": {
+        "title": "确认合并",
+        "keepPrimary": "保留（主记录）",
+        "deleteSecondaries": "删除（副记录）",
+        "emailsRelinked": "{{count}} 封邮件将被重新关联",
+        "tags": "{{count}} 个标签：{{list}}",
+        "tasks": "{{count}} 个任务",
+        "warning": "此操作不可撤销。被删除记录的邮件、标签和任务关联将迁移至主记录。",
+        "confirm": "合并并删除"
+      },
+      "duplicates": {
+        "hint": "同平台名称相似度 > 90% 的网红",
+        "noDuplicates": "未发现重复记录。",
+        "groupSummary": "{{count}} 条相似记录 · {{type}}",
+        "mergeGroup": "合并分组",
+        "primaryBadge": "主记录",
+        "infEmails": "{{count}} 封邮件",
+        "infTags": "{{count}} 个标签",
+        "infTasks": "{{count}} 个任务",
+        "mergeSuccess": "合并成功",
+        "mergeFailed": "合并失败"
+      },
+      "quality": {
+        "subtitle": "全体网红的数据质量总览",
+        "issue": "有问题",
+        "ok": "正常",
+        "emptyEmail": "邮箱为空",
+        "invalidEmail": "邮箱无效",
+        "noFollowers": "无粉丝数",
+        "noBio": "无简介",
+        "mxTitle": "批量 MX 验证",
+        "mxSubtitle": "通过 DNS MX 记录验证全部 {{count}} 位网红的邮箱域名",
+        "mxStart": "开始 MX 验证",
+        "mxVerifying": "验证中…",
+        "mxProgress": "{{done}} / {{total}} 已检查",
+        "mxDone": "完成",
+        "mxPassed": "{{count}} 通过",
+        "mxFailed": "{{count}} 失败"
+      }
     }
   }
 }

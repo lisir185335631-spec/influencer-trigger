@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { AlertTriangle, Ban, Mail, RefreshCw, Trash2, X } from 'lucide-react'
 import {
   type AdminEmailItem,
@@ -56,6 +57,7 @@ const inputCls =
   'w-full text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:ring-1 focus:ring-indigo-300 bg-white'
 
 export default function EmailsAdminPage() {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<'flow' | 'blacklist'>('flow')
 
   // Stats
@@ -169,49 +171,49 @@ export default function EmailsAdminPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Email Admin</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Global email flow & blacklist management</p>
+          <h1 className="text-xl font-semibold text-gray-900">{t('admin.emails.title')}</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{t('admin.emails.subtitle')}</p>
         </div>
         <button
           onClick={() => { loadEmails(); loadStats() }}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 transition-colors"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('admin.common.refresh')}
         </button>
       </div>
 
       {/* Metric cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Today Sent" value={stats?.today_sent ?? '—'} />
+        <StatCard label={t('admin.emails.stats.todaySent')} value={stats?.today_sent ?? '—'} />
         <StatCard
-          label="Bounce Rate"
+          label={t('admin.emails.stats.bounceRate')}
           value={stats ? `${stats.bounce_rate}%` : '—'}
-          sub={`of ${stats?.total_sent ?? 0} total sent`}
+          sub={t('admin.emails.stats.ofTotalSent', { count: stats?.total_sent ?? 0 })}
         />
         <StatCard
-          label="Open Rate"
+          label={t('admin.emails.stats.openRate')}
           value={stats ? `${stats.open_rate}%` : '—'}
         />
         <StatCard
-          label="Reply Rate"
+          label={t('admin.emails.stats.replyRate')}
           value={stats ? `${stats.reply_rate}%` : '—'}
         />
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-100">
-        {(['flow', 'blacklist'] as const).map((t) => (
+        {(['flow', 'blacklist'] as const).map((tabKey) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={tabKey}
+            onClick={() => setTab(tabKey)}
             className={`px-4 py-2 text-sm font-medium transition-colors border-b-2 -mb-px ${
-              tab === t
+              tab === tabKey
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {t === 'flow' ? 'Email Flow' : 'Blacklist'}
+            {tabKey === 'flow' ? t('admin.emails.tabs.flow') : t('admin.emails.tabs.blacklist')}
           </button>
         ))}
       </div>
@@ -222,19 +224,19 @@ export default function EmailsAdminPage() {
           <div className="bg-white border border-gray-100 rounded-xl p-4">
             <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Status</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('admin.common.status')}</label>
                 <select
                   value={draftFilters.status ?? ''}
                   onChange={(e) => setDraftFilters({ ...draftFilters, status: e.target.value || undefined })}
                   className={inputCls}
                 >
                   {STATUS_OPTIONS.map((s) => (
-                    <option key={s} value={s}>{s || 'All statuses'}</option>
+                    <option key={s} value={s}>{s || t('admin.emails.filter.allStatuses')}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Sender Email</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('admin.emails.filter.senderEmail')}</label>
                 <input
                   type="text"
                   placeholder="@domain.com"
@@ -244,7 +246,7 @@ export default function EmailsAdminPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Recipient</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('admin.emails.filter.recipient')}</label>
                 <input
                   type="text"
                   placeholder="recipient@…"
@@ -254,7 +256,7 @@ export default function EmailsAdminPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Sent From</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('admin.emails.filter.sentFrom')}</label>
                 <input
                   type="date"
                   value={draftFilters.sent_at_start ?? ''}
@@ -263,7 +265,7 @@ export default function EmailsAdminPage() {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Sent To</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('admin.emails.filter.sentTo')}</label>
                 <input
                   type="date"
                   value={draftFilters.sent_at_end ?? ''}
@@ -276,13 +278,13 @@ export default function EmailsAdminPage() {
                   onClick={() => { setFilters(draftFilters); setPage(1); setSelected(new Set()) }}
                   className="flex-1 px-3 py-1.5 text-sm font-medium bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 transition-colors"
                 >
-                  Apply
+                  {t('admin.common.filter')}
                 </button>
                 <button
                   onClick={() => { setDraftFilters({}); setFilters({}); setPage(1); setSelected(new Set()) }}
                   className="flex-1 px-3 py-1.5 text-sm font-medium text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
                 >
-                  Reset
+                  {t('admin.emails.filter.reset')}
                 </button>
               </div>
             </div>
@@ -291,19 +293,21 @@ export default function EmailsAdminPage() {
           {/* Batch action bar */}
           {selected.size > 0 && (
             <div className="flex items-center gap-3 bg-indigo-50 border border-indigo-100 rounded-xl px-4 py-2.5">
-              <span className="text-sm text-indigo-700 font-medium">{selected.size} selected</span>
+              <span className="text-sm text-indigo-700 font-medium">
+                {t('admin.common.selected', { count: selected.size })}
+              </span>
               <button
                 onClick={() => setShowConfirm(true)}
                 className="flex items-center gap-1.5 text-sm px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 transition-colors"
               >
                 <X className="w-4 h-4" />
-                Batch Cancel
+                {t('admin.emails.flow.batchCancel')}
               </button>
               <button
                 onClick={() => setSelected(new Set())}
                 className="text-sm text-gray-500 hover:text-gray-700"
               >
-                Clear selection
+                {t('admin.emails.flow.clearSelection')}
               </button>
             </div>
           )}
@@ -317,7 +321,7 @@ export default function EmailsAdminPage() {
             ) : emails.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-40 text-sm text-gray-400">
                 <Mail className="w-8 h-8 mb-2 text-gray-200" />
-                No emails found.
+                {t('admin.emails.flow.noEmails')}
               </div>
             ) : (
               <>
@@ -333,13 +337,13 @@ export default function EmailsAdminPage() {
                             className="rounded"
                           />
                         </th>
-                        <th className="px-4 py-3 text-left">Time</th>
-                        <th className="px-4 py-3 text-left">Recipient</th>
-                        <th className="px-4 py-3 text-left">Sender</th>
-                        <th className="px-4 py-3 text-left">Status</th>
-                        <th className="px-4 py-3 text-left">Template</th>
-                        <th className="px-4 py-3 text-left">Opened</th>
-                        <th className="px-4 py-3 text-left">Replied</th>
+                        <th className="px-4 py-3 text-left">{t('admin.emails.table.time')}</th>
+                        <th className="px-4 py-3 text-left">{t('admin.emails.table.recipient')}</th>
+                        <th className="px-4 py-3 text-left">{t('admin.emails.table.sender')}</th>
+                        <th className="px-4 py-3 text-left">{t('admin.common.status')}</th>
+                        <th className="px-4 py-3 text-left">{t('admin.emails.table.template')}</th>
+                        <th className="px-4 py-3 text-left">{t('admin.emails.table.opened')}</th>
+                        <th className="px-4 py-3 text-left">{t('admin.emails.table.replied')}</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -384,14 +388,14 @@ export default function EmailsAdminPage() {
                           </td>
                           <td className="px-4 py-3 text-xs">
                             {email.opened ? (
-                              <span className="text-green-600 font-medium">Yes</span>
+                              <span className="text-green-600 font-medium">{t('admin.emails.table.yes')}</span>
                             ) : (
                               <span className="text-gray-300">—</span>
                             )}
                           </td>
                           <td className="px-4 py-3 text-xs">
                             {email.replied ? (
-                              <span className="text-purple-600 font-medium">Yes</span>
+                              <span className="text-purple-600 font-medium">{t('admin.emails.table.yes')}</span>
                             ) : (
                               <span className="text-gray-300">—</span>
                             )}
@@ -405,7 +409,7 @@ export default function EmailsAdminPage() {
                 {/* Pagination */}
                 <div className="flex items-center justify-between px-4 py-3 border-t border-gray-100">
                   <span className="text-xs text-gray-400">
-                    Page {page} of {totalPages} · {total.toLocaleString()} total
+                    {t('admin.emails.flow.pageInfo', { page, totalPages, total: total.toLocaleString() })}
                   </span>
                   <div className="flex items-center gap-1">
                     <button
@@ -456,7 +460,7 @@ export default function EmailsAdminPage() {
           <div className="bg-white border border-gray-100 rounded-xl p-5">
             <h2 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">
               <Ban className="w-4 h-4 text-red-500" />
-              Add to Blacklist
+              {t('admin.emails.blacklist.addTitle')}
             </h2>
             <div className="flex gap-3">
               <input
@@ -468,7 +472,7 @@ export default function EmailsAdminPage() {
               />
               <input
                 type="text"
-                placeholder="Reason (optional)"
+                placeholder={t('admin.emails.blacklist.reasonPlaceholder')}
                 value={blReason}
                 onChange={(e) => setBlReason(e.target.value)}
                 className="flex-1 text-sm border border-gray-200 rounded-lg px-3 py-2 focus:outline-none focus:ring-1 focus:ring-red-300"
@@ -478,7 +482,7 @@ export default function EmailsAdminPage() {
                 disabled={blAdding || !blEmail.trim()}
                 className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
               >
-                {blAdding ? 'Adding…' : 'Add'}
+                {blAdding ? t('admin.emails.blacklist.adding') : t('admin.common.add')}
               </button>
             </div>
           </div>
@@ -488,15 +492,15 @@ export default function EmailsAdminPage() {
             {blacklist.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-32 text-sm text-gray-400">
                 <Ban className="w-7 h-7 mb-2 text-gray-200" />
-                Blacklist is empty.
+                {t('admin.emails.blacklist.empty')}
               </div>
             ) : (
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wider">
-                    <th className="px-4 py-3 text-left">Email</th>
-                    <th className="px-4 py-3 text-left">Reason</th>
-                    <th className="px-4 py-3 text-left">Added At</th>
+                    <th className="px-4 py-3 text-left">{t('admin.emails.blacklist.colEmail')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.emails.blacklist.colReason')}</th>
+                    <th className="px-4 py-3 text-left">{t('admin.emails.blacklist.colAddedAt')}</th>
                     <th className="px-4 py-3 w-12"></th>
                   </tr>
                 </thead>
@@ -512,7 +516,7 @@ export default function EmailsAdminPage() {
                         <button
                           onClick={() => handleRemoveBlacklist(entry.id)}
                           className="p-1 text-gray-400 hover:text-red-600 transition-colors"
-                          title="Remove"
+                          title={t('admin.emails.blacklist.removeTooltip')}
                         >
                           <Trash2 className="w-4 h-4" />
                         </button>
@@ -535,14 +539,13 @@ export default function EmailsAdminPage() {
                 <AlertTriangle className="w-5 h-5 text-red-600" />
               </div>
               <div>
-                <h3 className="text-base font-semibold text-gray-900">Batch Cancel Emails</h3>
-                <p className="text-xs text-gray-400">This action cannot be undone.</p>
+                <h3 className="text-base font-semibold text-gray-900">{t('admin.emails.confirmCancel.title')}</h3>
+                <p className="text-xs text-gray-400">{t('admin.emails.confirmCancel.irreversible')}</p>
               </div>
             </div>
 
             <p className="text-sm text-gray-600 mb-2">
-              You are about to cancel <span className="font-semibold text-gray-900">{selected.size}</span> email(s).
-              Only pending/queued emails will be affected.
+              {t('admin.emails.confirmCancel.message', { count: selected.size })}
             </p>
 
             <div className="max-h-40 overflow-y-auto mb-4 bg-gray-50 rounded-lg p-3 space-y-1">
@@ -550,7 +553,9 @@ export default function EmailsAdminPage() {
                 <div key={e.id} className="text-xs font-mono text-gray-600">{e.recipient_email}</div>
               ))}
               {selectedEmails.length > 20 && (
-                <div className="text-xs text-gray-400 italic">…and {selectedEmails.length - 20} more</div>
+                <div className="text-xs text-gray-400 italic">
+                  {t('admin.emails.confirmCancel.andMore', { count: selectedEmails.length - 20 })}
+                </div>
               )}
             </div>
 
@@ -559,14 +564,14 @@ export default function EmailsAdminPage() {
                 onClick={() => setShowConfirm(false)}
                 className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors"
               >
-                Cancel
+                {t('admin.common.cancel')}
               </button>
               <button
                 onClick={handleBatchCancel}
                 disabled={cancelling}
                 className="px-4 py-2 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-50 transition-colors"
               >
-                {cancelling ? 'Cancelling…' : 'Confirm Cancel'}
+                {cancelling ? t('admin.emails.confirmCancel.cancelling') : t('admin.emails.confirmCancel.confirm')}
               </button>
             </div>
           </div>

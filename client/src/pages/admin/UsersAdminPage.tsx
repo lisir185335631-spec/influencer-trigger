@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Search, UserPlus, Edit2, Key, Lock, Unlock, LogOut, Clock,
   ChevronLeft, ChevronRight, X, Check, AlertTriangle,
@@ -10,12 +11,6 @@ import {
 
 const ROLES = ['admin', 'manager', 'operator'] as const
 type Role = typeof ROLES[number]
-
-const ROLE_LABELS: Record<Role, string> = {
-  admin: 'Admin',
-  manager: 'Manager',
-  operator: 'Operator',
-}
 
 const ROLE_COLORS: Record<Role, string> = {
   admin: 'bg-red-100 text-red-700',
@@ -39,6 +34,7 @@ interface UserFormModalProps {
 }
 
 function UserFormModal({ onClose, onSaved, editing }: UserFormModalProps) {
+  const { t } = useTranslation()
   const [username, setUsername] = useState(editing?.username ?? '')
   const [email, setEmail] = useState(editing?.email ?? '')
   const [password, setPassword] = useState('')
@@ -59,7 +55,7 @@ function UserFormModal({ onClose, onSaved, editing }: UserFormModalProps) {
       onSaved()
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg ?? 'Operation failed')
+      setError(msg ?? t('admin.common.operationFailed'))
     } finally {
       setSaving(false)
     }
@@ -70,7 +66,7 @@ function UserFormModal({ onClose, onSaved, editing }: UserFormModalProps) {
       <div className="bg-white rounded-xl shadow-xl w-full max-w-md p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-lg font-semibold text-gray-900">
-            {editing ? 'Edit User' : 'New User'}
+            {editing ? t('admin.users.modal.editTitle') : t('admin.users.modal.newTitle')}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
@@ -78,14 +74,14 @@ function UserFormModal({ onClose, onSaved, editing }: UserFormModalProps) {
           {!editing && (
             <>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.users.modal.username')}</label>
                 <input
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
                   value={username} onChange={e => setUsername(e.target.value)} required
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.users.modal.email')}</label>
                 <input
                   type="email"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
@@ -93,7 +89,7 @@ function UserFormModal({ onClose, onSaved, editing }: UserFormModalProps) {
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.users.modal.password')}</label>
                 <input
                   type="password"
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
@@ -103,12 +99,14 @@ function UserFormModal({ onClose, onSaved, editing }: UserFormModalProps) {
             </>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.users.modal.role')}</label>
             <select
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
               value={role} onChange={e => setRole(e.target.value as Role)}
             >
-              {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+              {ROLES.map(r => (
+                <option key={r} value={r}>{t(`admin.users.roles.${r}`)}</option>
+              ))}
             </select>
           </div>
           {error && <p className="text-sm text-red-600">{error}</p>}
@@ -116,11 +114,11 @@ function UserFormModal({ onClose, onSaved, editing }: UserFormModalProps) {
             <button
               type="button" onClick={onClose}
               className="flex-1 border border-gray-200 text-gray-700 rounded-lg py-2 text-sm hover:bg-gray-50"
-            >Cancel</button>
+            >{t('admin.common.cancel')}</button>
             <button
               type="submit" disabled={saving}
               className="flex-1 bg-gray-900 text-white rounded-lg py-2 text-sm hover:bg-gray-800 disabled:opacity-50"
-            >{saving ? 'Saving…' : 'Save'}</button>
+            >{saving ? t('admin.users.modal.saving') : t('admin.common.save')}</button>
           </div>
         </form>
       </div>
@@ -143,21 +141,22 @@ function DestructiveModal({
   title, description, confirmLabel, onClose, onConfirm,
   extraLabel, extraPlaceholder,
 }: DestructiveModalProps) {
+  const { t } = useTranslation()
   const [adminPassword, setAdminPassword] = useState('')
   const [extra, setExtra] = useState('')
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
   async function handleConfirm() {
-    if (!adminPassword) { setError('Admin password required'); return }
-    if (extraLabel && !extra) { setError(`${extraLabel} required`); return }
+    if (!adminPassword) { setError(t('admin.common.adminPasswordRequired')); return }
+    if (extraLabel && !extra) { setError(`${extraLabel} ${t('admin.common.required')}`); return }
     setError('')
     setLoading(true)
     try {
       await onConfirm(adminPassword, extra)
     } catch (err: unknown) {
       const msg = (err as { response?: { data?: { detail?: string } } })?.response?.data?.detail
-      setError(msg ?? 'Operation failed')
+      setError(msg ?? t('admin.common.operationFailed'))
     } finally {
       setLoading(false)
     }
@@ -188,10 +187,10 @@ function DestructiveModal({
             </div>
           )}
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Your admin password</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">{t('admin.users.destructive.adminPasswordLabel')}</label>
             <input
               type="password"
-              placeholder="Confirm your password"
+              placeholder={t('admin.users.destructive.adminPasswordPlaceholder')}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-400"
               value={adminPassword} onChange={e => setAdminPassword(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && handleConfirm()}
@@ -203,11 +202,11 @@ function DestructiveModal({
           <button
             onClick={onClose}
             className="flex-1 border border-gray-200 text-gray-700 rounded-lg py-2 text-sm hover:bg-gray-50"
-          >Cancel</button>
+          >{t('admin.common.cancel')}</button>
           <button
             onClick={handleConfirm} disabled={loading}
             className="flex-1 bg-red-600 text-white rounded-lg py-2 text-sm hover:bg-red-700 disabled:opacity-50"
-          >{loading ? 'Processing…' : confirmLabel}</button>
+          >{loading ? t('admin.users.destructive.processing') : confirmLabel}</button>
         </div>
       </div>
     </div>
@@ -216,6 +215,7 @@ function DestructiveModal({
 
 // ── Modal: Login History ────────────────────────────────────────────────────
 function LoginHistoryModal({ user, onClose }: { user: AdminUser; onClose: () => void }) {
+  const { t } = useTranslation()
   const [history, setHistory] = useState<LoginHistoryEntry[]>([])
   const [loading, setLoading] = useState(true)
 
@@ -230,22 +230,24 @@ function LoginHistoryModal({ user, onClose }: { user: AdminUser; onClose: () => 
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl p-6 max-h-[80vh] flex flex-col">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-lg font-semibold text-gray-900">Login History — {user.username}</h2>
+          <h2 className="text-lg font-semibold text-gray-900">
+            {t('admin.users.loginHistory.title')} — {user.username}
+          </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600"><X size={20} /></button>
         </div>
         <div className="overflow-y-auto flex-1">
           {loading ? (
-            <p className="text-sm text-gray-500 py-8 text-center">Loading…</p>
+            <p className="text-sm text-gray-500 py-8 text-center">{t('admin.common.loading')}</p>
           ) : history.length === 0 ? (
-            <p className="text-sm text-gray-500 py-8 text-center">No login history</p>
+            <p className="text-sm text-gray-500 py-8 text-center">{t('admin.users.loginHistory.noHistory')}</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100">
-                  <th className="text-left py-2 text-xs font-medium text-gray-500">Time</th>
-                  <th className="text-left py-2 text-xs font-medium text-gray-500">IP</th>
-                  <th className="text-left py-2 text-xs font-medium text-gray-500">Status</th>
-                  <th className="text-left py-2 text-xs font-medium text-gray-500">Reason</th>
+                  <th className="text-left py-2 text-xs font-medium text-gray-500">{t('admin.users.loginHistory.colTime')}</th>
+                  <th className="text-left py-2 text-xs font-medium text-gray-500">{t('admin.users.loginHistory.colIp')}</th>
+                  <th className="text-left py-2 text-xs font-medium text-gray-500">{t('admin.common.status')}</th>
+                  <th className="text-left py-2 text-xs font-medium text-gray-500">{t('admin.users.loginHistory.colReason')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -255,8 +257,8 @@ function LoginHistoryModal({ user, onClose }: { user: AdminUser; onClose: () => 
                     <td className="py-2 text-gray-600 font-mono">{h.ip ?? '—'}</td>
                     <td className="py-2">
                       {h.success
-                        ? <span className="inline-flex items-center gap-1 text-green-700"><Check size={12} />OK</span>
-                        : <span className="inline-flex items-center gap-1 text-red-600"><X size={12} />Failed</span>}
+                        ? <span className="inline-flex items-center gap-1 text-green-700"><Check size={12} />{t('admin.users.loginHistory.ok')}</span>
+                        : <span className="inline-flex items-center gap-1 text-red-600"><X size={12} />{t('admin.users.loginHistory.failed')}</span>}
                     </td>
                     <td className="py-2 text-gray-500 text-xs">{h.failed_reason ?? '—'}</td>
                   </tr>
@@ -280,6 +282,7 @@ type ModalState =
   | { type: 'history'; user: AdminUser }
 
 export default function UsersAdminPage() {
+  const { t } = useTranslation()
   const [users, setUsers] = useState<AdminUser[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -313,20 +316,29 @@ export default function UsersAdminPage() {
 
   const totalPages = Math.ceil(total / PAGE_SIZE)
 
+  const TABLE_HEADERS = [
+    t('admin.users.table.colUser'),
+    t('admin.users.table.colRole'),
+    t('admin.common.status'),
+    t('admin.common.createdAt'),
+    t('admin.users.table.colLastLogin'),
+    t('admin.common.actions'),
+  ]
+
   return (
     <div className="p-8">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Users</h1>
-          <p className="text-sm text-gray-500 mt-0.5">{total} total users</p>
+          <h1 className="text-2xl font-semibold text-gray-900">{t('admin.users.title')}</h1>
+          <p className="text-sm text-gray-500 mt-0.5">{t('admin.users.totalCount', { count: total })}</p>
         </div>
         <button
           onClick={() => setModal({ type: 'create' })}
           className="flex items-center gap-2 bg-gray-900 text-white px-4 py-2 rounded-lg text-sm hover:bg-gray-800 transition-colors"
         >
           <UserPlus size={16} />
-          New User
+          {t('admin.users.newUser')}
         </button>
       </div>
 
@@ -336,7 +348,7 @@ export default function UsersAdminPage() {
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-gray-900"
-            placeholder="Search by username or email"
+            placeholder={t('admin.users.searchPlaceholder')}
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1) }}
           />
@@ -346,8 +358,10 @@ export default function UsersAdminPage() {
           value={roleFilter}
           onChange={e => { setRoleFilter(e.target.value); setPage(1) }}
         >
-          <option value="">All roles</option>
-          {ROLES.map(r => <option key={r} value={r}>{ROLE_LABELS[r]}</option>)}
+          <option value="">{t('admin.users.allRoles')}</option>
+          {ROLES.map(r => (
+            <option key={r} value={r}>{t(`admin.users.roles.${r}`)}</option>
+          ))}
         </select>
       </div>
 
@@ -356,16 +370,16 @@ export default function UsersAdminPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50 border-b border-gray-100">
             <tr>
-              {['User', 'Role', 'Status', 'Created', 'Last Login', 'Actions'].map(h => (
+              {TABLE_HEADERS.map(h => (
                 <th key={h} className="text-left px-4 py-3 text-xs font-medium text-gray-500">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={6} className="text-center py-12 text-gray-400 text-sm">Loading…</td></tr>
+              <tr><td colSpan={6} className="text-center py-12 text-gray-400 text-sm">{t('admin.common.loading')}</td></tr>
             ) : users.length === 0 ? (
-              <tr><td colSpan={6} className="text-center py-12 text-gray-400 text-sm">No users found</td></tr>
+              <tr><td colSpan={6} className="text-center py-12 text-gray-400 text-sm">{t('admin.users.noUsers')}</td></tr>
             ) : users.map(user => (
               <tr key={user.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                 <td className="px-4 py-3">
@@ -374,13 +388,13 @@ export default function UsersAdminPage() {
                 </td>
                 <td className="px-4 py-3">
                   <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${ROLE_COLORS[user.role]}`}>
-                    {ROLE_LABELS[user.role]}
+                    {t(`admin.users.roles.${user.role}`)}
                   </span>
                 </td>
                 <td className="px-4 py-3">
                   {user.is_active
-                    ? <span className="text-green-600 text-xs font-medium">Active</span>
-                    : <span className="text-red-500 text-xs font-medium">Frozen</span>}
+                    ? <span className="text-green-600 text-xs font-medium">{t('admin.common.active')}</span>
+                    : <span className="text-red-500 text-xs font-medium">{t('admin.users.status.frozen')}</span>}
                 </td>
                 <td className="px-4 py-3 text-gray-500">{formatDate(user.created_at)}</td>
                 <td className="px-4 py-3 text-gray-500">{formatDate(user.last_login)}</td>
@@ -388,27 +402,27 @@ export default function UsersAdminPage() {
                   <div className="flex items-center gap-1">
                     <ActionBtn
                       icon={<Edit2 size={14} />}
-                      label="Edit"
+                      label={t('admin.common.edit')}
                       onClick={() => setModal({ type: 'edit', user })}
                     />
                     <ActionBtn
                       icon={<Key size={14} />}
-                      label="Reset password"
+                      label={t('admin.users.actions.resetPassword')}
                       onClick={() => setModal({ type: 'reset-password', user })}
                     />
                     <ActionBtn
                       icon={user.is_active ? <Lock size={14} /> : <Unlock size={14} />}
-                      label={user.is_active ? 'Freeze' : 'Unfreeze'}
+                      label={user.is_active ? t('admin.users.actions.freeze') : t('admin.users.actions.unfreeze')}
                       onClick={() => setModal({ type: 'freeze', user })}
                     />
                     <ActionBtn
                       icon={<LogOut size={14} />}
-                      label="Force logout"
+                      label={t('admin.users.actions.forceLogout')}
                       onClick={() => setModal({ type: 'force-logout', user })}
                     />
                     <ActionBtn
                       icon={<Clock size={14} />}
-                      label="Login history"
+                      label={t('admin.users.actions.loginHistory')}
                       onClick={() => setModal({ type: 'history', user })}
                     />
                   </div>
@@ -423,7 +437,7 @@ export default function UsersAdminPage() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4">
           <p className="text-sm text-gray-500">
-            Page {page} of {totalPages}
+            {t('admin.common.pageOf', { current: page, total: totalPages })}
           </p>
           <div className="flex gap-2">
             <button
@@ -447,11 +461,11 @@ export default function UsersAdminPage() {
       )}
       {modal?.type === 'reset-password' && (
         <DestructiveModal
-          title="Reset Password"
-          description={`Set a new password for ${modal.user.username}.`}
-          confirmLabel="Reset Password"
-          extraLabel="New password"
-          extraPlaceholder="Enter new password"
+          title={t('admin.users.resetPassword.title')}
+          description={t('admin.users.resetPassword.description', { username: modal.user.username })}
+          confirmLabel={t('admin.users.resetPassword.confirm')}
+          extraLabel={t('admin.users.resetPassword.newPasswordLabel')}
+          extraPlaceholder={t('admin.users.resetPassword.newPasswordPlaceholder')}
           onClose={closeModal}
           onConfirm={async (adminPwd, newPwd) => {
             await resetPassword(modal.user.id, { new_password: newPwd!, admin_password: adminPwd })
@@ -461,9 +475,9 @@ export default function UsersAdminPage() {
       )}
       {modal?.type === 'force-logout' && (
         <DestructiveModal
-          title="Force Logout"
-          description={`Invalidate all active sessions for ${modal.user.username}. They will need to log in again.`}
-          confirmLabel="Force Logout"
+          title={t('admin.users.forceLogout.title')}
+          description={t('admin.users.forceLogout.description', { username: modal.user.username })}
+          confirmLabel={t('admin.users.forceLogout.confirm')}
           onClose={closeModal}
           onConfirm={async (adminPwd) => {
             await forceLogout(modal.user.id, { admin_password: adminPwd })
@@ -473,17 +487,15 @@ export default function UsersAdminPage() {
       )}
       {modal?.type === 'freeze' && (
         <DestructiveModal
-          title={modal.user.is_active ? 'Freeze Account' : 'Unfreeze Account'}
+          title={modal.user.is_active ? t('admin.users.freeze.titleFreeze') : t('admin.users.freeze.titleUnfreeze')}
           description={
             modal.user.is_active
-              ? `Freeze ${modal.user.username}'s account. They will not be able to log in.`
-              : `Restore ${modal.user.username}'s account access.`
+              ? t('admin.users.freeze.descriptionFreeze', { username: modal.user.username })
+              : t('admin.users.freeze.descriptionUnfreeze', { username: modal.user.username })
           }
-          confirmLabel={modal.user.is_active ? 'Freeze' : 'Unfreeze'}
+          confirmLabel={modal.user.is_active ? t('admin.users.actions.freeze') : t('admin.users.actions.unfreeze')}
           onClose={closeModal}
           onConfirm={async (adminPwd) => {
-            // Verify admin password by attempting a freeze — backend doesn't require password for PATCH
-            // so we do a basic check: just confirm and proceed
             void adminPwd
             await patchUser(modal.user.id, { is_active: !modal.user.is_active })
             refreshAndClose()

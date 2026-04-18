@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { CheckCircle2, Merge, RefreshCw, Search, Users, X } from 'lucide-react'
 import { Cell, Pie, PieChart, Tooltip } from 'recharts'
 import {
@@ -44,10 +45,11 @@ function QualityPie({
   total: number
   color: string
 }) {
+  const { t } = useTranslation()
   const ok = total - metric.count
   const data = [
-    { name: 'Issue', value: metric.count },
-    { name: 'OK', value: ok },
+    { name: t('admin.influencers.quality.issue'), value: metric.count },
+    { name: t('admin.influencers.quality.ok'), value: ok },
   ]
   return (
     <div className="bg-white border border-gray-100 rounded-xl p-5 flex flex-col items-center gap-2">
@@ -95,14 +97,15 @@ function MergeModal({
   onConfirm: () => void
   onCancel: () => void
 }) {
-  const primary = group.influencers.find((i) => i.id === primaryId)
-  const secondaries = group.influencers.filter((i) => i.id !== primaryId)
+  const { t } = useTranslation()
+  const primary = group.influencers.find((inf) => inf.id === primaryId)
+  const secondaries = group.influencers.filter((inf) => inf.id !== primaryId)
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
       <div className="bg-white rounded-2xl shadow-2xl w-full max-w-lg mx-4 overflow-hidden">
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">Confirm Merge</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{t('admin.influencers.merge.title')}</h2>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-700">
             <X className="w-5 h-5" />
           </button>
@@ -110,7 +113,7 @@ function MergeModal({
         <div className="px-6 py-4 space-y-4 max-h-96 overflow-y-auto">
           <div>
             <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">
-              Keep (Primary)
+              {t('admin.influencers.merge.keepPrimary')}
             </div>
             {primary && (
               <div className="bg-green-50 border border-green-200 rounded-lg px-3 py-2 text-sm">
@@ -121,7 +124,7 @@ function MergeModal({
           </div>
           <div>
             <div className="text-xs font-medium text-gray-400 uppercase tracking-wider mb-1">
-              Delete (Secondaries)
+              {t('admin.influencers.merge.deleteSecondaries')}
             </div>
             <div className="space-y-2">
               {secondaries.map((s) => (
@@ -132,12 +135,12 @@ function MergeModal({
                   <div className="font-medium text-gray-800">{s.nickname ?? '—'}</div>
                   <div className="text-gray-500 text-xs">{s.email}</div>
                   <div className="flex gap-3 mt-1 text-xs text-gray-400">
-                    <span>{s.email_count} emails will be re-linked</span>
+                    <span>{t('admin.influencers.merge.emailsRelinked', { count: s.email_count })}</span>
                     {s.tags.length > 0 && (
-                      <span>{s.tags.length} tags: {s.tags.join(', ')}</span>
+                      <span>{t('admin.influencers.merge.tags', { count: s.tags.length, list: s.tags.join(', ') })}</span>
                     )}
                     {s.task_ids.length > 0 && (
-                      <span>{s.task_ids.length} task(s)</span>
+                      <span>{t('admin.influencers.merge.tasks', { count: s.task_ids.length })}</span>
                     )}
                   </div>
                 </div>
@@ -145,8 +148,7 @@ function MergeModal({
             </div>
           </div>
           <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            This action is irreversible. All emails, tags, and task links from deleted records will be
-            migrated to the primary record.
+            {t('admin.influencers.merge.warning')}
           </p>
         </div>
         <div className="flex justify-end gap-3 px-6 py-4 border-t border-gray-100">
@@ -154,13 +156,13 @@ function MergeModal({
             onClick={onCancel}
             className="px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-lg hover:bg-gray-50"
           >
-            Cancel
+            {t('admin.common.cancel')}
           </button>
           <button
             onClick={onConfirm}
             className="px-4 py-2 text-sm text-white bg-red-600 rounded-lg hover:bg-red-700"
           >
-            Merge & Delete
+            {t('admin.influencers.merge.confirm')}
           </button>
         </div>
       </div>
@@ -171,6 +173,7 @@ function MergeModal({
 // ─── All Influencers Tab ──────────────────────────────────────────────────────
 
 function AllTab() {
+  const { t } = useTranslation()
   const [data, setData] = useState<InfluencersAdminResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [search, setSearch] = useState('')
@@ -197,7 +200,7 @@ function AllTab() {
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
           <input
             className="w-full pl-9 pr-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-200"
-            placeholder="Search by name or email…"
+            placeholder={t('admin.influencers.all.searchPlaceholder')}
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(1) }}
           />
@@ -207,7 +210,7 @@ function AllTab() {
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('admin.common.refresh')}
         </button>
       </div>
 
@@ -221,15 +224,15 @@ function AllTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 border-b border-gray-100 text-xs text-gray-500 uppercase tracking-wider">
-                  <th className="px-4 py-3 text-left">Name</th>
-                  <th className="px-4 py-3 text-left">Email</th>
-                  <th className="px-4 py-3 text-left">Platform</th>
-                  <th className="px-4 py-3 text-left">Status</th>
-                  <th className="px-4 py-3 text-right">Followers</th>
-                  <th className="px-4 py-3 text-right">Emails Sent</th>
-                  <th className="px-4 py-3 text-left">Tasks</th>
-                  <th className="px-4 py-3 text-left">Tags</th>
-                  <th className="px-4 py-3 text-left">Created</th>
+                  <th className="px-4 py-3 text-left">{t('admin.influencers.all.colName')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.influencers.all.colEmail')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.influencers.all.colPlatform')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.common.status')}</th>
+                  <th className="px-4 py-3 text-right">{t('admin.influencers.all.colFollowers')}</th>
+                  <th className="px-4 py-3 text-right">{t('admin.influencers.all.colEmailsSent')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.influencers.all.colTasks')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.influencers.all.colTags')}</th>
+                  <th className="px-4 py-3 text-left">{t('admin.common.createdAt')}</th>
                 </tr>
               </thead>
               <tbody>
@@ -263,12 +266,12 @@ function AllTab() {
                     </td>
                     <td className="px-4 py-3">
                       <div className="flex flex-wrap gap-1">
-                        {inf.tags.map((t) => (
+                        {inf.tags.map((tag) => (
                           <span
-                            key={t}
+                            key={tag}
                             className="text-xs bg-indigo-50 text-indigo-600 px-1.5 py-0.5 rounded"
                           >
-                            {t}
+                            {tag}
                           </span>
                         ))}
                       </div>
@@ -286,14 +289,14 @@ function AllTab() {
 
       {data && (
         <div className="flex items-center justify-between text-xs text-gray-500">
-          <span>{data.total.toLocaleString()} total</span>
+          <span>{t('admin.influencers.all.total', { count: data.total.toLocaleString() })}</span>
           <div className="flex items-center gap-2">
             <button
               disabled={page <= 1}
               onClick={() => setPage((p) => p - 1)}
               className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
             >
-              Prev
+              {t('admin.common.previous')}
             </button>
             <span>
               {page} / {totalPages}
@@ -303,7 +306,7 @@ function AllTab() {
               onClick={() => setPage((p) => p + 1)}
               className="px-3 py-1.5 border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50"
             >
-              Next
+              {t('admin.common.next')}
             </button>
           </div>
         </div>
@@ -315,6 +318,7 @@ function AllTab() {
 // ─── Duplicates Tab ───────────────────────────────────────────────────────────
 
 function DuplicatesTab() {
+  const { t } = useTranslation()
   const [groups, setGroups] = useState<DuplicateGroup[]>([])
   const [loading, setLoading] = useState(false)
   const [primaryIds, setPrimaryIds] = useState<Record<number, number>>({})
@@ -346,16 +350,16 @@ function DuplicatesTab() {
     if (!mergeTarget) return
     const { groupIdx, group } = mergeTarget
     const primaryId = primaryIds[groupIdx] ?? group.influencers[0].id
-    const secondaryIds = group.influencers.filter((i) => i.id !== primaryId).map((i) => i.id)
+    const secondaryIds = group.influencers.filter((inf) => inf.id !== primaryId).map((inf) => inf.id)
 
     setMerging(true)
     try {
       await mergeInfluencers({ primary_id: primaryId, secondary_ids: secondaryIds })
-      showToast('Merge successful', true)
+      showToast(t('admin.influencers.duplicates.mergeSuccess'), true)
       setMergeTarget(null)
       await load()
     } catch {
-      showToast('Merge failed', false)
+      showToast(t('admin.influencers.duplicates.mergeFailed'), false)
     } finally {
       setMerging(false)
     }
@@ -365,14 +369,14 @@ function DuplicatesTab() {
     <div className="space-y-4">
       <div className="flex items-center justify-between">
         <p className="text-xs text-gray-400">
-          Influencers on the same platform with name similarity &gt; 90%
+          {t('admin.influencers.duplicates.hint')}
         </p>
         <button
           onClick={load}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('admin.common.refresh')}
         </button>
       </div>
 
@@ -383,7 +387,7 @@ function DuplicatesTab() {
       ) : groups.length === 0 ? (
         <div className="flex flex-col items-center justify-center h-40 text-sm text-gray-400">
           <CheckCircle2 className="w-8 h-8 mb-2 text-green-400" />
-          No duplicate groups found.
+          {t('admin.influencers.duplicates.noDuplicates')}
         </div>
       ) : (
         <div className="space-y-3">
@@ -396,14 +400,17 @@ function DuplicatesTab() {
               >
                 <div className="flex items-center justify-between px-4 py-3 border-b border-gray-50 bg-gray-50/50">
                   <span className="text-xs font-medium text-gray-500">
-                    {group.influencers.length} similar records · {group.type.replace('_', ' ')}
+                    {t('admin.influencers.duplicates.groupSummary', {
+                      count: group.influencers.length,
+                      type: group.type.replace('_', ' '),
+                    })}
                   </span>
                   <button
                     onClick={() => setMergeTarget({ groupIdx, group })}
                     className="flex items-center gap-1.5 text-xs font-medium text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-lg px-3 py-1.5 hover:bg-indigo-50"
                   >
                     <Merge className="w-3.5 h-3.5" />
-                    Merge Group
+                    {t('admin.influencers.duplicates.mergeGroup')}
                   </button>
                 </div>
                 <div className="divide-y divide-gray-50">
@@ -433,7 +440,7 @@ function DuplicatesTab() {
                             </span>
                             {isPrimary && (
                               <span className="text-xs bg-indigo-100 text-indigo-600 px-1.5 py-0.5 rounded font-medium">
-                                Primary
+                                {t('admin.influencers.duplicates.primaryBadge')}
                               </span>
                             )}
                             <span className="text-xs text-gray-400 capitalize">{inf.platform}</span>
@@ -441,12 +448,12 @@ function DuplicatesTab() {
                           <div className="text-xs text-gray-400">{inf.email}</div>
                         </div>
                         <div className="flex gap-4 text-xs text-gray-400">
-                          <span>{inf.email_count} emails</span>
+                          <span>{t('admin.influencers.duplicates.infEmails', { count: inf.email_count })}</span>
                           {inf.tags.length > 0 && (
-                            <span>{inf.tags.length} tags</span>
+                            <span>{t('admin.influencers.duplicates.infTags', { count: inf.tags.length })}</span>
                           )}
                           {inf.task_ids.length > 0 && (
-                            <span>{inf.task_ids.length} tasks</span>
+                            <span>{t('admin.influencers.duplicates.infTasks', { count: inf.task_ids.length })}</span>
                           )}
                         </div>
                         <div className="text-xs text-gray-400">{formatTs(inf.created_at)}</div>
@@ -483,6 +490,7 @@ function DuplicatesTab() {
 // ─── Quality Report Tab ───────────────────────────────────────────────────────
 
 function QualityTab() {
+  const { t } = useTranslation()
   const [report, setReport] = useState<QualityReport | null>(null)
   const [loading, setLoading] = useState(false)
   const [verifyTaskId, setVerifyTaskId] = useState<string | null>(null)
@@ -543,13 +551,13 @@ function QualityTab() {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <p className="text-xs text-gray-400">Data quality overview across all influencers</p>
+        <p className="text-xs text-gray-400">{t('admin.influencers.quality.subtitle')}</p>
         <button
           onClick={load}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700"
         >
           <RefreshCw className={`w-4 h-4 ${loading ? 'animate-spin' : ''}`} />
-          Refresh
+          {t('admin.common.refresh')}
         </button>
       </div>
 
@@ -561,25 +569,25 @@ function QualityTab() {
         <>
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
             <QualityPie
-              label="Empty Email"
+              label={t('admin.influencers.quality.emptyEmail')}
               metric={report.empty_email}
               total={report.total}
               color="#ef4444"
             />
             <QualityPie
-              label="Invalid Email"
+              label={t('admin.influencers.quality.invalidEmail')}
               metric={report.invalid_email}
               total={report.total}
               color="#f97316"
             />
             <QualityPie
-              label="No Followers"
+              label={t('admin.influencers.quality.noFollowers')}
               metric={report.missing_followers}
               total={report.total}
               color="#eab308"
             />
             <QualityPie
-              label="No Bio"
+              label={t('admin.influencers.quality.noBio')}
               metric={report.missing_bio}
               total={report.total}
               color="#8b5cf6"
@@ -589,9 +597,9 @@ function QualityTab() {
           <div className="bg-white border border-gray-100 rounded-xl p-5 space-y-4">
             <div className="flex items-center justify-between">
               <div>
-                <h3 className="text-sm font-semibold text-gray-800">Batch MX Verification</h3>
+                <h3 className="text-sm font-semibold text-gray-800">{t('admin.influencers.quality.mxTitle')}</h3>
                 <p className="text-xs text-gray-400 mt-0.5">
-                  Verify email domains via DNS MX record lookup for all {report.total.toLocaleString()} influencers
+                  {t('admin.influencers.quality.mxSubtitle', { count: report.total.toLocaleString() })}
                 </p>
               </div>
               <button
@@ -604,7 +612,7 @@ function QualityTab() {
                 ) : (
                   <CheckCircle2 className="w-4 h-4" />
                 )}
-                {verifying ? 'Verifying…' : 'Start MX Verify'}
+                {verifying ? t('admin.influencers.quality.mxVerifying') : t('admin.influencers.quality.mxStart')}
               </button>
             </div>
 
@@ -612,13 +620,20 @@ function QualityTab() {
               <div className="space-y-2">
                 <div className="flex items-center justify-between text-xs text-gray-500">
                   <span>
-                    {verifyStatus.done} / {verifyStatus.total} checked
-                    {verifyStatus.status === 'done' && ' · Done'}
+                    {t('admin.influencers.quality.mxProgress', {
+                      done: verifyStatus.done,
+                      total: verifyStatus.total,
+                    })}
+                    {verifyStatus.status === 'done' && ` · ${t('admin.influencers.quality.mxDone')}`}
                   </span>
                   <span>
-                    <span className="text-green-600 font-medium">{verifyStatus.passed} passed</span>
+                    <span className="text-green-600 font-medium">
+                      {t('admin.influencers.quality.mxPassed', { count: verifyStatus.passed })}
+                    </span>
                     {' · '}
-                    <span className="text-red-500 font-medium">{verifyStatus.failed} failed</span>
+                    <span className="text-red-500 font-medium">
+                      {t('admin.influencers.quality.mxFailed', { count: verifyStatus.failed })}
+                    </span>
                   </span>
                 </div>
                 <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -638,39 +653,36 @@ function QualityTab() {
 
 // ─── Page ─────────────────────────────────────────────────────────────────────
 
-const TABS: { key: Tab; label: string }[] = [
-  { key: 'all', label: 'All Influencers' },
-  { key: 'duplicates', label: 'Duplicates' },
-  { key: 'quality', label: 'Quality Report' },
-]
+const TAB_KEYS: Tab[] = ['all', 'duplicates', 'quality']
 
 export default function InfluencersAdminPage() {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<Tab>('all')
 
   return (
     <div className="p-6 space-y-5 max-w-screen-2xl mx-auto">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold text-gray-900">Influencer Governance</h1>
+          <h1 className="text-xl font-semibold text-gray-900">{t('admin.influencers.title')}</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            Deduplicate records, monitor data quality, and bulk-verify email domains
+            {t('admin.influencers.subtitle')}
           </p>
         </div>
         <Users className="w-6 h-6 text-gray-300" />
       </div>
 
       <div className="flex border-b border-gray-100">
-        {TABS.map(({ key, label }) => (
+        {TAB_KEYS.map((tabKey) => (
           <button
-            key={key}
-            onClick={() => setTab(key)}
+            key={tabKey}
+            onClick={() => setTab(tabKey)}
             className={`px-5 py-2.5 text-sm font-medium border-b-2 transition-colors ${
-              tab === key
+              tab === tabKey
                 ? 'border-indigo-600 text-indigo-600'
                 : 'border-transparent text-gray-500 hover:text-gray-700'
             }`}
           >
-            {label}
+            {t(`admin.influencers.tabs.${tabKey}`)}
           </button>
         ))}
       </div>

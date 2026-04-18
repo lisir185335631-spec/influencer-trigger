@@ -1171,6 +1171,294 @@
         "keyRequired": "Flag key is required",
         "deleteConfirm": "Delete flag \"{{key}}\"?"
       }
+    },
+    "templates": {
+      "title": "Templates Admin",
+      "subtitle": "Review templates, manage compliance, track usage",
+      "tabs": {
+        "review": "Template Review",
+        "ranking": "Usage Ranking",
+        "keywords": "Keyword Library"
+      },
+      "status": {
+        "published": "Published",
+        "unpublished": "Unpublished"
+      },
+      "review": {
+        "colTemplate": "Template",
+        "colCreator": "Creator",
+        "colUsage": "Usage",
+        "colSuccess": "Success%",
+        "colFlags": "Flags",
+        "clean": "clean",
+        "noTemplates": "No templates found"
+      },
+      "actions": {
+        "preview": "Preview",
+        "scan": "Compliance scan",
+        "publish": "Publish",
+        "unpublish": "Unpublish"
+      },
+      "preview": {
+        "subject": "Subject"
+      },
+      "ranking": {
+        "colRank": "Rank",
+        "colTemplate": "Template",
+        "colIndustry": "Industry",
+        "colUsage": "Usage",
+        "usageBarName": "Usage"
+      },
+      "keywords": {
+        "labelKeyword": "Keyword",
+        "labelCategory": "Category",
+        "labelSeverity": "Severity",
+        "keywordPlaceholder": "Enter keyword…",
+        "colAdded": "Added",
+        "deleteTitle": "Delete Keyword",
+        "deleteMessage": "This keyword will be removed from the compliance library.",
+        "noKeywords": "No keywords yet",
+        "severity": {
+          "low": "low",
+          "medium": "medium",
+          "high": "high"
+        }
+      }
+    },
+    "emails": {
+      "title": "Email Admin",
+      "subtitle": "Global email flow & blacklist management",
+      "tabs": {
+        "flow": "Email Flow",
+        "blacklist": "Blacklist"
+      },
+      "stats": {
+        "todaySent": "Today Sent",
+        "bounceRate": "Bounce Rate",
+        "openRate": "Open Rate",
+        "replyRate": "Reply Rate",
+        "ofTotalSent": "of {{count}} total sent"
+      },
+      "filter": {
+        "allStatuses": "All statuses",
+        "senderEmail": "Sender Email",
+        "recipient": "Recipient",
+        "sentFrom": "Sent From",
+        "sentTo": "Sent To",
+        "reset": "Reset"
+      },
+      "table": {
+        "time": "Time",
+        "recipient": "Recipient",
+        "sender": "Sender",
+        "template": "Template",
+        "opened": "Opened",
+        "replied": "Replied",
+        "yes": "Yes"
+      },
+      "flow": {
+        "batchCancel": "Batch Cancel",
+        "clearSelection": "Clear selection",
+        "noEmails": "No emails found.",
+        "pageInfo": "Page {{page}} of {{totalPages}} · {{total}} total"
+      },
+      "blacklist": {
+        "addTitle": "Add to Blacklist",
+        "reasonPlaceholder": "Reason (optional)",
+        "adding": "Adding…",
+        "empty": "Blacklist is empty.",
+        "colEmail": "Email",
+        "colReason": "Reason",
+        "colAddedAt": "Added At",
+        "removeTooltip": "Remove"
+      },
+      "confirmCancel": {
+        "title": "Batch Cancel Emails",
+        "irreversible": "This action cannot be undone.",
+        "message": "You are about to cancel {{count}} email(s). Only pending/queued emails will be affected.",
+        "andMore": "…and {{count}} more",
+        "cancelling": "Cancelling…",
+        "confirm": "Confirm Cancel"
+      }
+    },
+    "users": {
+      "title": "Users",
+      "totalCount": "{{count}} total users",
+      "newUser": "New User",
+      "searchPlaceholder": "Search by username or email",
+      "allRoles": "All roles",
+      "noUsers": "No users found",
+      "roles": {
+        "admin": "Admin",
+        "manager": "Manager",
+        "operator": "Operator"
+      },
+      "status": {
+        "frozen": "Frozen"
+      },
+      "table": {
+        "colUser": "User",
+        "colRole": "Role",
+        "colLastLogin": "Last Login"
+      },
+      "modal": {
+        "editTitle": "Edit User",
+        "newTitle": "New User",
+        "username": "Username",
+        "email": "Email",
+        "password": "Password",
+        "role": "Role",
+        "saving": "Saving…"
+      },
+      "actions": {
+        "resetPassword": "Reset password",
+        "freeze": "Freeze",
+        "unfreeze": "Unfreeze",
+        "forceLogout": "Force logout",
+        "loginHistory": "Login history"
+      },
+      "destructive": {
+        "adminPasswordLabel": "Your admin password",
+        "adminPasswordPlaceholder": "Confirm your password",
+        "processing": "Processing…"
+      },
+      "resetPassword": {
+        "title": "Reset Password",
+        "description": "Set a new password for {{username}}.",
+        "confirm": "Reset Password",
+        "newPasswordLabel": "New password",
+        "newPasswordPlaceholder": "Enter new password"
+      },
+      "forceLogout": {
+        "title": "Force Logout",
+        "description": "Invalidate all active sessions for {{username}}. They will need to log in again.",
+        "confirm": "Force Logout"
+      },
+      "freeze": {
+        "titleFreeze": "Freeze Account",
+        "titleUnfreeze": "Unfreeze Account",
+        "descriptionFreeze": "Freeze {{username}}'s account. They will not be able to log in.",
+        "descriptionUnfreeze": "Restore {{username}}'s account access."
+      },
+      "loginHistory": {
+        "title": "Login History",
+        "noHistory": "No login history",
+        "colTime": "Time",
+        "colIp": "IP",
+        "colReason": "Reason",
+        "ok": "OK",
+        "failed": "Failed"
+      }
+    },
+    "holidays": {
+      "title": "Holiday Management",
+      "subtitle": "Manage holiday email campaigns and sensitive regions",
+      "addHoliday": "Add Holiday",
+      "viewList": "List",
+      "viewCalendar": "Calendar",
+      "noHolidays": "No holidays configured",
+      "deleteConfirm": "Delete this holiday?",
+      "table": {
+        "colHoliday": "Holiday",
+        "colDate": "Date",
+        "colSent": "Sent",
+        "colOpenPct": "Open%",
+        "colReplyPct": "Reply%",
+        "colRegions": "Regions",
+        "noRegions": "none"
+      },
+      "actions": {
+        "sensitiveRegions": "Sensitive Regions"
+      },
+      "modal": {
+        "editTitle": "Edit Holiday",
+        "addTitle": "Add Holiday",
+        "nameLabel": "Name",
+        "namePlaceholder": "e.g. Christmas",
+        "dateLabel": "Date",
+        "greetingLabel": "Greeting Template (optional)",
+        "greetingPlaceholder": "Custom greeting message…",
+        "recurringLabel": "Recurring yearly",
+        "activeLabel": "Active",
+        "saving": "Saving…"
+      },
+      "sensitiveRegions": {
+        "title": "Sensitive Regions",
+        "hint": "Comma-separated region/country codes. Users from these regions will not receive this holiday email.",
+        "placeholder": "e.g. CN,KP,IR"
+      },
+      "report": {
+        "loading": "Loading report…",
+        "noData": "No historical send data yet",
+        "title": "Historical Delivery Report",
+        "labelSent": "Sent",
+        "labelOpenRate": "Open Rate",
+        "labelReplyRate": "Reply Rate",
+        "yearSummary": "{{sent}} sent · {{openRate}}% open · {{replyRate}}% reply"
+      },
+      "calendar": {
+        "blocked": "Blocked: {{regions}}",
+        "sentCount": "{{count}} sent"
+      }
+    },
+    "influencers": {
+      "title": "Influencer Governance",
+      "subtitle": "Deduplicate records, monitor data quality, and bulk-verify email domains",
+      "tabs": {
+        "all": "All Influencers",
+        "duplicates": "Duplicates",
+        "quality": "Quality Report"
+      },
+      "all": {
+        "searchPlaceholder": "Search by name or email…",
+        "colName": "Name",
+        "colEmail": "Email",
+        "colPlatform": "Platform",
+        "colFollowers": "Followers",
+        "colEmailsSent": "Emails Sent",
+        "colTasks": "Tasks",
+        "colTags": "Tags",
+        "total": "{{count}} total"
+      },
+      "merge": {
+        "title": "Confirm Merge",
+        "keepPrimary": "Keep (Primary)",
+        "deleteSecondaries": "Delete (Secondaries)",
+        "emailsRelinked": "{{count}} emails will be re-linked",
+        "tags": "{{count}} tags: {{list}}",
+        "tasks": "{{count}} task(s)",
+        "warning": "This action is irreversible. All emails, tags, and task links from deleted records will be migrated to the primary record.",
+        "confirm": "Merge & Delete"
+      },
+      "duplicates": {
+        "hint": "Influencers on the same platform with name similarity > 90%",
+        "noDuplicates": "No duplicate groups found.",
+        "groupSummary": "{{count}} similar records · {{type}}",
+        "mergeGroup": "Merge Group",
+        "primaryBadge": "Primary",
+        "infEmails": "{{count}} emails",
+        "infTags": "{{count}} tags",
+        "infTasks": "{{count}} tasks",
+        "mergeSuccess": "Merge successful",
+        "mergeFailed": "Merge failed"
+      },
+      "quality": {
+        "subtitle": "Data quality overview across all influencers",
+        "issue": "Issue",
+        "ok": "OK",
+        "emptyEmail": "Empty Email",
+        "invalidEmail": "Invalid Email",
+        "noFollowers": "No Followers",
+        "noBio": "No Bio",
+        "mxTitle": "Batch MX Verification",
+        "mxSubtitle": "Verify email domains via DNS MX record lookup for all {{count}} influencers",
+        "mxStart": "Start MX Verify",
+        "mxVerifying": "Verifying…",
+        "mxProgress": "{{done}} / {{total}} checked",
+        "mxDone": "Done",
+        "mxPassed": "{{count}} passed",
+        "mxFailed": "{{count}} failed"
+      }
     }
   }
 }
