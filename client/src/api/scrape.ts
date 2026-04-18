@@ -36,6 +36,7 @@ export interface ScrapeInfluencerResult {
   email: string
   platform: string | null
   profile_url: string | null
+  avatar_url?: string | null
   followers: number | null
   industry: string | null
   bio: string | null

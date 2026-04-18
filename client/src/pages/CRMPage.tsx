@@ -20,6 +20,7 @@ import {
   type InfluencerListItem,
   type TagOut,
 } from '../api/influencers'
+import AvatarBadge from '../components/AvatarBadge'
 
 // ── constants ────────────────────────────────────────────────────────────────
 
@@ -441,6 +442,9 @@ export default function CRMPage() {
   const [batchTagOpen, setBatchTagOpen] = useState(false)
   const [batchLoading, setBatchLoading] = useState(false)
 
+  // accordion expand
+  const [expandedId, setExpandedId] = useState<number | null>(null)
+
   // debounce search
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 300)
@@ -757,76 +761,174 @@ export default function CRMPage() {
                   </tr>
                 )}
                 {!loading &&
-                  items.map((inf) => (
-                    <tr
-                      key={inf.id}
-                      className={`hover:bg-gray-50 transition-colors ${selected.has(inf.id) ? 'bg-indigo-50/40' : ''}`}
-                    >
-                      <td className="px-4 py-3 w-8" onClick={(e) => e.stopPropagation()}>
-                        <input
-                          type="checkbox"
-                          className="rounded"
-                          checked={selected.has(inf.id)}
-                          onChange={() => toggleRow(inf.id)}
-                        />
-                      </td>
-                      <td
-                        className="px-4 py-3 cursor-pointer"
-                        onClick={() => navigate(`/crm/${inf.id}`)}
-                      >
-                        <p className="font-medium text-gray-900 hover:text-indigo-600 transition-colors">
-                          {inf.nickname ?? '—'}
-                        </p>
-                      </td>
-                      <td className="px-4 py-3 text-gray-600">
-                        {inf.platform ? (
-                          <span>
-                            {PLATFORM_ICONS[inf.platform] ?? '🌐'}{' '}
-                            <span className="capitalize">{inf.platform}</span>
-                          </span>
-                        ) : (
-                          '—'
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-gray-500 text-xs">{inf.email}</td>
-                      <td className="px-4 py-3 text-gray-600">
-                        {formatFollowers(inf.followers)}
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[inf.status] ?? 'bg-gray-100 text-gray-600'}`}
+                  items.map((inf) => {
+                    const isExpanded = expandedId === inf.id
+                    return (
+                      <>
+                        <tr
+                          key={inf.id}
+                          className={`hover:bg-gray-50 transition-colors ${selected.has(inf.id) ? 'bg-indigo-50/40' : ''}`}
                         >
-                          {inf.status}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex flex-wrap gap-1">
-                          {inf.tags.slice(0, 3).map((tag) => (
+                          <td className="px-4 py-3 w-8" onClick={(e) => e.stopPropagation()}>
+                            <input
+                              type="checkbox"
+                              className="rounded"
+                              checked={selected.has(inf.id)}
+                              onChange={() => toggleRow(inf.id)}
+                            />
+                          </td>
+                          <td
+                            className="px-4 py-3 cursor-pointer"
+                            onClick={() => navigate(`/crm/${inf.id}`)}
+                          >
+                            <div className="flex items-center gap-2">
+                              <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={24} />
+                              <div className="flex-1 min-w-0">
+                                <p className="font-medium text-gray-900 hover:text-indigo-600 transition-colors truncate">
+                                  {inf.nickname ?? '—'}
+                                </p>
+                              </div>
+                              <button
+                                onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : inf.id) }}
+                                className="p-0.5 text-gray-300 hover:text-gray-700 transition-colors flex-shrink-0"
+                              >
+                                <ChevronDown
+                                  size={12}
+                                  className={isExpanded ? 'rotate-180 transition-transform' : 'transition-transform'}
+                                />
+                              </button>
+                            </div>
+                          </td>
+                          <td className="px-4 py-3 text-gray-600">
+                            {inf.platform ? (
+                              <span>
+                                {PLATFORM_ICONS[inf.platform] ?? '🌐'}{' '}
+                                <span className="capitalize">{inf.platform}</span>
+                              </span>
+                            ) : (
+                              '—'
+                            )}
+                          </td>
+                          <td className="px-4 py-3 text-gray-500 text-xs">{inf.email}</td>
+                          <td className="px-4 py-3 text-gray-600">
+                            {formatFollowers(inf.followers)}
+                          </td>
+                          <td className="px-4 py-3">
                             <span
-                              key={tag.id}
-                              className="text-xs px-1.5 py-0.5 rounded-full text-white"
-                              style={{ backgroundColor: tag.color }}
+                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[inf.status] ?? 'bg-gray-100 text-gray-600'}`}
                             >
-                              {tag.name}
+                              {inf.status}
                             </span>
-                          ))}
-                          {inf.tags.length > 3 && (
-                            <span className="text-xs text-gray-400">+{inf.tags.length - 3}</span>
-                          )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[inf.priority] ?? 'bg-gray-100 text-gray-500'}`}
-                        >
-                          {inf.priority}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-400">
-                        {formatDate(inf.last_email_sent_at)}
-                      </td>
-                    </tr>
-                  ))}
+                          </td>
+                          <td className="px-4 py-3">
+                            <div className="flex flex-wrap gap-1">
+                              {inf.tags.slice(0, 3).map((tag) => (
+                                <span
+                                  key={tag.id}
+                                  className="text-xs px-1.5 py-0.5 rounded-full text-white"
+                                  style={{ backgroundColor: tag.color }}
+                                >
+                                  {tag.name}
+                                </span>
+                              ))}
+                              {inf.tags.length > 3 && (
+                                <span className="text-xs text-gray-400">+{inf.tags.length - 3}</span>
+                              )}
+                            </div>
+                          </td>
+                          <td className="px-4 py-3">
+                            <span
+                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[inf.priority] ?? 'bg-gray-100 text-gray-500'}`}
+                            >
+                              {inf.priority}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-xs text-gray-400">
+                            {formatDate(inf.last_email_sent_at)}
+                          </td>
+                        </tr>
+                        {isExpanded && (
+                          <tr key={`${inf.id}-expand`}>
+                            <td colSpan={9} className="bg-gray-50/60 px-6 py-5">
+                              <div className="grid grid-cols-[auto_1fr] gap-5 max-w-4xl">
+                                <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={72} />
+                                <div className="space-y-3">
+                                  <div>
+                                    <h3 className="text-base font-semibold text-gray-900">{inf.nickname || '—'}</h3>
+                                    <p className="text-xs text-gray-400">{inf.email}</p>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-4 text-sm">
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.platform')}</div>
+                                      <div className="font-medium text-gray-700 mt-1">{inf.platform || '—'}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.followers')}</div>
+                                      <div className="font-medium text-gray-700 mt-1">{formatFollowers(inf.followers)}</div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.email')}</div>
+                                      <div className="font-mono text-xs text-gray-700 mt-1 break-all">{inf.email}</div>
+                                    </div>
+                                  </div>
+                                  <div className="grid grid-cols-3 gap-4 text-sm">
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 uppercase">Status</div>
+                                      <div className="mt-1">
+                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[inf.status] ?? 'bg-gray-100 text-gray-600'}`}>
+                                          {inf.status}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 uppercase">Priority</div>
+                                      <div className="mt-1">
+                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[inf.priority] ?? 'bg-gray-100 text-gray-500'}`}>
+                                          {inf.priority}
+                                        </span>
+                                      </div>
+                                    </div>
+                                    {inf.reply_intent && (
+                                      <div>
+                                        <div className="text-[10px] text-gray-400 uppercase">Intent</div>
+                                        <div className="mt-1">
+                                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${REPLY_INTENT_COLORS[inf.reply_intent] ?? 'bg-gray-100 text-gray-500'}`}>
+                                            {inf.reply_intent}
+                                          </span>
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+                                  {inf.reply_summary && (
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 uppercase mb-1">Reply Summary</div>
+                                      <p className="text-sm text-gray-700 leading-relaxed">{inf.reply_summary}</p>
+                                    </div>
+                                  )}
+                                  {inf.tags.length > 0 && (
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 uppercase mb-1">Tags</div>
+                                      <div className="flex flex-wrap gap-1">
+                                        {inf.tags.map((tag) => (
+                                          <span
+                                            key={tag.id}
+                                            className="text-xs px-1.5 py-0.5 rounded-full text-white"
+                                            style={{ backgroundColor: tag.color }}
+                                          >
+                                            {tag.name}
+                                          </span>
+                                        ))}
+                                      </div>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    )
+                  })}
               </tbody>
             </table>
           </div>

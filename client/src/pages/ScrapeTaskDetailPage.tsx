@@ -12,9 +12,11 @@ import {
   CheckSquare,
   Square,
   ExternalLink,
+  ChevronDown,
 } from 'lucide-react'
 import { scrapeApi, ScrapeTask, ScrapeInfluencerResult, parsePlatforms } from '../api/scrape'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
+import AvatarBadge from '../components/AvatarBadge'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -98,6 +100,7 @@ export default function ScrapeTaskDetailPage() {
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [live, setLive] = useState<LiveProgress | null>(null)
   const [emailStream, setEmailStream] = useState<{ email: string; at: number }[]>([])
+  const [expandedId, setExpandedId] = useState<number | null>(null)
 
   const fetchData = useCallback(async () => {
     if (!id) return
@@ -362,70 +365,143 @@ export default function ScrapeTaskDetailPage() {
               <tbody className="divide-y divide-gray-50">
                 {sorted.map((inf) => {
                   const isChecked = selected.has(inf.id)
+                  const isExpanded = expandedId === inf.id
                   return (
-                    <tr
-                      key={inf.id}
-                      className={`transition-colors ${isChecked ? 'bg-white hover:bg-gray-50/60' : 'bg-gray-50/40 opacity-60 hover:opacity-80'}`}
-                    >
-                      <td className="px-4 py-3">
-                        <button
-                          onClick={() => toggleOne(inf.id)}
-                          className="text-gray-400 hover:text-gray-700 transition-colors"
-                        >
-                          {isChecked ? (
-                            <CheckSquare size={14} className="text-gray-900" />
-                          ) : (
-                            <Square size={14} />
-                          )}
-                        </button>
-                      </td>
-                      <td className="px-4 py-3">
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-medium text-gray-800 truncate max-w-[120px]">
-                            {inf.nickname || '—'}
-                          </span>
-                          {inf.profile_url && (
-                            <a
-                              href={inf.profile_url}
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              className="text-gray-300 hover:text-gray-600 transition-colors shrink-0"
-                              onClick={(e) => e.stopPropagation()}
+                    <>
+                      <tr
+                        key={inf.id}
+                        className={`transition-colors ${isChecked ? 'bg-white hover:bg-gray-50/60' : 'bg-gray-50/40 opacity-60 hover:opacity-80'}`}
+                      >
+                        <td className="px-4 py-3">
+                          <button
+                            onClick={() => toggleOne(inf.id)}
+                            className="text-gray-400 hover:text-gray-700 transition-colors"
+                          >
+                            {isChecked ? (
+                              <CheckSquare size={14} className="text-gray-900" />
+                            ) : (
+                              <Square size={14} />
+                            )}
+                          </button>
+                        </td>
+                        <td className="px-4 py-3">
+                          <div className="flex items-center gap-1.5">
+                            <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={24} />
+                            <span className="text-xs font-medium text-gray-800 truncate max-w-[120px]">
+                              {inf.nickname || '—'}
+                            </span>
+                            {inf.profile_url && (
+                              <a
+                                href={inf.profile_url}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-gray-300 hover:text-gray-600 transition-colors shrink-0"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <ExternalLink size={10} />
+                              </a>
+                            )}
+                            <button
+                              onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : inf.id) }}
+                              className="ml-auto p-0.5 text-gray-300 hover:text-gray-700 transition-colors"
                             >
-                              <ExternalLink size={10} />
-                            </a>
+                              <ChevronDown
+                                size={12}
+                                className={isExpanded ? 'rotate-180 transition-transform' : 'transition-transform'}
+                              />
+                            </button>
+                          </div>
+                        </td>
+                        <td className="px-4 py-3">
+                          <PlatformBadge platform={inf.platform} />
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-700 font-mono truncate max-w-[180px]">
+                          {inf.email}
+                        </td>
+                        <td className="px-4 py-3 text-right text-xs font-medium text-gray-800">
+                          {formatFollowers(inf.followers)}
+                        </td>
+                        <td className="px-4 py-3 text-xs text-gray-400 truncate max-w-[200px]">
+                          {inf.bio ? inf.bio.slice(0, 80) + (inf.bio.length > 80 ? '…' : '') : '—'}
+                        </td>
+                        <td className="px-3 py-2 text-sm">
+                          {inf.relevance_score != null ? (
+                            <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                              inf.relevance_score >= 0.7 ? 'bg-green-50 text-green-700' :
+                              inf.relevance_score >= 0.4 ? 'bg-yellow-50 text-yellow-700' :
+                              'bg-gray-50 text-gray-500'
+                            }`}>
+                              {(inf.relevance_score * 100).toFixed(0)}%
+                            </span>
+                          ) : (
+                            <span className="text-gray-300">—</span>
                           )}
-                        </div>
-                      </td>
-                      <td className="px-4 py-3">
-                        <PlatformBadge platform={inf.platform} />
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-700 font-mono truncate max-w-[180px]">
-                        {inf.email}
-                      </td>
-                      <td className="px-4 py-3 text-right text-xs font-medium text-gray-800">
-                        {formatFollowers(inf.followers)}
-                      </td>
-                      <td className="px-4 py-3 text-xs text-gray-400 truncate max-w-[200px]">
-                        {inf.bio ? inf.bio.slice(0, 80) + (inf.bio.length > 80 ? '…' : '') : '—'}
-                      </td>
-                      <td className="px-3 py-2 text-sm">
-                        {inf.relevance_score != null ? (
-                          <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
-                            inf.relevance_score >= 0.7 ? 'bg-green-50 text-green-700' :
-                            inf.relevance_score >= 0.4 ? 'bg-yellow-50 text-yellow-700' :
-                            'bg-gray-50 text-gray-500'
-                          }`}>
-                            {(inf.relevance_score * 100).toFixed(0)}%
-                          </span>
-                        ) : (
-                          <span className="text-gray-300">—</span>
-                        )}
-                      </td>
-                      <td className="px-3 py-2 text-sm text-gray-600 max-w-[200px] truncate" title={inf.match_reason || ''}>
-                        {inf.match_reason ? inf.match_reason : <span className="text-gray-300">—</span>}
-                      </td>
-                    </tr>
+                        </td>
+                        <td className="px-3 py-2 text-sm text-gray-600 max-w-[200px] truncate" title={inf.match_reason || ''}>
+                          {inf.match_reason ? inf.match_reason : <span className="text-gray-300">—</span>}
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr key={`${inf.id}-expand`}>
+                          <td colSpan={8} className="bg-gray-50/60 px-6 py-5">
+                            <div className="grid grid-cols-[auto_1fr] gap-5 max-w-4xl">
+                              {/* 大头像 */}
+                              <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={72} />
+                              {/* 详情 */}
+                              <div className="space-y-3">
+                                <div>
+                                  <h3 className="text-base font-semibold text-gray-900">{inf.nickname || '—'}</h3>
+                                  {inf.profile_url && (
+                                    <a
+                                      href={inf.profile_url}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="text-xs text-blue-600 hover:underline break-all"
+                                    >
+                                      {inf.profile_url}
+                                    </a>
+                                  )}
+                                </div>
+                                <div className="grid grid-cols-3 gap-4 text-sm">
+                                  <div>
+                                    <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.platform')}</div>
+                                    <div className="font-medium text-gray-700 mt-1">{inf.platform || '—'}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.followers')}</div>
+                                    <div className="font-medium text-gray-700 mt-1">{formatFollowers(inf.followers)}</div>
+                                  </div>
+                                  <div>
+                                    <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.email')}</div>
+                                    <div className="font-mono text-xs text-gray-700 mt-1 break-all">{inf.email}</div>
+                                  </div>
+                                </div>
+                                {inf.bio && (
+                                  <div>
+                                    <div className="text-[10px] text-gray-400 uppercase mb-1">{t('scrapeDetail.expand.bio')}</div>
+                                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{inf.bio}</p>
+                                  </div>
+                                )}
+                                {inf.relevance_score != null && (
+                                  <div className="flex items-start gap-6">
+                                    <div>
+                                      <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.relevance')}</div>
+                                      <div className="text-xl font-bold text-gray-900 mt-1">{(inf.relevance_score * 100).toFixed(0)}%</div>
+                                    </div>
+                                    {inf.match_reason && (
+                                      <div className="flex-1">
+                                        <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.matchReason')}</div>
+                                        <p className="text-sm text-gray-700 mt-1">{inf.match_reason}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </>
                   )
                 })}
               </tbody>

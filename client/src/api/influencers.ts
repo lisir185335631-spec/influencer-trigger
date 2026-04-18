@@ -70,6 +70,7 @@ export interface InfluencerListItem {
   nickname: string | null
   email: string
   platform: string | null
+  avatar_url?: string | null
   followers: number | null
   industry: string | null
   status: string

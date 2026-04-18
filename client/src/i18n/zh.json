@@ -218,6 +218,14 @@
     },
     "hint": "取消勾选不想联系的网红，然后点击「全部发送」。",
     "sendAll": "全部发送 ({{count}})",
+    "expand": {
+      "platform": "平台",
+      "followers": "粉丝数",
+      "email": "邮箱",
+      "bio": "简介",
+      "relevance": "相关度",
+      "matchReason": "匹配理由"
+    },
     "live": {
       "progress": "进度",
       "stats": {

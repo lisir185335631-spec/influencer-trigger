@@ -218,6 +218,14 @@
     },
     "hint": "Uncheck influencers you don't want to contact, then click Send All.",
     "sendAll": "Send All ({{count}})",
+    "expand": {
+      "platform": "Platform",
+      "followers": "Followers",
+      "email": "Email",
+      "bio": "Bio",
+      "relevance": "Relevance",
+      "matchReason": "Match Reason"
+    },
     "live": {
       "progress": "Progress",
       "stats": {

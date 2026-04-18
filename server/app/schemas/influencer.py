@@ -109,6 +109,7 @@ class InfluencerListItem(BaseModel):
     nickname: Optional[str] = None
     email: str
     platform: Optional[str] = None
+    avatar_url: Optional[str] = None
     followers: Optional[int] = None
     industry: Optional[str] = None
     status: str
