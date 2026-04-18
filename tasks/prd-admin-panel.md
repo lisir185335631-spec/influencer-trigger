@@ -550,7 +550,7 @@ Admin 后台 = 前台 11 个业务模块的"上帝视角镜像" + 5 个平台治
 - **NG-5**：不做基于地理 IP 的异常登录检测（MVP 仅检测"新 IP"，后续可加 `ip2location`）
 - **NG-6**：不做 TOTP 真正实现（A15 仅提供配置框架，TOTP 代码生成/校验不实现）
 - **NG-7**：不做邮件内容的 AI 合规审查（A10 仅做关键词库匹配）
-- **NG-8**：不做 Admin 后台的国际化（复用现有 i18n 基础设施，英文优先，后续可补中文）
+- ~~**NG-8**：不做 Admin 后台的国际化~~（**2026-04-18 打破并完成**：16 个 admin page + AdminSidebar/AdminLayout 全量 i18n 化，admin namespace 569 个 key en/zh 双份，admin sidebar 底部加 LanguageSwitch 深色版入口，与前台共享同一 i18n 实例并通过 localStorage 持久化。详见 commits 667ffe7/aca9366/2980b9c/9457d30）
 - **NG-9**：不引入 Redis（如项目未使用则 A16 的 Redis 卡片显示 not_configured）
 - **NG-10**：不做 LangGraph 状态机可视化图（A11 仅做 run 历史表格，可视化图后续 story 处理）
 
