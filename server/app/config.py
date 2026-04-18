@@ -40,8 +40,9 @@ class Settings(BaseSettings):
             )
         return v
 
-    # OpenAI
+    # OpenAI (supports OpenAI-compatible proxies via openai_base_url)
     openai_api_key: str = ""
+    openai_base_url: str = ""  # empty = use official https://api.openai.com
     openai_model: str = "gpt-4o"
     openai_classifier_model: str = "gpt-4o-mini"
 
