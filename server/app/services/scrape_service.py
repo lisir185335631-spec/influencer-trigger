@@ -2,7 +2,7 @@ import json
 import logging
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.influencer import Influencer
@@ -11,6 +11,32 @@ from app.models.scrape_task_influencer import ScrapeTaskInfluencer
 from app.schemas.scrape import ScrapeTaskCreate
 
 logger = logging.getLogger(__name__)
+
+
+async def delete_scrape_task(db: AsyncSession, task_id: int) -> bool:
+    """Delete a scrape task and its influencer join rows.
+    Only allowed for terminal states: completed / failed / cancelled.
+    Influencer records themselves are NOT deleted (they may be linked
+    to other tasks or used downstream).
+    Returns True on success, False if task not found."""
+    task = await get_scrape_task(db, task_id)
+    if task is None:
+        return False
+    if task.status not in (
+        ScrapeTaskStatus.completed,
+        ScrapeTaskStatus.failed,
+        ScrapeTaskStatus.cancelled,
+    ):
+        raise ValueError(
+            f"Cannot delete task in status={task.status.value}; "
+            "only completed/failed/cancelled tasks can be deleted"
+        )
+    await db.execute(
+        delete(ScrapeTaskInfluencer).where(ScrapeTaskInfluencer.scrape_task_id == task_id)
+    )
+    await db.delete(task)
+    await db.commit()
+    return True
 
 
 async def create_scrape_task(

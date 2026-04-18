@@ -162,7 +162,11 @@
       "target": "Target",
       "created": "Created",
       "found": "/ {{count}} found",
-      "view": "View"
+      "view": "View",
+      "actions": "Actions",
+      "deleteTask": "Delete task",
+      "deleteConfirm": "Delete scrape task #{{id}}? This cannot be undone.",
+      "deleteFailed": "Failed to delete task"
     },
     "status": {
       "pending": "Pending",

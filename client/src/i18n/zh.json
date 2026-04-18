@@ -162,7 +162,11 @@
       "target": "目标",
       "created": "创建时间",
       "found": "/ 已发现 {{count}}",
-      "view": "查看"
+      "view": "查看",
+      "actions": "操作",
+      "deleteTask": "删除任务",
+      "deleteConfirm": "确认删除抓取任务 #{{id}}？此操作不可撤销。",
+      "deleteFailed": "删除任务失败"
     },
     "status": {
       "pending": "等待中",

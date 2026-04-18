@@ -58,6 +58,9 @@ export const scrapeApi = {
     apiClient
       .get<ScrapeInfluencerResult[]>(`/scrape/tasks/${id}/results`, { params: { sort } })
       .then(r => r.data),
+
+  deleteTask: (id: number) =>
+    apiClient.delete(`/scrape/tasks/${id}`).then(r => r.data),
 }
 
 export function parsePlatforms(raw: string): string[] {

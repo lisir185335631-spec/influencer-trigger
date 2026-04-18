@@ -14,6 +14,7 @@ import {
   FileSpreadsheet,
   AlertCircle,
   ArrowRight,
+  Trash2,
 } from 'lucide-react'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
 import {
@@ -718,6 +719,7 @@ export default function ScrapePage() {
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('scrape.table.validEmails')}</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('scrape.table.target')}</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('scrape.table.created')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 w-16">{t('scrape.table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -778,6 +780,27 @@ export default function ScrapePage() {
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-gray-400">
                       {new Date(task.created_at).toLocaleDateString()}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') && (
+                        <button
+                          onClick={async (e) => {
+                            e.stopPropagation()
+                            if (!window.confirm(t('scrape.table.deleteConfirm', { id: task.id }))) return
+                            try {
+                              await scrapeApi.deleteTask(task.id)
+                              await fetchTasks()
+                            } catch (err) {
+                              window.alert(t('scrape.table.deleteFailed'))
+                              console.error(err)
+                            }
+                          }}
+                          title={t('scrape.table.deleteTask')}
+                          className="p-1 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded transition-colors"
+                        >
+                          <Trash2 size={13} />
+                        </button>
+                      )}
                     </td>
                   </tr>
                 )

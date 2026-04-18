@@ -10,6 +10,7 @@ from app.schemas.auth import TokenData
 from app.schemas.scrape import ScrapeTaskCreate, ScrapeTaskResponse, ScrapeInfluencerResult
 from app.services.scrape_service import (
     create_scrape_task,
+    delete_scrape_task,
     get_scrape_task,
     get_task_influencers,
     list_scrape_tasks,
@@ -87,3 +88,20 @@ async def get_task_results(
     sort_by_followers = sort == "followers"
     influencers = await get_task_influencers(db, task_id, sort_by_followers=sort_by_followers)
     return influencers
+
+
+@router.delete("/tasks/{task_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_task(
+    task_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: TokenData = Depends(get_current_user),
+):
+    """Delete a terminal-state scrape task (completed / failed / cancelled).
+    Running / pending tasks cannot be deleted — cancel them first."""
+    try:
+        ok = await delete_scrape_task(db, task_id)
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=str(e))
+    if not ok:
+        raise HTTPException(status_code=404, detail="Scrape task not found")
+    return None
