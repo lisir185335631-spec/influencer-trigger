@@ -72,6 +72,16 @@
 - 如果使用了浏览器工具进行验证，无论通过还是失败，每个的执行操作都把截图保存到 `screenshots/` 目录
 - 文件名格式：`validator-[story-id]-[pass/fail]-[序号].png`（例如 `validator-us-002-fail-1.png`）
 
+## 代码级检查要求（不能只靠浏览器点击）
+
+编排器在你完成后会自动跑 preflight（tsc + python import），但你**不能依赖 preflight 补位**——你必须主动做：
+
+1. **TypeScript typecheck**：在 `client/` 目录跑 `npx tsc -b --noEmit`（或 `npm run typecheck`），有任何错误就 fail
+2. **Python import 验证**：在 `server/` 目录用 venv python 跑 `python -c "from app.main import app; print('ok')"`，import 失败就 fail
+3. **字段名一致性**：验证代码中使用的数据库字段名与 SQLAlchemy Model 定义完全一致（例如不能把 `hashed_password` 写成 `password_hash`）
+
+浏览器测试很重要，但它只能验证已经被点到的代码路径——编译期 / import 期的 bug 必须通过以上代码级检查来捕获。
+
 ## 重要约束
 
 - 你只负责验证，不负责修复代码

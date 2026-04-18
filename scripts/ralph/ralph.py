@@ -695,6 +695,188 @@ def handle_audit_result(story_id: str) -> None:
 
 
 # ─────────────────────────────────────────────
+# P0: Audit Preflight Checks - 静态/编译期健全性检查
+# 在 Validator 返回 PASS 之后、Audit Gate 激活之前自动运行。
+# 任何失败 → 直接 reject，写 story.notes，Ralph 下一轮读 notes 修复。
+# ─────────────────────────────────────────────
+def _run_audit_preflight_checks(story_id: str, story: dict, project_root: Path) -> tuple[bool, str]:
+    """
+    Run deterministic sanity checks before handing off to Opus audit gate.
+    Catches compile-time / import-time bugs that browser-only Validator can miss
+    (e.g. wrong field name used in code that is only reached at runtime on a
+    specific code path never exercised by the Validator's browser clicks).
+
+    Checks:
+      1. Frontend TypeScript: cd client && npx tsc -b --noEmit
+      2. Backend Python import: python -c "from app.main import app; print('ok')"
+      3. (Optional) sanity_endpoints: if story declares sanity_endpoints list,
+         probe each via FastAPI TestClient (non-destructive OPTIONS/GET).
+
+    Returns (passed, detail_message).
+    passed=False → message contains full stderr for notes injection.
+    """
+    import subprocess as _sp
+    import json as _json
+
+    failures = []
+
+    # ── Check 1: Frontend TypeScript ─────────────────────────────────────────
+    client_dir = project_root / "client"
+    if client_dir.exists() and (client_dir / "package.json").exists():
+        print(f"  [preflight] tsc -b --noEmit ...")
+        try:
+            result = _sp.run(
+                ["npx", "tsc", "-b", "--noEmit"],
+                cwd=str(client_dir),
+                capture_output=True,
+                text=True,
+                timeout=180,
+                shell=True,   # Windows: npx needs shell resolution
+            )
+            if result.returncode != 0:
+                output = (result.stderr or result.stdout or "").strip()
+                failures.append(
+                    f"[tsc] TypeScript compile errors (exit={result.returncode}):\n"
+                    f"{output[:2000]}"
+                )
+                print(f"  [preflight] tsc FAILED (exit={result.returncode})")
+            else:
+                print(f"  [preflight] tsc OK")
+        except _sp.TimeoutExpired:
+            failures.append("[tsc] TIMEOUT after 180s — tsc did not complete")
+            print(f"  [preflight] tsc TIMEOUT")
+        except FileNotFoundError:
+            # npx not on PATH — skip gracefully rather than blocking
+            print(f"  [preflight] tsc skipped (npx not found)")
+        except Exception as e:
+            failures.append(f"[tsc] Unexpected error: {e}")
+            print(f"  [preflight] tsc error: {e}")
+    else:
+        print(f"  [preflight] tsc skipped (client/ not found or no package.json)")
+
+    # ── Check 2: Backend Python import ───────────────────────────────────────
+    server_dir = project_root / "server"
+    python_bin = server_dir / ".venv" / "Scripts" / "python.exe"
+    if not python_bin.exists():
+        python_bin = server_dir / ".venv" / "bin" / "python"   # Unix fallback
+    if server_dir.exists() and python_bin.exists():
+        print(f"  [preflight] python import app.main ...")
+        try:
+            result = _sp.run(
+                [str(python_bin), "-c", "from app.main import app; print('ok')"],
+                cwd=str(server_dir),
+                capture_output=True,
+                text=True,
+                timeout=60,
+            )
+            if result.returncode != 0 or "ok" not in result.stdout:
+                details = (
+                    f"stdout: {result.stdout[:500]}\n"
+                    f"stderr: {result.stderr[:2000]}"
+                ).strip()
+                failures.append(
+                    f"[py-import] Backend import failed (exit={result.returncode}):\n{details}"
+                )
+                print(f"  [preflight] py-import FAILED (exit={result.returncode})")
+            else:
+                print(f"  [preflight] py-import OK")
+        except _sp.TimeoutExpired:
+            failures.append("[py-import] TIMEOUT after 60s — app startup hung")
+            print(f"  [preflight] py-import TIMEOUT")
+        except Exception as e:
+            failures.append(f"[py-import] Unexpected error: {e}")
+            print(f"  [preflight] py-import error: {e}")
+    else:
+        print(f"  [preflight] py-import skipped (server/.venv not found)")
+
+    # ── Check 3 (optional): sanity_endpoints via FastAPI TestClient ──────────
+    sanity_endpoints = story.get("sanity_endpoints", [])
+    if sanity_endpoints and server_dir.exists() and python_bin.exists():
+        print(f"  [preflight] sanity_endpoints probe: {sanity_endpoints}")
+        # Run endpoint probes in a child process so sys.path manipulation is isolated
+        probe_script = r"""
+import sys, json
+sys.path.insert(0, '.')
+try:
+    from fastapi.testclient import TestClient
+    from app.main import app
+except Exception as e:
+    print(json.dumps([{"ep": "__import__", "error": str(e)}]))
+    sys.exit(0)
+
+client = TestClient(app, raise_server_exceptions=False)
+endpoints = json.loads(sys.argv[1])
+results = []
+for ep in endpoints:
+    try:
+        method, path = ep.split(' ', 1)
+        r = client.request(method, path)
+        results.append({
+            'ep': ep,
+            'code': r.status_code,
+            'body': r.text[:500] if r.status_code >= 500 else ''
+        })
+    except Exception as e:
+        results.append({'ep': ep, 'error': str(e)})
+print(json.dumps(results))
+"""
+        try:
+            result = _sp.run(
+                [str(python_bin), "-c", probe_script, _json.dumps(sanity_endpoints)],
+                cwd=str(server_dir),
+                capture_output=True,
+                text=True,
+                timeout=120,
+            )
+            if result.returncode != 0:
+                failures.append(
+                    f"[sanity-endpoints] Probe runner failed (exit={result.returncode}):\n"
+                    f"{result.stderr[:1500]}"
+                )
+                print(f"  [preflight] sanity-endpoints runner FAILED")
+            else:
+                try:
+                    # Last non-empty line is the JSON result
+                    last_line = [l for l in result.stdout.strip().splitlines() if l.strip()][-1]
+                    probes = _json.loads(last_line)
+                    endpoint_failures = []
+                    for p in probes:
+                        if "error" in p:
+                            endpoint_failures.append(
+                                f"  {p['ep']}: connection error — {p['error']}"
+                            )
+                        elif p.get("code", 0) >= 500:
+                            endpoint_failures.append(
+                                f"  {p['ep']}: HTTP {p['code']}\n  body: {p.get('body', '')}"
+                            )
+                    if endpoint_failures:
+                        failures.append(
+                            "[sanity-endpoints] Server-side 5xx or connection errors:\n"
+                            + "\n".join(endpoint_failures)
+                        )
+                        print(f"  [preflight] sanity-endpoints FAILED: {len(endpoint_failures)} endpoint(s)")
+                    else:
+                        print(f"  [preflight] sanity-endpoints OK ({len(probes)} probed)")
+                except Exception as e:
+                    failures.append(
+                        f"[sanity-endpoints] Could not parse probe output: {e}\n"
+                        f"stdout: {result.stdout[:1000]}"
+                    )
+                    print(f"  [preflight] sanity-endpoints parse error: {e}")
+        except _sp.TimeoutExpired:
+            failures.append("[sanity-endpoints] TIMEOUT after 120s")
+            print(f"  [preflight] sanity-endpoints TIMEOUT")
+        except Exception as e:
+            failures.append(f"[sanity-endpoints] Setup error: {e}")
+            print(f"  [preflight] sanity-endpoints error: {e}")
+
+    if failures:
+        detail = "Audit preflight FAILED — fix these before re-submitting:\n\n" + "\n\n".join(failures)
+        return False, detail
+    return True, "preflight OK"
+
+
+# ─────────────────────────────────────────────
 # P0: Tiered Context Injection - 构建动态 Prompt
 # ─────────────────────────────────────────────
 def build_developer_prompt(story_id: str | None) -> str:
@@ -1322,6 +1504,28 @@ def main():
                 if prd and current_story:
                     s = get_story_by_id(prd, current_story)
                     if s and s.get("passes", False):
+                        # Story 通过验证 → 先跑 preflight 静态检查，再激活审计门禁
+                        print(f"\n  [preflight] Running audit preflight checks for {current_story}...")
+                        preflight_ok, preflight_msg = _run_audit_preflight_checks(
+                            current_story, s, PROJECT_ROOT
+                        )
+                        if not preflight_ok:
+                            # Preflight 失败：直接 reject，写 notes，不进入 audit gate
+                            print(f"\n  [preflight] REJECTED {current_story} before audit gate")
+                            s["passes"] = False
+                            s["retryCount"] = s.get("retryCount", 0) + 1
+                            existing_notes = s.get("notes", "").strip()
+                            s["notes"] = (
+                                f"{existing_notes}\n{preflight_msg}".strip()
+                                if existing_notes
+                                else preflight_msg
+                            )
+                            if not write_prd_safe(prd):
+                                print(f"  ⚠️  write_prd_safe failed after preflight reject")
+                            # Skip the rest of this iteration's audit gate block
+                            dashboard.set_state(phase="idle")
+                            continue
+                        print(f"  [preflight] All checks passed — activating audit gate")
                         # Story 通过验证 → 激活审计门禁，等待 Opus 审查
                         gate_written = write_audit_gate(current_story)
                         if gate_written:

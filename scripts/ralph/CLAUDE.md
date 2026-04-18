@@ -114,6 +114,18 @@ python scripts/ralph/ralph-tools.py audit-status         # 查看门禁状态
 
 你可以用这些命令快速查询状态，但核心的 story 查找逻辑已由编排器（ralph.py）注入到你的 prompt 中，通常不需要自行查询。
 
+## 审计预检（Preflight）
+
+你完成 story 并被 Validator 标记 PASS 后，编排器会在 Audit Gate 激活**之前**自动运行：
+1. `cd client && npx tsc -b --noEmit` — TypeScript 编译检查
+2. `cd server && python -c "from app.main import app; print('ok')"` — Backend import 健全性检查
+3. （可选）如果 story 声明了 `sanity_endpoints` 字段，通过 FastAPI TestClient 探测各端点（只检查是否 500，不触发副作用）
+
+任何失败会**直接 reject**（不进入 Opus 审计等待），错误详情写入 story.notes，你下一轮读 notes 修复。
+
+这不取代你自己的 typecheck/import 验证——那仍然是你的责任。
+常见坑：字段名 typo（如 `password_hash` vs `hashed_password`），import 路径错误，TypeScript 类型不兼容。
+
 ## 重要提示
 
 - 每次迭代只处理一个 story, 记住 只处理一个user story,处理完这个story,你的任务就结束了
