@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import {
   Plus,
   X,
@@ -32,11 +33,11 @@ import {
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
 
 const PLATFORMS = [
-  { id: 'instagram', label: 'Instagram' },
-  { id: 'youtube', label: 'YouTube' },
-  { id: 'tiktok', label: 'TikTok', stub: true },
-  { id: 'twitter', label: 'Twitter / X', stub: true },
-  { id: 'facebook', label: 'Facebook', stub: true },
+  { id: 'instagram', labelKey: 'common.platform.instagram' },
+  { id: 'youtube', labelKey: 'common.platform.youtube' },
+  { id: 'tiktok', labelKey: 'common.platform.tiktok', stub: true },
+  { id: 'twitter', labelKey: 'common.platform.twitter', stub: true },
+  { id: 'facebook', labelKey: 'common.platform.facebook', stub: true },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -56,12 +57,13 @@ function isRunning(t: ScrapeTask) {
 }
 
 function StatusBadge({ status }: { status: string }) {
+  const { t } = useTranslation()
   const map: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
-    pending:   { label: 'Pending',   cls: 'bg-amber-50 text-amber-700 ring-amber-200',   icon: <Clock size={11} /> },
-    running:   { label: 'Running',   cls: 'bg-blue-50 text-blue-700 ring-blue-200',      icon: <Loader2 size={11} className="animate-spin" /> },
-    completed: { label: 'Done',      cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', icon: <CheckCircle size={11} /> },
-    failed:    { label: 'Failed',    cls: 'bg-red-50 text-red-600 ring-red-200',          icon: <XCircle size={11} /> },
-    cancelled: { label: 'Cancelled', cls: 'bg-gray-50 text-gray-500 ring-gray-200',       icon: <XCircle size={11} /> },
+    pending:   { label: t('scrape.status.pending'),   cls: 'bg-amber-50 text-amber-700 ring-amber-200',   icon: <Clock size={11} /> },
+    running:   { label: t('scrape.status.running'),   cls: 'bg-blue-50 text-blue-700 ring-blue-200',      icon: <Loader2 size={11} className="animate-spin" /> },
+    completed: { label: t('scrape.status.done'),      cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', icon: <CheckCircle size={11} /> },
+    failed:    { label: t('scrape.status.failed'),    cls: 'bg-red-50 text-red-600 ring-red-200',          icon: <XCircle size={11} /> },
+    cancelled: { label: t('scrape.status.cancelled'), cls: 'bg-gray-50 text-gray-500 ring-gray-200',       icon: <XCircle size={11} /> },
   }
   const cfg = map[status] ?? map['pending']
   return (
@@ -104,11 +106,14 @@ type CreateModalProps = {
 }
 
 function CreateModal({ onClose, onCreated }: CreateModalProps) {
+  const { t } = useTranslation()
   const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['instagram', 'youtube'])
   const [industry, setIndustry] = useState('')
   const [targetCount, setTargetCount] = useState(50)
   const [creating, setCreating] = useState(false)
   const [error, setError] = useState('')
+  const [targetMarket, setTargetMarket] = useState('')
+  const [competitorBrands, setCompetitorBrands] = useState('')
 
   function togglePlatform(id: string) {
     setSelectedPlatforms((prev) =>
@@ -119,11 +124,11 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     if (selectedPlatforms.length === 0) {
-      setError('Select at least one platform')
+      setError(t('scrape.validation.selectPlatform'))
       return
     }
     if (!industry.trim()) {
-      setError('Industry keyword is required')
+      setError(t('scrape.validation.industryRequired'))
       return
     }
     setCreating(true)
@@ -133,11 +138,13 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
         platforms: selectedPlatforms,
         industry: industry.trim(),
         target_count: targetCount,
+        target_market: targetMarket || undefined,
+        competitor_brands: competitorBrands || undefined,
       }
       const task = await scrapeApi.createTask(payload)
       onCreated(task)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Failed to create task')
+      setError(err instanceof Error ? err.message : t('scrape.createFailed'))
     } finally {
       setCreating(false)
     }
@@ -148,7 +155,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
-          <h2 className="text-sm font-semibold text-gray-900">New Scrape Task</h2>
+          <h2 className="text-sm font-semibold text-gray-900">{t('scrape.modal.title')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={16} />
           </button>
@@ -157,7 +164,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
           {/* Platform selection */}
           <div>
-            <label className="block text-xs text-gray-500 mb-2">Platforms</label>
+            <label className="block text-xs text-gray-500 mb-2">{t('scrape.modal.platforms')}</label>
             <div className="grid grid-cols-2 gap-2">
               {PLATFORMS.map((p) => {
                 const checked = selectedPlatforms.includes(p.id)
@@ -176,10 +183,10 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
                       onChange={() => togglePlatform(p.id)}
                       className="w-3.5 h-3.5 accent-gray-900"
                     />
-                    <span className="text-xs text-gray-700">{p.label}</span>
+                    <span className="text-xs text-gray-700">{t(p.labelKey)}</span>
                     {p.stub && (
                       <span className="ml-auto text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                        CSV only
+                        {t('scrape.modal.csvOnly')}
                       </span>
                     )}
                   </label>
@@ -187,20 +194,19 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
               })}
             </div>
             <p className="text-[11px] text-gray-400 mt-1.5">
-              Instagram &amp; YouTube support automatic Playwright scraping.
-              TikTok / Twitter / Facebook will prompt for CSV import.
+              {t('scrape.modal.platformHint')}
             </p>
           </div>
 
           {/* Industry */}
           <div>
-            <label className="block text-xs text-gray-500 mb-1">Industry keyword *</label>
+            <label className="block text-xs text-gray-500 mb-1">{t('scrape.modal.industryLabel')}</label>
             <input
               type="text"
               required
               value={industry}
               onChange={(e) => setIndustry(e.target.value)}
-              placeholder="e.g. fitness, beauty, gaming"
+              placeholder={t('scrape.modal.industryPlaceholder')}
               className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
             />
           </div>
@@ -208,7 +214,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
           {/* Target count */}
           <div>
             <label className="block text-xs text-gray-500 mb-1">
-              Target email count — <span className="font-medium text-gray-700">{targetCount}</span>
+              {t('scrape.modal.targetLabel', { count: targetCount })}
             </label>
             <input
               type="range"
@@ -225,6 +231,44 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
             </div>
           </div>
 
+          {/* Optional: Target Market */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {t('scrape.modal.targetMarket')}
+            </label>
+            <select
+              value={targetMarket}
+              onChange={(e) => setTargetMarket(e.target.value)}
+              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
+            >
+              <option value="">{t('scrape.modal.noMarketFilter')}</option>
+              <option value="us">English (US/Global)</option>
+              <option value="tw">繁體中文 (Taiwan)</option>
+              <option value="hk">繁體中文 (Hong Kong)</option>
+              <option value="jp">日本語 (Japan)</option>
+              <option value="kr">한국어 (Korea)</option>
+              <option value="es">Español (Spanish)</option>
+              <option value="pt">Português (Brazil)</option>
+              <option value="fr">Français (France)</option>
+              <option value="de">Deutsch (Germany)</option>
+              <option value="sea">Southeast Asia</option>
+            </select>
+          </div>
+
+          {/* Optional: Competitor Brands */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              {t('scrape.modal.competitorBrands')}
+            </label>
+            <input
+              type="text"
+              value={competitorBrands}
+              onChange={(e) => setCompetitorBrands(e.target.value)}
+              placeholder={t('scrape.modal.competitorPlaceholder')}
+              className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
+            />
+          </div>
+
           {error && <p className="text-xs text-red-500">{error}</p>}
 
           {/* Footer */}
@@ -234,7 +278,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
               onClick={onClose}
               className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
@@ -242,7 +286,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
               className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
             >
               {creating && <Loader2 size={13} className="animate-spin" />}
-              Start Scraping
+              {t('scrape.modal.startScraping')}
             </button>
           </div>
         </form>
@@ -256,6 +300,7 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
 type ImportStep = 'upload' | 'preview' | 'done'
 
 function ImportTab() {
+  const { t } = useTranslation()
   const [step, setStep] = useState<ImportStep>('upload')
   const [file, setFile] = useState<File | null>(null)
   const [preview, setPreview] = useState<ImportPreviewResponse | null>(null)
@@ -277,7 +322,7 @@ function ImportTab() {
       setMapping(data.suggested_mapping)
       setStep('preview')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Failed to parse file')
+      setError(e instanceof Error ? e.message : t('import.parseFailed'))
     } finally {
       setLoading(false)
     }
@@ -299,7 +344,7 @@ function ImportTab() {
       setResult({ imported: res.imported, duplicates: res.duplicates, invalid: res.invalid })
       setStep('done')
     } catch (e: unknown) {
-      setError(e instanceof Error ? e.message : 'Import failed')
+      setError(e instanceof Error ? e.message : t('import.importFailed'))
     } finally {
       setLoading(false)
     }
@@ -324,26 +369,26 @@ function ImportTab() {
     return (
       <div className="max-w-lg mx-auto py-12 text-center space-y-4">
         <CheckCircle size={40} className="mx-auto text-emerald-500" />
-        <h3 className="text-base font-semibold text-gray-900">Import Complete</h3>
+        <h3 className="text-base font-semibold text-gray-900">{t('import.complete')}</h3>
         <div className="grid grid-cols-3 gap-3 text-center">
           <div className="bg-emerald-50 rounded-xl p-4">
             <div className="text-2xl font-bold text-emerald-700">{result.imported}</div>
-            <div className="text-xs text-emerald-600 mt-0.5">Imported</div>
+            <div className="text-xs text-emerald-600 mt-0.5">{t('import.imported')}</div>
           </div>
           <div className="bg-amber-50 rounded-xl p-4">
             <div className="text-2xl font-bold text-amber-700">{result.duplicates}</div>
-            <div className="text-xs text-amber-600 mt-0.5">Skipped (dup)</div>
+            <div className="text-xs text-amber-600 mt-0.5">{t('import.duplicates')}</div>
           </div>
           <div className="bg-red-50 rounded-xl p-4">
             <div className="text-2xl font-bold text-red-700">{result.invalid}</div>
-            <div className="text-xs text-red-600 mt-0.5">Invalid</div>
+            <div className="text-xs text-red-600 mt-0.5">{t('import.invalid')}</div>
           </div>
         </div>
         <button
           onClick={reset}
           className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
         >
-          Import Another File
+          {t('import.importAnother')}
         </button>
       </div>
     )
@@ -358,7 +403,7 @@ function ImportTab() {
           <FileSpreadsheet size={16} className="text-gray-500 shrink-0" />
           <div className="min-w-0">
             <p className="text-xs font-medium text-gray-800 truncate">{file?.name}</p>
-            <p className="text-[11px] text-gray-400 mt-0.5">{preview.total_rows} rows detected</p>
+            <p className="text-[11px] text-gray-400 mt-0.5">{t('import.rowsDetected', { count: preview.total_rows })}</p>
           </div>
           <button onClick={reset} className="ml-auto text-gray-400 hover:text-gray-700 transition-colors">
             <X size={14} />
@@ -367,7 +412,7 @@ function ImportTab() {
 
         {/* Column mapping */}
         <div>
-          <h3 className="text-xs font-semibold text-gray-700 mb-3">Column Mapping</h3>
+          <h3 className="text-xs font-semibold text-gray-700 mb-3">{t('import.columnMapping')}</h3>
           <div className="grid grid-cols-2 gap-2">
             {mapping.map((m) => (
               <div key={m.csv_column} className="flex items-center gap-2 bg-gray-50 rounded-lg px-3 py-2">
@@ -380,7 +425,7 @@ function ImportTab() {
                   onChange={(e) => updateMapping(m.csv_column, e.target.value || null)}
                   className="text-xs border border-gray-200 rounded px-1.5 py-1 focus:outline-none focus:ring-1 focus:ring-blue-300 bg-white"
                 >
-                  <option value="">Skip</option>
+                  <option value="">{t('import.skip')}</option>
                   {FIELD_OPTIONS.map((opt) => (
                     <option key={opt.value} value={opt.value}>{opt.label}</option>
                   ))}
@@ -391,7 +436,7 @@ function ImportTab() {
           {!emailMapped && (
             <p className="mt-2 flex items-center gap-1.5 text-xs text-red-500">
               <AlertCircle size={12} />
-              Map one column to Email before proceeding.
+              {t('import.mapEmailHint')}
             </p>
           )}
         </div>
@@ -399,7 +444,7 @@ function ImportTab() {
         {/* Preview table */}
         <div>
           <h3 className="text-xs font-semibold text-gray-700 mb-2">
-            Preview (first {Math.min(10, preview.rows.length)} rows)
+            {t('import.preview', { shown: Math.min(10, preview.rows.length), total: preview.total_rows })}
           </h3>
           <div className="overflow-x-auto">
             <table className="w-full text-xs border border-gray-100 rounded-xl overflow-hidden">
@@ -447,7 +492,7 @@ function ImportTab() {
             className="w-3.5 h-3.5 accent-gray-900"
           />
           <span className="text-xs text-gray-600">
-            Overwrite existing influencers (same email) with imported data
+            {t('import.overwrite')}
           </span>
         </label>
 
@@ -461,7 +506,7 @@ function ImportTab() {
         {/* Actions */}
         <div className="flex justify-end gap-2">
           <button onClick={reset} className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors">
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             onClick={handleConfirm}
@@ -469,7 +514,7 @@ function ImportTab() {
             className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
           >
             {loading && <Loader2 size={13} className="animate-spin" />}
-            Confirm Import
+            {t('import.importRows', { count: preview.total_rows })}
           </button>
         </div>
       </div>
@@ -491,8 +536,8 @@ function ImportTab() {
         }`}
       >
         <Upload size={28} className="mx-auto text-gray-300 mb-3" />
-        <p className="text-sm font-medium text-gray-700">Drop your file here</p>
-        <p className="text-xs text-gray-400 mt-1">or click to browse — .csv, .xlsx, .xls</p>
+        <p className="text-sm font-medium text-gray-700">{t('import.dropHint')}</p>
+        <p className="text-xs text-gray-400 mt-1">{t('import.browseHint')}</p>
         <input
           ref={inputRef}
           type="file"
@@ -505,7 +550,7 @@ function ImportTab() {
       {loading && (
         <div className="flex items-center justify-center gap-2 text-sm text-gray-400">
           <Loader2 size={14} className="animate-spin" />
-          Parsing file…
+          {t('import.parsing')}
         </div>
       )}
 
@@ -517,8 +562,7 @@ function ImportTab() {
       )}
 
       <p className="text-[11px] text-gray-400 text-center">
-        Auto-detected columns: email, nickname, platform, followers, profile_url, industry
-        (English and Chinese column names)
+        {t('import.autoDetected')}
       </p>
     </div>
   )
@@ -529,6 +573,7 @@ function ImportTab() {
 type Tab = 'tasks' | 'import'
 
 export default function ScrapePage() {
+  const { t } = useTranslation()
   const navigate = useNavigate()
   const [tab, setTab] = useState<Tab>('tasks')
   const [tasks, setTasks] = useState<ScrapeTask[]>([])
@@ -591,9 +636,9 @@ export default function ScrapePage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-base font-semibold text-gray-900">Scrape</h1>
+          <h1 className="text-base font-semibold text-gray-900">{t('scrape.title')}</h1>
           <p className="text-xs text-gray-400 mt-0.5">
-            Automatically scrape or manually import influencer emails
+            {t('scrape.subtitle')}
           </p>
         </div>
         {tab === 'tasks' && (
@@ -602,24 +647,24 @@ export default function ScrapePage() {
             className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
           >
             <Plus size={14} />
-            New Task
+            {t('scrape.newTask')}
           </button>
         )}
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 border-b border-gray-100">
-        {(['tasks', 'import'] as Tab[]).map((t) => (
+        {(['tasks', 'import'] as Tab[]).map((tabKey) => (
           <button
-            key={t}
-            onClick={() => setTab(t)}
+            key={tabKey}
+            onClick={() => setTab(tabKey)}
             className={`px-4 py-2 text-xs font-medium capitalize transition-colors border-b-2 -mb-px ${
-              tab === t
+              tab === tabKey
                 ? 'border-gray-900 text-gray-900'
                 : 'border-transparent text-gray-400 hover:text-gray-700'
             }`}
           >
-            {t === 'tasks' ? 'Scrape Tasks' : 'CSV / Excel Import'}
+            {tabKey === 'tasks' ? t('scrape.tabScrapeTasks') : t('scrape.tabCsvImport')}
           </button>
         ))}
       </div>
@@ -632,7 +677,7 @@ export default function ScrapePage() {
       {anyRunning && (
         <div className="flex items-center gap-2 px-4 py-2.5 bg-blue-50 border border-blue-100 rounded-lg text-xs text-blue-700">
           <Zap size={12} className="text-blue-500 shrink-0" />
-          A scrape task is running — progress updates in real time via WebSocket.
+          {t('scrape.wsHint')}
         </div>
       )}
 
@@ -641,15 +686,15 @@ export default function ScrapePage() {
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <Loader2 size={18} className="animate-spin mr-2" />
-            <span className="text-sm">Loading…</span>
+            <span className="text-sm">{t('scrape.loading')}</span>
           </div>
         ) : tasks.length === 0 ? (
           <div className="py-16 text-center space-y-3">
             <Globe size={32} className="mx-auto text-gray-200" />
             <div>
-              <p className="text-sm text-gray-500">No scrape tasks yet</p>
+              <p className="text-sm text-gray-500">{t('scrape.emptyTitle')}</p>
               <p className="text-xs text-gray-400 mt-0.5">
-                Create a task to start extracting influencer emails
+                {t('scrape.emptySubtitle')}
               </p>
             </div>
             <button
@@ -657,51 +702,51 @@ export default function ScrapePage() {
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
             >
               <Plus size={12} />
-              New Task
+              {t('scrape.newTask')}
             </button>
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Platforms</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Industry</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Status</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-40">Progress</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Valid Emails</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Target</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Created</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrape.table.platforms')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrape.table.industry')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrape.table.status')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 w-40">{t('scrape.table.progress')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('scrape.table.validEmails')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('scrape.table.target')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('scrape.table.created')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {tasks.map((rawTask) => {
-                const t = resolveTask(rawTask)
-                const live = (t as ScrapeTask & { _live?: ProgressEvent })._live
+                const task = resolveTask(rawTask)
+                const live = (task as ScrapeTask & { _live?: ProgressEvent })._live
                 return (
                   <tr
-                    key={t.id}
+                    key={task.id}
                     className="hover:bg-gray-50/60 transition-colors cursor-pointer"
-                    onClick={() => navigate(`/scrape/tasks/${t.id}`)}
+                    onClick={() => navigate(`/scrape/tasks/${task.id}`)}
                   >
                     <td className="px-4 py-3">
-                      <PlatformTags raw={t.platforms} />
+                      <PlatformTags raw={task.platforms} />
                     </td>
                     <td className="px-4 py-3 text-xs text-gray-700 capitalize">
-                      {t.industry}
+                      {task.industry}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={t.status} />
-                      {t.error_message && (
-                        <p className="text-[10px] text-red-400 mt-0.5 max-w-[160px] truncate" title={t.error_message}>
-                          {t.error_message}
+                      <StatusBadge status={task.status} />
+                      {task.error_message && (
+                        <p className="text-[10px] text-red-400 mt-0.5 max-w-[160px] truncate" title={task.error_message}>
+                          {task.error_message}
                         </p>
                       )}
                     </td>
                     <td className="px-4 py-3">
                       <div className="space-y-1">
-                        <ProgressBar value={t.progress} />
+                        <ProgressBar value={task.progress} />
                         <div className="flex justify-between text-[10px] text-gray-400">
-                          <span>{t.progress}%</span>
+                          <span>{task.progress}%</span>
                           {live?.latest_email && (
                             <span className="truncate max-w-[100px]" title={live.latest_email}>
                               {live.latest_email}
@@ -711,18 +756,18 @@ export default function ScrapePage() {
                       </div>
                     </td>
                     <td className="px-4 py-3 text-right">
-                      <span className="text-xs font-medium text-gray-900">{t.valid_count}</span>
-                      {t.found_count > t.valid_count && (
+                      <span className="text-xs font-medium text-gray-900">{task.valid_count}</span>
+                      {task.found_count > task.valid_count && (
                         <span className="text-[10px] text-gray-400 ml-1">
-                          / {t.found_count} found
+                          {t('scrape.table.found', { count: task.found_count })}
                         </span>
                       )}
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-gray-500">
-                      {t.target_count}
+                      {task.target_count}
                     </td>
                     <td className="px-4 py-3 text-right text-xs text-gray-400">
-                      {new Date(t.created_at).toLocaleDateString()}
+                      {new Date(task.created_at).toLocaleDateString()}
                     </td>
                   </tr>
                 )

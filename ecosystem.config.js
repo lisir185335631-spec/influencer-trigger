@@ -13,7 +13,7 @@ module.exports = {
     {
       name: 'influencer-backend',
       script: '.venv/bin/python',
-      args: '-m uvicorn app.main:app --host 0.0.0.0 --port 8000',
+      args: '-m uvicorn app.main:app --host 0.0.0.0 --port 6002',
       cwd: './server',
       interpreter: 'none',            // Python manages its own interpreter
       instances: 1,
@@ -31,7 +31,7 @@ module.exports = {
       // Optional: serve frontend via a simple static server (prefer nginx in prod)
       name: 'influencer-frontend',
       script: 'npx',
-      args: 'serve -s dist -l 3000',
+      args: 'serve -s dist -l 6001',
       cwd: './client',
       interpreter: 'none',
       instances: 1,

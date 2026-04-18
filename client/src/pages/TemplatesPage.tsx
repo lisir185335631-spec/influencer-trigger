@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import DOMPurify from 'dompurify'
 import {
   Plus,
@@ -102,6 +103,7 @@ function generatedToForm(g: GeneratedTemplate): FormValues {
 }
 
 function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
+  const { t } = useTranslation()
   const [form, setForm] = useState<FormValues>(
     editing
       ? templateToForm(editing)
@@ -148,7 +150,7 @@ function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
         onSaved(created)
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Save failed')
+      setError(err instanceof Error ? err.message : t('templates.modal.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -160,7 +162,7 @@ function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 shrink-0">
           <h2 className="text-sm font-semibold text-gray-900">
-            {editing ? 'Edit Template' : 'New Template'}
+            {editing ? t('templates.modal.editTitle') : t('templates.modal.newTitle')}
           </h2>
           <div className="flex items-center gap-2">
             <button
@@ -169,7 +171,7 @@ function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
               className="flex items-center gap-1 px-2.5 py-1.5 text-xs text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg transition-colors"
             >
               {preview ? <EyeOff size={13} /> : <Eye size={13} />}
-              {preview ? 'Edit' : 'Preview'}
+              {preview ? t('templates.modal.editTab') : t('templates.modal.previewTab')}
             </button>
             <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
               <X size={16} />
@@ -181,33 +183,33 @@ function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
           {preview ? (
             <div className="p-6 space-y-3">
               <div>
-                <p className="text-xs text-gray-400 mb-1">Subject preview</p>
+                <p className="text-xs text-gray-400 mb-1">{t('templates.modal.subjectPreview')}</p>
                 <p className="text-sm font-medium text-gray-900">
-                  {renderPreview(form.subject) || '(no subject)'}
+                  {renderPreview(form.subject) || t('templates.modal.noSubject')}
                 </p>
               </div>
               <div>
-                <p className="text-xs text-gray-400 mb-1">Body preview</p>
+                <p className="text-xs text-gray-400 mb-1">{t('templates.modal.bodyPreview')}</p>
                 <div
                   className="prose prose-sm max-w-none text-gray-700 border border-gray-100 rounded-lg p-4 bg-gray-50"
                   dangerouslySetInnerHTML={{ __html: renderPreview(form.body_html) }}
                 />
               </div>
               <p className="text-xs text-gray-400">
-                Sample values: {Object.entries(SAMPLE_VARS).map(([k, v]) => `{{${k}}} → ${v}`).join(' · ')}
+                {t('templates.modal.sampleValues')}
               </p>
             </div>
           ) : (
             <form id="template-form" onSubmit={handleSubmit} className="p-6 space-y-4">
               {/* Name */}
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Template Name *</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('templates.modal.nameLabel')}</label>
                 <input
                   type="text"
                   required
                   value={form.name}
                   onChange={set('name')}
-                  placeholder="e.g. Formal Fitness Pitch"
+                  placeholder={t('templates.modal.namePlaceholder')}
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
                 />
               </div>
@@ -215,38 +217,38 @@ function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
               {/* Industry + Style + Language */}
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Industry</label>
+                  <label className="block text-xs text-gray-500 mb-1">{t('templates.modal.industryLabel')}</label>
                   <input
                     type="text"
                     value={form.industry}
                     onChange={set('industry')}
-                    placeholder="fitness"
+                    placeholder={t('templates.modal.industryPlaceholder')}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
                   />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Style</label>
+                  <label className="block text-xs text-gray-500 mb-1">{t('templates.modal.styleLabel')}</label>
                   <div className="relative">
                     <select
                       value={form.style}
                       onChange={set('style')}
                       className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 appearance-none pr-8"
                     >
-                      <option value="">— any —</option>
-                      <option value="formal">Formal</option>
-                      <option value="casual">Casual</option>
-                      <option value="direct">Direct</option>
+                      <option value="">{t('templates.modal.anyStyle')}</option>
+                      <option value="formal">{t('templates.modal.formal')}</option>
+                      <option value="casual">{t('templates.modal.casual')}</option>
+                      <option value="direct">{t('templates.modal.direct')}</option>
                     </select>
                     <ChevronDown size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none" />
                   </div>
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 mb-1">Language</label>
+                  <label className="block text-xs text-gray-500 mb-1">{t('templates.modal.languageLabel')}</label>
                   <input
                     type="text"
                     value={form.language}
                     onChange={set('language')}
-                    placeholder="en"
+                    placeholder={t('templates.modal.languagePlaceholder')}
                     className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
                   />
                 </div>
@@ -254,7 +256,7 @@ function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
 
               {/* Subject */}
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Subject *</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('templates.modal.subjectLabel')}</label>
                 <input
                   type="text"
                   required
@@ -268,7 +270,7 @@ function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
               {/* Body */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs text-gray-500">Body HTML *</label>
+                  <label className="text-xs text-gray-500">{t('templates.modal.bodyLabel')}</label>
                   <span className="text-xs text-gray-400">
                     {'{{influencer_name}}'} {'{{platform}}'} {'{{followers}}'} {'{{industry}}'}
                   </span>
@@ -295,7 +297,7 @@ function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
             onClick={onClose}
             className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
           >
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="submit"
@@ -304,7 +306,7 @@ function TemplateModal({ editing, prefill, onClose, onSaved }: ModalProps) {
             className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
           >
             {saving && <Loader2 size={13} className="animate-spin" />}
-            {editing ? 'Save Changes' : 'Create Template'}
+            {editing ? t('templates.modal.saveChanges') : t('templates.modal.createTemplate')}
           </button>
         </div>
       </div>
@@ -320,6 +322,7 @@ type GeneratePanelProps = {
 }
 
 function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
+  const { t } = useTranslation()
   const [industry, setIndustry] = useState('')
   const [generating, setGenerating] = useState(false)
   const [results, setResults] = useState<GeneratedTemplate[]>([])
@@ -335,7 +338,7 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
       const data = await templatesApi.generate(industry.trim())
       setResults(data)
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : 'Generation failed')
+      setError(err instanceof Error ? err.message : t('templates.ai.generateFailed'))
     } finally {
       setGenerating(false)
     }
@@ -348,7 +351,7 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 shrink-0">
           <div className="flex items-center gap-2">
             <Sparkles size={15} className="text-violet-500" />
-            <h2 className="text-sm font-semibold text-gray-900">AI Template Generator</h2>
+            <h2 className="text-sm font-semibold text-gray-900">{t('templates.ai.title')}</h2>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={16} />
@@ -363,7 +366,7 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
               value={industry}
               onChange={(e) => setIndustry(e.target.value)}
               onKeyDown={(e) => e.key === 'Enter' && handleGenerate()}
-              placeholder="Industry keyword, e.g. fitness, beauty, gaming"
+              placeholder={t('templates.ai.placeholder')}
               className="flex-1 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-violet-100 focus:border-violet-400"
             />
             <button
@@ -376,7 +379,7 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
               ) : (
                 <Sparkles size={13} />
               )}
-              Generate
+              {t('templates.ai.generate')}
             </button>
           </div>
 
@@ -386,9 +389,9 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
           {results.length > 0 && (
             <div className="space-y-3">
               <p className="text-xs text-gray-400">
-                3 templates generated — expand to preview, then click "Use this template" to edit and save.
+                {t('templates.ai.generatedHint')}
               </p>
-              {results.map((t, i) => (
+              {results.map((tpl, i) => (
                 <div key={i} className="border border-gray-100 rounded-xl overflow-hidden">
                   <button
                     type="button"
@@ -396,8 +399,8 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
                     className="w-full flex items-center justify-between px-4 py-3 hover:bg-gray-50 transition-colors text-left"
                   >
                     <div className="flex items-center gap-2">
-                      <StyleBadge style={t.style} />
-                      <span className="text-sm font-medium text-gray-900">{t.name}</span>
+                      <StyleBadge style={tpl.style} />
+                      <span className="text-sm font-medium text-gray-900">{tpl.name}</span>
                     </div>
                     <ChevronDown
                       size={14}
@@ -408,23 +411,23 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
                   {expanded === i && (
                     <div className="px-4 pb-4 space-y-3 border-t border-gray-50">
                       <div className="pt-3">
-                        <p className="text-xs text-gray-400 mb-1">Subject</p>
-                        <p className="text-sm text-gray-700">{renderPreview(t.subject)}</p>
+                        <p className="text-xs text-gray-400 mb-1">{t('templates.ai.subject')}</p>
+                        <p className="text-sm text-gray-700">{renderPreview(tpl.subject)}</p>
                       </div>
                       <div>
-                        <p className="text-xs text-gray-400 mb-1">Preview</p>
+                        <p className="text-xs text-gray-400 mb-1">{t('templates.ai.preview')}</p>
                         <div
                           className="prose prose-sm max-w-none text-gray-700 border border-gray-100 rounded-lg p-3 bg-gray-50 text-xs"
-                          dangerouslySetInnerHTML={{ __html: renderPreview(t.body_html) }}
+                          dangerouslySetInnerHTML={{ __html: renderPreview(tpl.body_html) }}
                         />
                       </div>
                       <div className="flex justify-end">
                         <button
                           type="button"
-                          onClick={() => onSelect(t)}
+                          onClick={() => onSelect(tpl)}
                           className="px-3 py-1.5 text-xs bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
                         >
-                          Use this template
+                          {t('templates.ai.useTemplate')}
                         </button>
                       </div>
                     </div>
@@ -442,6 +445,7 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function TemplatesPage() {
+  const { t } = useTranslation()
   const [templates, setTemplates] = useState<Template[]>([])
   const [loading, setLoading] = useState(true)
   const [industryFilter, setIndustryFilter] = useState('')
@@ -478,7 +482,7 @@ export default function TemplatesPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!window.confirm('Delete this template?')) return
+    if (!window.confirm(t('templates.deleteConfirm'))) return
     setDeletingId(id)
     try {
       await templatesApi.delete(id)
@@ -496,7 +500,7 @@ export default function TemplatesPage() {
 
   // Collect unique industries for filter chip bar
   const industries = Array.from(
-    new Set(templates.map((t) => t.industry).filter(Boolean) as string[])
+    new Set(templates.map((tpl) => tpl.industry).filter(Boolean) as string[])
   ).sort()
 
   return (
@@ -504,8 +508,8 @@ export default function TemplatesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-base font-semibold text-gray-900">Templates</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Email templates with variable substitution</p>
+          <h1 className="text-base font-semibold text-gray-900">{t('templates.title')}</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{t('templates.subtitle')}</p>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -513,14 +517,14 @@ export default function TemplatesPage() {
             className="flex items-center gap-1.5 px-3 py-2 text-sm text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-200 transition-colors"
           >
             <Sparkles size={14} />
-            AI Generate
+            {t('templates.aiGenerate')}
           </button>
           <button
             onClick={() => { setPrefill(null); setModal('add') }}
             className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
           >
             <Plus size={14} />
-            New Template
+            {t('templates.newTemplate')}
           </button>
         </div>
       </div>
@@ -528,7 +532,7 @@ export default function TemplatesPage() {
       {/* Industry filter chips */}
       {industries.length > 0 && (
         <div className="flex items-center gap-2 flex-wrap">
-          <span className="text-xs text-gray-400">Filter:</span>
+          <span className="text-xs text-gray-400">{t('templates.filter')}</span>
           <button
             onClick={() => setIndustryFilter('')}
             className={`px-2.5 py-1 text-xs rounded-full border transition-colors ${
@@ -537,7 +541,7 @@ export default function TemplatesPage() {
                 : 'text-gray-600 border-gray-200 hover:bg-gray-50'
             }`}
           >
-            All
+            {t('templates.all')}
           </button>
           {industries.map((ind) => (
             <button
@@ -560,60 +564,60 @@ export default function TemplatesPage() {
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <Loader2 size={18} className="animate-spin mr-2" />
-            <span className="text-sm">Loading…</span>
+            <span className="text-sm">{t('templates.loading')}</span>
           </div>
         ) : templates.length === 0 ? (
           <div className="py-16 text-center text-sm text-gray-400">
             {industryFilter
-              ? `No templates for "${industryFilter}".`
-              : 'No templates yet. Create one or use AI Generate.'}
+              ? t('templates.noTemplatesFor', { filter: industryFilter })
+              : t('templates.noTemplates')}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Name</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Subject</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Industry</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Style</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Created</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 w-24">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('templates.table.name')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('templates.table.subject')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('templates.table.industry')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('templates.table.style')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('templates.table.created')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 w-24">{t('templates.table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {templates.map((t) => (
-                <tr key={t.id} className="hover:bg-gray-50/60 transition-colors">
+              {templates.map((tpl) => (
+                <tr key={tpl.id} className="hover:bg-gray-50/60 transition-colors">
                   <td className="px-4 py-3">
-                    <p className="font-medium text-gray-900 text-xs">{t.name}</p>
+                    <p className="font-medium text-gray-900 text-xs">{tpl.name}</p>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500 max-w-[220px] truncate">
-                    {t.subject}
+                    {tpl.subject}
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-500">
-                    {t.industry ?? <span className="text-gray-300">—</span>}
+                    {tpl.industry ?? <span className="text-gray-300">—</span>}
                   </td>
                   <td className="px-4 py-3">
-                    <StyleBadge style={t.style} />
+                    <StyleBadge style={tpl.style} />
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-400">
-                    {new Date(t.created_at).toLocaleDateString()}
+                    {new Date(tpl.created_at).toLocaleDateString()}
                   </td>
                   <td className="px-4 py-3">
                     <div className="flex items-center justify-end gap-1">
                       <button
-                        onClick={() => setModal(t)}
-                        title="Edit"
+                        onClick={() => setModal(tpl)}
+                        title={t('common.edit')}
                         className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
                       >
                         <Pencil size={13} />
                       </button>
                       <button
-                        onClick={() => handleDelete(t.id)}
-                        disabled={deletingId === t.id}
-                        title="Delete"
+                        onClick={() => handleDelete(tpl.id)}
+                        disabled={deletingId === tpl.id}
+                        title={t('common.delete')}
                         className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
                       >
-                        {deletingId === t.id ? (
+                        {deletingId === tpl.id ? (
                           <Loader2 size={13} className="animate-spin" />
                         ) : (
                           <Trash2 size={13} />

@@ -1,9 +1,9 @@
-import asyncio
 import json
 import random
 import time
 from typing import Callable, Optional
 
+from starlette.background import BackgroundTask
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.requests import Request
 from starlette.responses import Response
@@ -139,7 +139,8 @@ class AuditMiddleware(BaseHTTPMiddleware):
             ip = request.client.host if request.client else None
             user_agent = (request.headers.get("user-agent") or "")[:512]
 
-            asyncio.create_task(_write_audit_log(
+            audit_task = BackgroundTask(
+                _write_audit_log,
                 user_id=user_id,
                 username=username,
                 role=role,
@@ -154,7 +155,36 @@ class AuditMiddleware(BaseHTTPMiddleware):
                 request_body_snippet=body_snippet,
                 response_snippet=None,
                 duration_ms=duration_ms,
-            ))
+            )
+
+            # Defensive: if response already has a background task (rare), chain instead of overwrite
+            if response.background is None:
+                response.background = audit_task
+            else:
+                existing = response.background
+
+                async def _chained() -> None:
+                    try:
+                        await existing()
+                    finally:
+                        await _write_audit_log(
+                            user_id=user_id,
+                            username=username,
+                            role=role,
+                            action=action,
+                            resource_type=resource_type,
+                            resource_id=resource_id,
+                            request_method=method,
+                            request_path=path,
+                            ip=ip,
+                            user_agent=user_agent,
+                            status_code=response.status_code,
+                            request_body_snippet=body_snippet,
+                            response_snippet=None,
+                            duration_ms=duration_ms,
+                        )
+
+                response.background = BackgroundTask(_chained)
 
             return response
         except Exception:

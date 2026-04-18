@@ -14,7 +14,7 @@
 | 层级 | 技术选型 | 说明 |
 |------|---------|------|
 | 后端框架 | FastAPI | 异步高性能，WebSocket 原生支持 |
-| Agent 编排 | LangGraph | Supervisor 模式，状态机驱动 |
+| Agent 编排 | APScheduler + asyncio + agent_runs 表 | 分布式调度（cron/lifespan/endpoint 触发），supervisor.py 做统一 tracking 封装；Classifier Agent 内部单独使用 LangGraph StateGraph |
 | ORM | SQLAlchemy 2.0 async | 异步数据库操作 |
 | 数据库 | SQLite（开发）→ PostgreSQL（生产） | 轻量启动，平滑迁移 |
 | 缓存/队列 | Redis | 邮件发送队列 + 状态事件流 |
@@ -25,40 +25,43 @@
 | 前端 | React 18 + TypeScript + TailwindCSS | 实时仪表盘 |
 | 实时通信 | WebSocket | 邮件状态实时推送到前端 |
 
-## Agent 架构（Supervisor + 5 Executor）
+## Agent 架构（分布式调度 + 统一 tracking）
 
 ```
-                    ┌──────────────┐
-                    │  Supervisor  │
-                    │  (LangGraph) │
-                    └──────┬───────┘
-         ┌─────────────────┼─────────────────┐
-         ▼                 ▼                 ▼
-  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐
-  │   Scraper   │  │   Sender    │  │   Monitor   │
-  │   Agent     │  │   Agent     │  │   Agent     │
-  │ (邮箱抓取)  │  │ (批量发送)  │  │ (状态监控)  │
-  └─────────────┘  └─────────────┘  └──────┬──────┘
-                                           │
-                              ┌─────────────┴─────────────┐
-                              ▼                           ▼
-                       ┌─────────────┐            ┌─────────────┐
-                       │  Responder  │            │  Classifier │
-                       │   Agent     │            │   Agent     │
-                       │ (自动跟进)  │            │ (意图分类)  │
-                       └─────────────┘            └─────────────┘
+  ┌───────────────────────────────────────────────────────────┐
+  │  编排层（orchestration）                                   │
+  │                                                            │
+  │   APScheduler cron jobs             asyncio lifespan task  │
+  │   ├─ daily reset_today_sent         └─ Monitor Agent 长驻 │
+  │   ├─ monthly follow_up_check                               │
+  │   └─ daily holiday_greeting_check                          │
+  │                                                            │
+  │   HTTP 端点触发（FastAPI /api/scrape 等）                   │
+  │                                                            │
+  │   supervisor.py：tracking 包装层                            │
+  │   所有 Agent 入口经 track_agent_run() 统一写 agent_runs 表 │
+  └───────────────────────────────────────────────────────────┘
+             │        │         │          │           │
+             ▼        ▼         ▼          ▼           ▼
+        ┌────────┬────────┬────────┬───────────┬───────────────┐
+        │Scraper │Sender  │Monitor │ Responder │ Classifier    │
+        │(触发)  │(触发)  │(长驻)  │  (触发)   │ (触发+LangGraph│
+        │        │        │        │           │   StateGraph) │
+        └────────┴────────┴────────┴───────────┴───────────────┘
 ```
 
 ### Agent 职责定义
 
 | Agent | 职责 | 输入 | 输出 | 触发条件 |
 |-------|------|------|------|---------|
-| **Supervisor** | 全局编排、任务调度、状态流转 | 用户指令/定时触发 | 分发任务到各 Agent | 入口 |
+| **Supervisor** | 统一 tracking 封装层（非集中编排器） | Agent 函数调用 | 包装后的 Agent 调用 + agent_runs 写入 | 所有 Agent 入口 |
 | **Scraper Agent** | 从 5 大平台抓取网红主页公开邮箱 | 平台 + 关键词/分类 | `{influencer_name, platform, email, profile_url, followers, bio}` | 用户发起抓取任务 |
 | **Sender Agent** | 批量发送合作邮件，控制发送速率 | 网红列表 + 邮件模板 | `{email_id, sent_at, status}` | 抓取完成后 |
 | **Monitor Agent** | 实时监控邮件状态（送达/打开/回复/退信） | 邮件 ID 列表 | 状态变更事件 | 持续运行（轮询 + Webhook） |
 | **Responder Agent** | 分析回复内容，生成自动跟进邮件 | 回复邮件内容 | 跟进邮件草稿 | Monitor 检测到回复 |
 | **Classifier Agent** | 对回复邮件进行意图分类和网红质量评估 | 回复内容 + 网红画像 | `{intent, interest_score, priority}` | 收到回复时 |
+
+> **注**：Supervisor 不是集中式编排器，只是 tracking wrapper。实际的跨 Agent 流程由 APScheduler cron、asyncio lifespan task、FastAPI endpoint 直接触发驱动。这是有意的设计选择：业务流程里 Agent 之间无需共享 StateGraph，独立触发更简单。
 
 ### 邮件状态机
 
@@ -156,7 +159,7 @@ influencer-trigger/
 - Python 3.11+，全量 type hints
 - async/await 异步优先
 - Pydantic v2 做数据校验
-- Agent 之间通过 LangGraph State 通信，禁止直接调用
+- Agent 之间独立触发，不共享 StateGraph；跨 Agent 协调通过 APScheduler/asyncio/FastAPI 驱动，统一经 supervisor.py tracking wrapper 调用
 - 每个 Agent 单独文件，职责单一
 - 日志用 structlog，JSON 格式
 

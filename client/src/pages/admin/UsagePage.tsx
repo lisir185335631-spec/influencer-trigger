@@ -216,7 +216,7 @@ export default function UsagePage() {
               />
               <YAxis tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} width={48} />
               <Tooltip
-                formatter={(v: number) => [`$${v.toFixed(4)}`, 'Cost']}
+                formatter={(v) => [`$${Number(v).toFixed(4)}`, 'Cost']}
                 labelFormatter={(l) => `Date: ${l}`}
               />
               <Line
@@ -256,7 +256,7 @@ export default function UsagePage() {
                     <Cell key={idx} fill={PIE_COLORS[idx % PIE_COLORS.length]} />
                   ))}
                 </Pie>
-                <Tooltip formatter={(v: number) => [`$${v.toFixed(4)}`, 'Cost']} />
+                <Tooltip formatter={(v) => [`$${Number(v).toFixed(4)}`, 'Cost']} />
                 <Legend
                   iconType="circle"
                   iconSize={8}

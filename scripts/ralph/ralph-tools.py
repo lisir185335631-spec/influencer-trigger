@@ -15,7 +15,10 @@ Ralph Tools - 确定性工具脚本（Coding 3.0）
   python ralph-tools.py validate            # 执行结构化验证（Plan Checker 的 CLI 版本）
   python ralph-tools.py approve             # 审计门禁：通过当前 story 的质量审查
   python ralph-tools.py reject "反馈内容"   # 审计门禁：驳回当前 story（附反馈）
+  python ralph-tools.py force-reject "反馈" # 强制驳回（忽略当前状态）
   python ralph-tools.py audit-status        # 审计门禁：查看当前门禁状态
+  python ralph-tools.py clear-lock          # 清除残留的 ralph-lock.json
+  python ralph-tools.py cost                # 查看成本追踪摘要
 """
 
 import json
@@ -34,6 +37,8 @@ if sys.stdout and hasattr(sys.stdout, "reconfigure"):
 SCRIPT_DIR = Path(__file__).parent.resolve()
 PRD_FILE = SCRIPT_DIR / "prd.json"
 AUDIT_GATE_FILE = SCRIPT_DIR / "audit-gate.json"
+LOCK_FILE = SCRIPT_DIR / "ralph-lock.json"
+COST_LOG_FILE = SCRIPT_DIR / "cost-log.jsonl"
 
 
 def read_prd() -> dict:
@@ -48,10 +53,27 @@ def read_prd() -> dict:
 
 
 def write_prd(prd: dict) -> None:
-    PRD_FILE.write_text(
-        json.dumps(prd, ensure_ascii=False, indent=2),
-        encoding="utf-8"
-    )
+    """原子写入 prd.json（temp + replace）"""
+    content = json.dumps(prd, ensure_ascii=False, indent=2)
+    tmp_path = PRD_FILE.with_suffix(".json.tmp")
+    try:
+        tmp_path.write_text(content, encoding="utf-8")
+        # 基本校验
+        check = json.loads(tmp_path.read_text(encoding="utf-8"))
+        stories = check.get("userStories", [])
+        if not isinstance(stories, list) or len(stories) == 0 or not all(isinstance(s, dict) and "id" in s for s in stories):
+            print("⚠️  写入数据校验失败（stories 为空或缺少 id），放弃写入", file=sys.stderr)
+            tmp_path.unlink(missing_ok=True)
+            sys.exit(1)
+        tmp_path.replace(PRD_FILE)
+    except json.JSONDecodeError as e:
+        print(f"❌ 写入数据 JSON 无效: {e}", file=sys.stderr)
+        tmp_path.unlink(missing_ok=True)
+        sys.exit(1)
+    except (OSError, PermissionError) as e:
+        print(f"❌ 写入 prd.json 失败 (文件可能被锁定): {e}", file=sys.stderr)
+        tmp_path.unlink(missing_ok=True)
+        sys.exit(1)
 
 
 def get_story(prd: dict, story_id: str) -> dict | None:
@@ -77,7 +99,7 @@ def cmd_next_story():
                     deps_met = False
                     break
             if deps_met:
-                print(story["id"])
+                print(story.get("id", "?"))
                 return
     print("(none)", file=sys.stderr)
     sys.exit(1)
@@ -221,6 +243,12 @@ def cmd_waves():
         print("  (无 stories)")
         return
 
+    # 过滤掉缺少 id 字段的畸形 story（防止 KeyError）
+    stories = [s for s in stories if "id" in s]
+    if not stories:
+        print("  (无有效 stories —— 所有 story 缺少 id 字段)")
+        return
+
     # 构建依赖图 + 查找表（避免 O(n²) 线性扫描）
     all_ids = {s["id"] for s in stories}
     story_map = {s["id"]: s for s in stories}
@@ -318,10 +346,11 @@ def cmd_approve():
 
     gate["status"] = "approved"
     gate["approved_at"] = datetime.now().isoformat()
-    AUDIT_GATE_FILE.write_text(
-        json.dumps(gate, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    print(f"✅ {gate['story_id']} 审计已通过，Ralph 将继续执行下一个 Story")
+    # 原子写入 audit-gate.json（ralph.py 正在轮询此文件）
+    tmp_gate = AUDIT_GATE_FILE.with_suffix(".json.tmp")
+    tmp_gate.write_text(json.dumps(gate, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_gate.replace(AUDIT_GATE_FILE)
+    print(f"✅ {gate.get('story_id', '?')} 审计已通过，Ralph 将继续执行下一个 Story")
 
 
 def cmd_reject(feedback: str):
@@ -343,10 +372,11 @@ def cmd_reject(feedback: str):
     gate["status"] = "rejected"
     gate["feedback"] = feedback
     gate["rejected_at"] = datetime.now().isoformat()
-    AUDIT_GATE_FILE.write_text(
-        json.dumps(gate, ensure_ascii=False, indent=2), encoding="utf-8"
-    )
-    print(f"❌ {gate['story_id']} 审计已驳回，Ralph 将根据反馈重新开发")
+    # 原子写入 audit-gate.json（ralph.py 正在轮询此文件）
+    tmp_gate = AUDIT_GATE_FILE.with_suffix(".json.tmp")
+    tmp_gate.write_text(json.dumps(gate, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_gate.replace(AUDIT_GATE_FILE)
+    print(f"❌ {gate.get('story_id', '?')} 审计已驳回，Ralph 将根据反馈重新开发")
     print(f"   反馈: {feedback}")
 
 
@@ -375,6 +405,151 @@ def cmd_audit_status():
         print(f"  Approved:  {gate['approved_at']}")
     if gate.get("rejected_at"):
         print(f"  Rejected:  {gate['rejected_at']}")
+
+
+def cmd_clear_lock():
+    """清除残留的 ralph-lock.json"""
+    if not LOCK_FILE.exists():
+        print("  没有残留的 lock file")
+        return
+
+    pid_alive = False
+    try:
+        lock = json.loads(LOCK_FILE.read_text(encoding="utf-8"))
+        old_pid = lock.get("pid")
+        print(f"  Lock file 信息:")
+        print(f"    PID:       {lock.get('pid', '?')}")
+        print(f"    Phase:     {lock.get('phase', '?')}")
+        print(f"    Story:     {lock.get('story_id', '?')}")
+        print(f"    Started:   {lock.get('started_at', '?')}")
+        # 检测 PID 是否仍然存活
+        if old_pid:
+            try:
+                import platform as _plat
+                if _plat.system() == "Windows":
+                    import subprocess as _sp
+                    result = _sp.run(["tasklist", "/FI", f"PID eq {old_pid}", "/NH"],
+                                     capture_output=True, text=True, timeout=5)
+                    pid_alive = str(old_pid) in result.stdout
+                else:
+                    import os as _os
+                    _os.kill(int(old_pid), 0)
+                    pid_alive = True
+            except (OSError, ProcessLookupError, ValueError):
+                pass  # 进程不存在或 PID 无效
+            except Exception:
+                pass
+    except Exception:
+        print("  清除损坏的 lock file")
+
+    if pid_alive:
+        print(f"  ⚠️  警告: PID {old_pid} 仍然存活! 清除 lock 后可能导致多个 Ralph 实例并发运行。")
+        print(f"  ⚠️  建议先终止该进程，再清除 lock file。")
+        print(f"  如确认要强制清除，请手动删除: {LOCK_FILE}")
+        return
+
+    LOCK_FILE.unlink(missing_ok=True)
+    print("  ✅ lock file 已清除")
+
+
+def cmd_cost():
+    """查看成本追踪摘要"""
+    if not COST_LOG_FILE.exists():
+        print("  没有成本日志 (cost-log.jsonl 不存在)")
+        return
+
+    try:
+        entries = []
+        for line in COST_LOG_FILE.read_text(encoding="utf-8").strip().split("\n"):
+            if line.strip():
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    continue
+
+        if not entries:
+            print("  成本日志为空")
+            return
+
+        total_dev = sum(e.get("duration_seconds", 0) for e in entries if e.get("phase") == "developing")
+        total_val = sum(e.get("duration_seconds", 0) for e in entries if e.get("phase") == "validating")
+        total = total_dev + total_val
+        dev_count = sum(1 for e in entries if e.get("phase") == "developing")
+        val_count = sum(1 for e in entries if e.get("phase") == "validating")
+
+        def fmt(seconds):
+            h, m, s = int(seconds // 3600), int((seconds % 3600) // 60), int(seconds % 60)
+            if h > 0: return f"{h}h {m}m {s}s"
+            elif m > 0: return f"{m}m {s}s"
+            return f"{s}s"
+
+        print(f"  📊 成本追踪摘要")
+        print(f"  {'─' * 40}")
+        print(f"  开发 Agent: {dev_count} 次, 耗时 {fmt(total_dev)}")
+        print(f"  验证 Agent: {val_count} 次, 耗时 {fmt(total_val)}")
+        print(f"  总计:       {dev_count + val_count} 次, 耗时 {fmt(total)}")
+
+        # 按 story 统计
+        story_times: dict[str, dict] = {}
+        for e in entries:
+            sid = e.get("story_id", "unknown")
+            if sid not in story_times:
+                story_times[sid] = {"dev": 0, "val": 0, "count": 0}
+            if e.get("phase") == "developing":
+                story_times[sid]["dev"] += e.get("duration_seconds", 0)
+            elif e.get("phase") == "validating":
+                story_times[sid]["val"] += e.get("duration_seconds", 0)
+            story_times[sid]["count"] += 1
+
+        if story_times:
+            print(f"\n  按 Story:")
+            for sid, t in sorted(story_times.items()):
+                total_s = t["dev"] + t["val"]
+                print(f"    {sid}: {fmt(total_s)} ({t['count']} 次调用, dev={fmt(t['dev'])}, val={fmt(t['val'])})")
+
+        # 重试统计（与 dashboard costSummary.total_retries 一致）
+        story_dev_calls = {}
+        for e in entries:
+            if e.get("phase") == "developing":
+                sid = e.get("story_id", "unknown")
+                story_dev_calls[sid] = story_dev_calls.get(sid, 0) + 1
+        total_retries = sum(max(0, v - 1) for v in story_dev_calls.values())
+        if total_retries > 0:
+            print(f"\n  重试次数: {total_retries}")
+
+        # 时间范围
+        first_ts = entries[0].get("timestamp", "?")
+        last_ts = entries[-1].get("timestamp", "?")
+        print(f"\n  时间范围: {first_ts[:19]} ~ {last_ts[:19]}")
+
+    except Exception as e:
+        print(f"❌ 读取成本日志失败: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
+def cmd_force_reject(feedback: str):
+    """强制驳回审计门禁（忽略当前状态，即使不是 pending 也写入 rejected）"""
+    if not AUDIT_GATE_FILE.exists():
+        print("❌ 没有审计门禁文件", file=sys.stderr)
+        sys.exit(1)
+
+    try:
+        gate = json.loads(AUDIT_GATE_FILE.read_text(encoding="utf-8"))
+    except Exception as e:
+        print(f"❌ 读取审计门禁失败: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    old_status = gate.get("status", "?")
+    gate["status"] = "rejected"
+    gate["feedback"] = feedback
+    gate["rejected_at"] = datetime.now().isoformat()
+    gate["force_rejected"] = True
+    # 原子写入 audit-gate.json
+    tmp_gate = AUDIT_GATE_FILE.with_suffix(".json.tmp")
+    tmp_gate.write_text(json.dumps(gate, ensure_ascii=False, indent=2), encoding="utf-8")
+    tmp_gate.replace(AUDIT_GATE_FILE)
+    print(f"❌ {gate.get('story_id', '?')} 强制驳回 (原状态: {old_status})")
+    print(f"   反馈: {feedback}")
 
 
 def cmd_validate():
@@ -442,8 +617,9 @@ def cmd_validate():
         # 模糊表述检测（英文 + 中文）
         vague = ["works correctly", "good ux", "handle edge cases",
                  "works as expected", "properly implemented",
+                 "should work", "looks good", "is correct",
                  "正常工作", "工作正常", "良好体验", "良好的ux", "处理边缘情况",
-                 "按预期工作", "正确实现"]
+                 "按预期工作", "正确实现", "应该可以", "没问题"]
         for c in criteria:
             c_lower = str(c).lower()
             for v in vague:
@@ -541,6 +717,15 @@ def main():
         cmd_reject(sys.argv[2])
     elif cmd == "audit-status":
         cmd_audit_status()
+    elif cmd == "force-reject":
+        if len(sys.argv) < 3:
+            print("用法: ralph-tools.py force-reject <feedback>", file=sys.stderr)
+            sys.exit(1)
+        cmd_force_reject(sys.argv[2])
+    elif cmd == "clear-lock":
+        cmd_clear_lock()
+    elif cmd == "cost":
+        cmd_cost()
     else:
         print(f"❌ 未知命令: {cmd}", file=sys.stderr)
         print(__doc__)

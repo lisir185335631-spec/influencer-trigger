@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   LineChart,
   Line,
@@ -53,6 +54,7 @@ function StatCard({ label, value, sub }: StatCardProps) {
 
 // ── main page ──────────────────────────────────────────────────────────────
 export default function DashboardPage() {
+  const { t } = useTranslation()
   const [stats, setStats] = useState<DashboardStats | null>(null)
   const [trends, setTrends] = useState<TrendPoint[]>([])
   const [platforms, setPlatforms] = useState<PlatformItem[]>([])
@@ -77,7 +79,7 @@ export default function DashboardPage() {
         setMailboxes(m)
       })
       .catch((e) => {
-        if (!cancelled) setError(e?.message ?? 'Failed to load dashboard')
+        if (!cancelled) setError(e?.message ?? t('dashboard.loadFailed'))
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -105,44 +107,44 @@ export default function DashboardPage() {
     <div className="p-6 space-y-6">
       {/* ── header ── */}
       <div>
-        <h1 className="text-lg font-semibold text-gray-900">Dashboard</h1>
-        <p className="text-sm text-gray-400 mt-0.5">Overview of influencer outreach operations</p>
+        <h1 className="text-lg font-semibold text-gray-900">{t('dashboard.title')}</h1>
+        <p className="text-sm text-gray-400 mt-0.5">{t('dashboard.subtitle')}</p>
       </div>
 
       {/* ── 5 stat cards ── */}
       {stats && (
         <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-4">
           <StatCard
-            label="Total Influencers"
+            label={t('dashboard.totalInfluencers')}
             value={stats.total_influencers.toLocaleString()}
-            sub={`+${stats.new_this_week} this week`}
+            sub={t('dashboard.thisWeek', { count: stats.new_this_week })}
           />
           <StatCard
-            label="Total Sent"
+            label={t('dashboard.totalSent')}
             value={stats.total_sent.toLocaleString()}
-            sub={`${stats.sent_this_week} this week`}
+            sub={t('dashboard.sentThisWeek', { count: stats.sent_this_week })}
           />
           <StatCard
-            label="Reply Rate"
+            label={t('dashboard.replyRate')}
             value={pct(stats.reply_rate)}
-            sub="replied / sent"
+            sub={t('dashboard.repliedPerSent')}
           />
           <StatCard
-            label="Effective Reply Rate"
+            label={t('dashboard.effectiveReplyRate')}
             value={pct(stats.effective_reply_rate)}
-            sub="interested + pricing / sent"
+            sub={t('dashboard.interestedPricingPerSent')}
           />
           <StatCard
-            label="Conversion Rate"
+            label={t('dashboard.conversionRate')}
             value={pct(stats.conversion_rate)}
-            sub="collaborations / influencers"
+            sub={t('dashboard.collaborationsPerInfluencers')}
           />
         </div>
       )}
 
       {/* ── trend chart ── */}
       <div className="bg-white rounded-xl border border-gray-100 p-5">
-        <p className="text-sm font-medium text-gray-700 mb-4">30-Day Send & Reply Trend</p>
+        <p className="text-sm font-medium text-gray-700 mb-4">{t('dashboard.trendTitle')}</p>
         <ResponsiveContainer width="100%" height={220}>
           <LineChart data={trends} margin={{ top: 4, right: 16, left: 0, bottom: 0 }}>
             <CartesianGrid strokeDasharray="3 3" stroke="#f3f4f6" />
@@ -161,7 +163,7 @@ export default function DashboardPage() {
             <Line
               type="monotone"
               dataKey="sent"
-              name="Sent"
+              name={t('dashboard.chartSent')}
               stroke="#1a1a2e"
               strokeWidth={2}
               dot={false}
@@ -169,7 +171,7 @@ export default function DashboardPage() {
             <Line
               type="monotone"
               dataKey="replied"
-              name="Replied"
+              name={t('dashboard.chartReplied')}
               stroke="#e94560"
               strokeWidth={2}
               dot={false}
@@ -182,9 +184,9 @@ export default function DashboardPage() {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {/* Platform distribution */}
         <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <p className="text-sm font-medium text-gray-700 mb-4">Platform Distribution</p>
+          <p className="text-sm font-medium text-gray-700 mb-4">{t('dashboard.platformDistribution')}</p>
           {platforms.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-12">No data yet</p>
+            <p className="text-xs text-gray-400 text-center py-12">{t('common.noDataYet')}</p>
           ) : (
             <div className="flex items-center gap-6">
               <ResponsiveContainer width="60%" height={200}>
@@ -225,17 +227,17 @@ export default function DashboardPage() {
 
         {/* Mailbox health */}
         <div className="bg-white rounded-xl border border-gray-100 p-5">
-          <p className="text-sm font-medium text-gray-700 mb-4">Mailbox Health</p>
+          <p className="text-sm font-medium text-gray-700 mb-4">{t('dashboard.mailboxHealth')}</p>
           {mailboxes.length === 0 ? (
-            <p className="text-xs text-gray-400 text-center py-12">No mailboxes configured</p>
+            <p className="text-xs text-gray-400 text-center py-12">{t('dashboard.noMailboxes')}</p>
           ) : (
             <div className="overflow-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-gray-400 uppercase tracking-wider border-b border-gray-100">
-                    <th className="text-left pb-2 font-medium">Email</th>
-                    <th className="text-left pb-2 font-medium w-32">Usage</th>
-                    <th className="text-left pb-2 font-medium">Bounce</th>
+                    <th className="text-left pb-2 font-medium">{t('dashboard.colEmail')}</th>
+                    <th className="text-left pb-2 font-medium w-32">{t('dashboard.colUsage')}</th>
+                    <th className="text-left pb-2 font-medium">{t('dashboard.colBounce')}</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-50">

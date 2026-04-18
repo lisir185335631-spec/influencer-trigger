@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   Calendar,
   Plus,
@@ -13,12 +14,6 @@ import {
   AlertCircle,
 } from 'lucide-react'
 import { holidaysApi, Holiday, HolidayCreate, HolidayUpdate, HolidayGreetingLogItem } from '../api/holidays'
-
-const MONTH_NAMES = [
-  'January', 'February', 'March', 'April', 'May', 'June',
-  'July', 'August', 'September', 'October', 'November', 'December',
-]
-const DAY_NAMES = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 const PAGE_SIZE = 20
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -59,6 +54,9 @@ function StatusBadge({ status }: { status: string }) {
 // ── Calendar ─────────────────────────────────────────────────────────────────
 
 function CalendarView({ holidays }: { holidays: Holiday[] }) {
+  const { t } = useTranslation()
+  const MONTH_NAMES = Array.from({ length: 12 }, (_, i) => t(`holidays.months.${i}`))
+  const DAY_NAMES = Array.from({ length: 7 }, (_, i) => t(`holidays.days.${i}`))
   const today = new Date()
   const [year, setYear] = useState(today.getFullYear())
   const [month, setMonth] = useState(today.getMonth()) // 0-indexed
@@ -183,6 +181,7 @@ interface HolidayModalProps {
 }
 
 function HolidayModal({ initial, onSave, onClose }: HolidayModalProps) {
+  const { t } = useTranslation()
   const [name, setName] = useState(initial?.name ?? '')
   const [date, setDate] = useState(initial?.date ?? toIso(new Date()))
   const [isRecurring, setIsRecurring] = useState(initial?.is_recurring ?? true)
@@ -193,7 +192,7 @@ function HolidayModal({ initial, onSave, onClose }: HolidayModalProps) {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!name.trim()) { setError('Name is required'); return }
+    if (!name.trim()) { setError(t('holidays.modal.nameRequired')); return }
     setSaving(true)
     setError('')
     try {
@@ -206,7 +205,7 @@ function HolidayModal({ initial, onSave, onClose }: HolidayModalProps) {
       })
       onClose()
     } catch {
-      setError('Failed to save holiday')
+      setError(t('holidays.modal.saveFailed'))
       setSaving(false)
     }
   }
@@ -216,7 +215,7 @@ function HolidayModal({ initial, onSave, onClose }: HolidayModalProps) {
       <div className="bg-white rounded-xl shadow-lg w-full max-w-md mx-4 p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-sm font-semibold text-gray-900">
-            {initial ? 'Edit Holiday' : 'Add Holiday'}
+            {initial ? t('holidays.modal.editTitle') : t('holidays.modal.addTitle')}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
             <X size={16} />
@@ -230,16 +229,16 @@ function HolidayModal({ initial, onSave, onClose }: HolidayModalProps) {
             </div>
           )}
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Name *</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{t('holidays.modal.nameLabel')}</label>
             <input
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="e.g. Christmas"
+              placeholder={t('holidays.modal.namePlaceholder')}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Date *</label>
+            <label className="block text-xs font-medium text-gray-700 mb-1">{t('holidays.modal.dateLabel')}</label>
             <input
               type="date"
               value={date}
@@ -249,12 +248,12 @@ function HolidayModal({ initial, onSave, onClose }: HolidayModalProps) {
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">
-              Custom Greeting Template
+              {t('holidays.modal.templateLabel')}
             </label>
             <textarea
               value={greetingTemplate}
               onChange={(e) => setGreetingTemplate(e.target.value)}
-              placeholder="Optional. Use {name} and {holiday} as placeholders. Leave empty to use AI-generated greeting."
+              placeholder={t('holidays.modal.templatePlaceholder')}
               rows={3}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300 resize-none"
             />
@@ -267,7 +266,7 @@ function HolidayModal({ initial, onSave, onClose }: HolidayModalProps) {
                 onChange={(e) => setIsRecurring(e.target.checked)}
                 className="rounded border-gray-300"
               />
-              Recurring (every year)
+              {t('holidays.modal.recurring')}
             </label>
             <label className="flex items-center gap-2 text-sm text-gray-700 cursor-pointer select-none">
               <input
@@ -276,7 +275,7 @@ function HolidayModal({ initial, onSave, onClose }: HolidayModalProps) {
                 onChange={(e) => setIsActive(e.target.checked)}
                 className="rounded border-gray-300"
               />
-              Active
+              {t('holidays.modal.active')}
             </label>
           </div>
           <div className="flex justify-end gap-2 pt-2">
@@ -285,14 +284,14 @@ function HolidayModal({ initial, onSave, onClose }: HolidayModalProps) {
               onClick={onClose}
               className="px-3 py-1.5 text-sm text-gray-600 hover:text-gray-900 border border-gray-200 rounded-lg"
             >
-              Cancel
+              {t('holidays.modal.cancel')}
             </button>
             <button
               type="submit"
               disabled={saving}
               className="px-4 py-1.5 text-sm font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50"
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? t('holidays.modal.saving') : t('holidays.modal.save')}
             </button>
           </div>
         </form>
@@ -320,6 +319,7 @@ function PlatformBadge({ platform }: { platform: string | null }) {
 }
 
 function GreetingLogsTab() {
+  const { t } = useTranslation()
   const [logs, setLogs] = useState<HolidayGreetingLogItem[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -335,17 +335,17 @@ function GreetingLogsTab() {
       setTotal(res.total)
       setPage(p)
     } catch {
-      setError('Failed to load greeting logs')
+      setError(t('holidays.logs.loadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => { load(1) }, [load])
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
-  if (loading) return <div className="py-12 text-center text-sm text-gray-400">Loading…</div>
+  if (loading) return <div className="py-12 text-center text-sm text-gray-400">{t('holidays.logs.loading')}</div>
   if (error) return (
     <div className="flex items-center gap-2 text-red-600 text-sm bg-red-50 rounded-lg px-4 py-3">
       <AlertCircle size={14} /> {error}
@@ -355,7 +355,7 @@ function GreetingLogsTab() {
   if (logs.length === 0) return (
     <div className="py-16 text-center text-gray-400">
       <Mail size={32} className="mx-auto mb-3 opacity-30" />
-      <p className="text-sm">No holiday greetings sent yet</p>
+      <p className="text-sm">{t('holidays.logs.noLogs')}</p>
     </div>
   )
 
@@ -365,7 +365,7 @@ function GreetingLogsTab() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-gray-100">
-              {['Influencer', 'Platform', 'Subject', 'Status', 'Sent At'].map((h) => (
+              {[t('holidays.logs.table.influencer'), t('holidays.logs.table.platform'), t('holidays.logs.table.subject'), t('holidays.logs.table.status'), t('holidays.logs.table.sentAt')].map((h) => (
                 <th key={h} className="text-left text-xs font-medium text-gray-400 py-2 px-3 first:pl-0">
                   {h}
                 </th>
@@ -398,14 +398,14 @@ function GreetingLogsTab() {
       </div>
       {totalPages > 1 && (
         <div className="flex items-center justify-between mt-4 pt-3 border-t border-gray-100">
-          <span className="text-xs text-gray-400">{total} total greetings</span>
+          <span className="text-xs text-gray-400">{t('holidays.logs.totalGreetings', { count: total })}</span>
           <div className="flex gap-1">
             <button
               disabled={page === 1}
               onClick={() => load(page - 1)}
               className="px-2 py-1 text-xs border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
             >
-              Prev
+              {t('common.prev')}
             </button>
             <span className="px-3 py-1 text-xs text-gray-500">{page} / {totalPages}</span>
             <button
@@ -413,7 +413,7 @@ function GreetingLogsTab() {
               onClick={() => load(page + 1)}
               className="px-2 py-1 text-xs border border-gray-200 rounded disabled:opacity-40 hover:bg-gray-50"
             >
-              Next
+              {t('common.next')}
             </button>
           </div>
         </div>
@@ -427,6 +427,7 @@ function GreetingLogsTab() {
 type Tab = 'calendar' | 'list' | 'logs'
 
 export default function HolidaysPage() {
+  const { t } = useTranslation()
   const [tab, setTab] = useState<Tab>('calendar')
   const [holidays, setHolidays] = useState<Holiday[]>([])
   const [loading, setLoading] = useState(true)
@@ -444,22 +445,22 @@ export default function HolidaysPage() {
       const data = await holidaysApi.list()
       setHolidays(data)
     } catch {
-      setError('Failed to load holidays')
+      setError(t('holidays.loadFailed'))
     } finally {
       setLoading(false)
     }
-  }, [])
+  }, [t])
 
   useEffect(() => { loadHolidays() }, [loadHolidays])
 
-  const handleAdd = async (data: Parameters<typeof holidaysApi.create>[0]) => {
-    await holidaysApi.create(data)
+  const handleAdd = async (data: HolidayCreate | HolidayUpdate) => {
+    await holidaysApi.create(data as HolidayCreate)
     await loadHolidays()
   }
 
-  const handleEdit = async (data: Parameters<typeof holidaysApi.update>[1]) => {
+  const handleEdit = async (data: HolidayCreate | HolidayUpdate) => {
     if (!editTarget) return
-    await holidaysApi.update(editTarget.id, data)
+    await holidaysApi.update(editTarget.id, data as HolidayUpdate)
     await loadHolidays()
   }
 
@@ -484,9 +485,9 @@ export default function HolidaysPage() {
   }
 
   const TABS: { key: Tab; label: string }[] = [
-    { key: 'calendar', label: 'Calendar' },
-    { key: 'list', label: 'Manage' },
-    { key: 'logs', label: 'Greeting Logs' },
+    { key: 'calendar', label: t('holidays.tabCalendar') },
+    { key: 'list', label: t('holidays.tabManage') },
+    { key: 'logs', label: t('holidays.tabLogs') },
   ]
 
   return (
@@ -498,8 +499,8 @@ export default function HolidaysPage() {
             <Calendar size={16} className="text-amber-600" />
           </div>
           <div>
-            <h1 className="text-base font-semibold text-gray-900">Holiday Greetings</h1>
-            <p className="text-xs text-gray-400">Automatically send greetings on international holidays</p>
+            <h1 className="text-base font-semibold text-gray-900">{t('holidays.title')}</h1>
+            <p className="text-xs text-gray-400">{t('holidays.subtitle')}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -509,14 +510,14 @@ export default function HolidaysPage() {
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600 disabled:opacity-50"
           >
             {triggerOk ? <CheckCircle size={13} className="text-green-500" /> : <PlayCircle size={13} />}
-            {triggerOk ? 'Triggered!' : triggering ? 'Running…' : 'Trigger Now'}
+            {triggerOk ? t('holidays.triggered') : triggering ? t('holidays.running') : t('holidays.triggerNow')}
           </button>
           <button
             onClick={() => { setEditTarget(null); setModalOpen(true) }}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-gray-900 text-white rounded-lg hover:bg-gray-700"
           >
             <Plus size={13} />
-            Add Holiday
+            {t('holidays.addHoliday')}
           </button>
         </div>
       </div>
@@ -548,7 +549,7 @@ export default function HolidaysPage() {
       {/* Calendar tab */}
       {tab === 'calendar' && (
         loading ? (
-          <div className="py-12 text-center text-sm text-gray-400">Loading…</div>
+          <div className="py-12 text-center text-sm text-gray-400">{t('holidays.loading')}</div>
         ) : (
           <CalendarView holidays={holidays} />
         )
@@ -558,17 +559,17 @@ export default function HolidaysPage() {
       {tab === 'list' && (
         <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
           {loading ? (
-            <div className="py-12 text-center text-sm text-gray-400">Loading…</div>
+            <div className="py-12 text-center text-sm text-gray-400">{t('holidays.loading')}</div>
           ) : holidays.length === 0 ? (
             <div className="py-16 text-center text-gray-400">
               <Calendar size={32} className="mx-auto mb-3 opacity-30" />
-              <p className="text-sm">No holidays configured</p>
+              <p className="text-sm">{t('holidays.noHolidays')}</p>
             </div>
           ) : (
             <table className="w-full text-sm">
               <thead className="bg-gray-50">
                 <tr>
-                  {['Holiday', 'Date', 'Recurring', 'Active', 'Custom Template', ''].map((h) => (
+                  {[t('holidays.table.holiday'), t('holidays.table.date'), t('holidays.table.recurring'), t('holidays.table.active'), t('holidays.table.customTemplate'), ''].map((h) => (
                     <th key={h} className="text-left text-xs font-medium text-gray-400 py-2.5 px-4 first:pl-5">
                       {h}
                     </th>
@@ -584,21 +585,21 @@ export default function HolidaysPage() {
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                         h.is_recurring ? 'bg-blue-50 text-blue-600' : 'bg-gray-100 text-gray-500'
                       }`}>
-                        {h.is_recurring ? 'Annual' : 'One-time'}
+                        {h.is_recurring ? t('holidays.table.annual') : t('holidays.table.oneTime')}
                       </span>
                     </td>
                     <td className="py-3 px-4">
                       <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                         h.is_active ? 'bg-green-50 text-green-600' : 'bg-gray-100 text-gray-400'
                       }`}>
-                        {h.is_active ? 'Active' : 'Inactive'}
+                        {h.is_active ? t('holidays.table.activeLabel') : t('holidays.table.inactiveLabel')}
                       </span>
                     </td>
                     <td className="py-3 px-4 text-xs text-gray-400 max-w-xs truncate">
                       {h.greeting_template ? (
                         <span className="text-gray-600">{h.greeting_template.slice(0, 60)}{h.greeting_template.length > 60 ? '…' : ''}</span>
                       ) : (
-                        <span className="italic">AI-generated</span>
+                        <span className="italic">{t('holidays.table.aiGenerated')}</span>
                       )}
                     </td>
                     <td className="py-3 px-4 pr-5">
@@ -606,14 +607,14 @@ export default function HolidaysPage() {
                         <button
                           onClick={() => { setEditTarget(h); setModalOpen(true) }}
                           className="p-1.5 rounded-md text-gray-400 hover:text-gray-700 hover:bg-gray-100"
-                          title="Edit"
+                          title={t('common.edit')}
                         >
                           <Pencil size={13} />
                         </button>
                         <button
                           onClick={() => setDeleteId(h.id)}
                           className="p-1.5 rounded-md text-gray-400 hover:text-red-600 hover:bg-red-50"
-                          title="Delete"
+                          title={t('common.delete')}
                         >
                           <Trash2 size={13} />
                         </button>
@@ -647,22 +648,22 @@ export default function HolidaysPage() {
       {deleteId !== null && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
           <div className="bg-white rounded-xl shadow-lg w-full max-w-sm mx-4 p-6">
-            <h2 className="text-sm font-semibold text-gray-900 mb-2">Delete Holiday</h2>
+            <h2 className="text-sm font-semibold text-gray-900 mb-2">{t('holidays.deleteModal.title')}</h2>
             <p className="text-sm text-gray-500 mb-5">
-              Are you sure you want to delete this holiday? This cannot be undone.
+              {t('holidays.deleteModal.message')}
             </p>
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setDeleteId(null)}
                 className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg text-gray-600 hover:text-gray-900"
               >
-                Cancel
+                {t('holidays.deleteModal.cancel')}
               </button>
               <button
                 onClick={() => handleDelete(deleteId)}
                 className="px-4 py-1.5 text-sm font-medium bg-red-600 text-white rounded-lg hover:bg-red-700"
               >
-                Delete
+                {t('holidays.deleteModal.delete')}
               </button>
             </div>
           </div>

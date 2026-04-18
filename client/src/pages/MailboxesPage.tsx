@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Plus, Pencil, Trash2, Zap, X, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { Mailbox, MailboxCreate, MailboxUpdate, mailboxesApi } from '../api/mailboxes'
 
@@ -70,6 +71,7 @@ type ModalProps = {
 }
 
 function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
+  const { t } = useTranslation()
   const [form, setForm] = useState<FormValues>(editing ? mailboxToForm(editing) : EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
@@ -115,7 +117,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
         onSaved(created)
       }
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Save failed'
+      const msg = err instanceof Error ? err.message : t('mailboxes.modal.saveFailed')
       setError(msg)
     } finally {
       setSaving(false)
@@ -127,7 +129,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4">
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
           <h2 className="text-sm font-semibold text-gray-900">
-            {editing ? 'Edit Mailbox' : 'Add Mailbox'}
+            {editing ? t('mailboxes.modal.editTitle') : t('mailboxes.modal.addTitle')}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={16} />
@@ -138,7 +140,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
           {/* Email + Display name */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Email *</label>
+              <label className="block text-xs text-gray-500 mb-1">{t('mailboxes.modal.emailLabel')}</label>
               <input
                 type="email"
                 required={!editing}
@@ -149,7 +151,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Display Name</label>
+              <label className="block text-xs text-gray-500 mb-1">{t('mailboxes.modal.displayName')}</label>
               <input
                 type="text"
                 value={form.display_name}
@@ -161,21 +163,21 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
 
           {/* SMTP */}
           <div>
-            <p className="text-xs font-medium text-gray-700 mb-2">SMTP</p>
+            <p className="text-xs font-medium text-gray-700 mb-2">{t('mailboxes.modal.smtpSection')}</p>
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Host *</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('mailboxes.modal.hostLabel')}</label>
                 <input
                   type="text"
                   required
-                  placeholder="smtp.gmail.com"
+                  placeholder={t('mailboxes.modal.hostPlaceholder')}
                   value={form.smtp_host}
                   onChange={set('smtp_host')}
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Port</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('mailboxes.modal.portLabel')}</label>
                 <input
                   type="number"
                   required
@@ -187,7 +189,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
             </div>
             <div className="mt-3">
               <label className="block text-xs text-gray-500 mb-1">
-                Password {editing && <span className="text-gray-400">(leave blank to keep current)</span>}
+                {t('mailboxes.modal.passwordLabel')} {editing && <span className="text-gray-400">{t('mailboxes.modal.keepCurrent')}</span>}
               </label>
               <input
                 type="password"
@@ -205,26 +207,26 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
                 onChange={set('smtp_use_tls')}
                 className="rounded border-gray-300 text-blue-500"
               />
-              <span className="text-xs text-gray-600">STARTTLS</span>
+              <span className="text-xs text-gray-600">{t('mailboxes.modal.starttls')}</span>
             </label>
           </div>
 
           {/* IMAP */}
           <div>
-            <p className="text-xs font-medium text-gray-700 mb-2">IMAP <span className="font-normal text-gray-400">(optional)</span></p>
+            <p className="text-xs font-medium text-gray-700 mb-2">{t('mailboxes.modal.imapSection')} <span className="font-normal text-gray-400">{t('mailboxes.modal.imapOptional')}</span></p>
             <div className="grid grid-cols-3 gap-3">
               <div className="col-span-2">
-                <label className="block text-xs text-gray-500 mb-1">Host</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('mailboxes.modal.imapHost')}</label>
                 <input
                   type="text"
-                  placeholder="imap.gmail.com"
+                  placeholder={t('mailboxes.modal.imapPlaceholder')}
                   value={form.imap_host}
                   onChange={set('imap_host')}
                   className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-500 mb-1">Port</label>
+                <label className="block text-xs text-gray-500 mb-1">{t('mailboxes.modal.imapPort')}</label>
                 <input
                   type="number"
                   value={form.imap_port}
@@ -238,7 +240,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
           {/* Limits */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Daily Limit</label>
+              <label className="block text-xs text-gray-500 mb-1">{t('mailboxes.modal.dailyLimit')}</label>
               <input
                 type="number"
                 min="1"
@@ -248,7 +250,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-500 mb-1">Hourly Limit</label>
+              <label className="block text-xs text-gray-500 mb-1">{t('mailboxes.modal.hourlyLimit')}</label>
               <input
                 type="number"
                 min="1"
@@ -267,7 +269,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
               onClick={onClose}
               className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors"
             >
-              Cancel
+              {t('common.cancel')}
             </button>
             <button
               type="submit"
@@ -275,7 +277,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
               className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
             >
               {saving && <Loader2 size={13} className="animate-spin" />}
-              {editing ? 'Save' : 'Add Mailbox'}
+              {editing ? t('mailboxes.modal.save') : t('mailboxes.modal.addMailbox')}
             </button>
           </div>
         </form>
@@ -289,6 +291,7 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
 type TestState = { status: 'idle' | 'loading' | 'ok' | 'error'; msg: string }
 
 export default function MailboxesPage() {
+  const { t } = useTranslation()
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
   const [loading, setLoading] = useState(true)
   const [modal, setModal] = useState<'add' | Mailbox | null>(null)
@@ -322,7 +325,7 @@ export default function MailboxesPage() {
   }
 
   async function handleDelete(id: number) {
-    if (!window.confirm('Delete this mailbox?')) return
+    if (!window.confirm(t('mailboxes.deleteConfirm'))) return
     setDeletingId(id)
     try {
       await mailboxesApi.delete(id)
@@ -367,15 +370,15 @@ export default function MailboxesPage() {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-base font-semibold text-gray-900">Mailboxes</h1>
-          <p className="text-xs text-gray-400 mt-0.5">Sending accounts with SMTP configuration</p>
+          <h1 className="text-base font-semibold text-gray-900">{t('mailboxes.title')}</h1>
+          <p className="text-xs text-gray-400 mt-0.5">{t('mailboxes.subtitle')}</p>
         </div>
         <button
           onClick={() => setModal('add')}
           className="flex items-center gap-1.5 px-3 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
         >
           <Plus size={14} />
-          Add Mailbox
+          {t('mailboxes.addMailbox')}
         </button>
       </div>
 
@@ -384,22 +387,22 @@ export default function MailboxesPage() {
         {loading ? (
           <div className="flex items-center justify-center py-16 text-gray-400">
             <Loader2 size={18} className="animate-spin mr-2" />
-            <span className="text-sm">Loading…</span>
+            <span className="text-sm">{t('mailboxes.loading')}</span>
           </div>
         ) : mailboxes.length === 0 ? (
           <div className="py-16 text-center text-sm text-gray-400">
-            No mailboxes yet. Add one to get started.
+            {t('mailboxes.noMailboxes')}
           </div>
         ) : (
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Account</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">SMTP</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">Status</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Today / Daily</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">Bounce Rate</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 w-36">Actions</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('mailboxes.table.account')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('mailboxes.table.smtp')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('mailboxes.table.status')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('mailboxes.table.todayDaily')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('mailboxes.table.bounceRate')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 w-36">{t('mailboxes.table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -437,7 +440,7 @@ export default function MailboxesPage() {
                         <button
                           onClick={() => handleTest(m)}
                           disabled={ts.status === 'loading'}
-                          title="Test SMTP connection"
+                          title={t('mailboxes.testTooltip')}
                           className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md text-gray-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-50 transition-colors"
                         >
                           {ts.status === 'loading' ? (
@@ -449,13 +452,13 @@ export default function MailboxesPage() {
                           ) : (
                             <Zap size={12} />
                           )}
-                          {ts.status === 'ok' ? 'OK' : ts.status === 'error' ? 'Fail' : 'Test'}
+                          {ts.status === 'ok' ? t('common.ok') : ts.status === 'error' ? t('common.fail') : t('common.test')}
                         </button>
 
                         {/* Edit */}
                         <button
                           onClick={() => setModal(m)}
-                          title="Edit"
+                          title={t('common.edit')}
                           className="p-1.5 text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-md transition-colors"
                         >
                           <Pencil size={13} />
@@ -465,7 +468,7 @@ export default function MailboxesPage() {
                         <button
                           onClick={() => handleDelete(m.id)}
                           disabled={deletingId === m.id}
-                          title="Delete"
+                          title={t('common.delete')}
                           className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors disabled:opacity-50"
                         >
                           {deletingId === m.id ? (

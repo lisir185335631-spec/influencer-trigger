@@ -112,6 +112,122 @@
   .log-body { padding: 12px 16px; font-size: 12px; line-height: 1.7; color: var(--muted); font-family: var(--font-mono); white-space: pre-wrap; word-break: break-word; }
   .log-body strong { color: var(--fg); font-weight: 600; }
 
+  /* Tabs (Progress / Agent Log / Screenshots) */
+  .tabs {
+    display: flex; gap: 2px; padding: 8px 8px 0; border-bottom: 0.5px solid hsla(0,0%,88%,0.5);
+  }
+  .tab {
+    padding: 8px 14px; font-size: 11px; text-transform: uppercase; letter-spacing: 1.5px;
+    color: var(--muted); font-weight: 500; cursor: pointer; border-radius: 8px 8px 0 0;
+    border: 0.5px solid transparent; border-bottom: none; transition: all 0.15s;
+    user-select: none;
+  }
+  .tab:hover { color: var(--fg); background: hsla(0,0%,100%,0.4); }
+  .tab.active {
+    color: var(--mac-blue); background: var(--glass-bg);
+    border-color: var(--glass-border); box-shadow: 0 -1px 4px rgba(0,0,0,0.02);
+  }
+  .tab .badge-count {
+    display: inline-block; margin-left: 6px; padding: 0 6px;
+    font-size: 10px; background: var(--secondary); border-radius: 8px;
+    color: var(--muted); font-weight: 600;
+  }
+  .tab.active .badge-count { background: var(--mac-tint); color: var(--mac-blue); }
+
+  .tab-panel { display: none; flex: 1; overflow-y: auto; padding: 0 16px 16px; }
+  .tab-panel.active { display: block; }
+
+  /* Agent Log tab */
+  .agent-log-meta {
+    padding: 10px 14px; margin: 12px 0; border-radius: 8px;
+    background: hsla(0,0%,100%,0.5); border: 0.5px solid var(--border);
+    display: flex; flex-wrap: wrap; gap: 12px; font-size: 11px;
+    font-family: var(--font-mono); color: var(--muted);
+  }
+  .agent-log-meta .k { color: var(--fg); font-weight: 600; }
+  .agent-log-meta .v { color: var(--muted); }
+  .agent-log-tail {
+    margin: 8px 0; padding: 14px;
+    background: hsl(220 15% 10%); color: hsl(120 40% 85%);
+    border-radius: 10px; font-family: var(--font-mono); font-size: 11px;
+    line-height: 1.6; white-space: pre-wrap; word-break: break-word;
+    max-height: 50vh; overflow-y: auto;
+  }
+  .agent-log-tail.empty {
+    color: hsl(220 10% 50%); font-style: italic; text-align: center; padding: 30px;
+    background: hsla(0,0%,100%,0.3);
+  }
+  .agent-log-prompt-toggle {
+    padding: 8px 14px; margin-top: 12px;
+    background: transparent; border: 0.5px solid var(--border); border-radius: 8px;
+    font-size: 11px; color: var(--muted); cursor: pointer;
+    font-family: var(--font-sans); transition: all 0.15s;
+  }
+  .agent-log-prompt-toggle:hover { background: hsla(0,0%,100%,0.5); color: var(--fg); }
+  .agent-log-prompt {
+    display: none; margin-top: 8px; padding: 14px;
+    background: hsla(240 5% 96% / 0.6); border-radius: 10px;
+    font-family: var(--font-mono); font-size: 11px; line-height: 1.6;
+    color: var(--fg); white-space: pre-wrap; word-break: break-word;
+    max-height: 40vh; overflow-y: auto;
+    border: 0.5px solid var(--border);
+  }
+  .agent-log-prompt.open { display: block; }
+
+  /* Screenshots grid */
+  .shots-summary {
+    padding: 10px 14px; margin: 12px 0;
+    display: flex; gap: 16px; font-size: 12px; color: var(--muted);
+  }
+  .shots-summary .pass-count { color: var(--mac-green); font-weight: 600; }
+  .shots-summary .fail-count { color: var(--mac-red); font-weight: 600; }
+  .shots-grid {
+    display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 10px; padding: 4px 0 20px;
+  }
+  .shot-card {
+    position: relative; border-radius: 10px; overflow: hidden;
+    background: hsla(0,0%,100%,0.6); border: 0.5px solid var(--border);
+    transition: all 0.15s; cursor: pointer;
+  }
+  .shot-card:hover { transform: translateY(-1px); box-shadow: var(--glass-shadow); }
+  .shot-card img { width: 100%; display: block; aspect-ratio: 4/3; object-fit: cover; background: var(--bg); }
+  .shot-card .shot-label {
+    position: absolute; top: 6px; left: 6px;
+    padding: 2px 8px; border-radius: 6px;
+    font-size: 10px; font-weight: 700; text-transform: uppercase;
+    font-family: var(--font-mono); letter-spacing: 0.5px;
+  }
+  .shot-card .shot-label.pass { background: hsla(142,60%,95%,1); color: var(--mac-green); }
+  .shot-card .shot-label.fail { background: hsla(4,80%,96%,1); color: var(--mac-red); }
+  .shot-card .shot-meta {
+    padding: 6px 10px; font-size: 10px; color: var(--muted);
+    font-family: var(--font-mono); display: flex; justify-content: space-between;
+  }
+  .shots-empty {
+    text-align: center; color: var(--muted); font-style: italic;
+    padding: 40px; font-size: 12px;
+  }
+
+  /* Screenshot modal */
+  .shot-modal {
+    display: none; position: fixed; inset: 0;
+    background: rgba(0,0,0,0.82); z-index: 1000;
+    align-items: center; justify-content: center; padding: 40px;
+    cursor: zoom-out;
+  }
+  .shot-modal.open { display: flex; }
+  .shot-modal img {
+    max-width: 96vw; max-height: 92vh;
+    border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5);
+    background: white;
+  }
+  .shot-modal .shot-modal-caption {
+    position: absolute; bottom: 20px; left: 50%; transform: translateX(-50%);
+    color: white; font-family: var(--font-mono); font-size: 12px;
+    padding: 6px 16px; background: rgba(0,0,0,0.5); border-radius: 8px;
+  }
+
   /* Animations */
   @keyframes breathe {
     0%, 100% { opacity: 0.4; transform: scale(0.9); }
@@ -166,9 +282,31 @@
       <div class="stories-list" id="storyList"></div>
     </div>
     <div class="logs-panel glass-lg">
-      <div class="panel-title">Progress Log</div>
-      <div class="logs-content" id="logContent"></div>
+      <div class="tabs">
+        <div class="tab active" data-tab="progress">📋 Progress Log</div>
+        <div class="tab" data-tab="agent">📜 Agent Log<span class="badge-count" id="agentLogBadge">-</span></div>
+        <div class="tab" data-tab="shots">📸 Screenshots<span class="badge-count" id="shotsBadge">0</span></div>
+      </div>
+      <div class="tab-panel active" id="panel-progress">
+        <div class="logs-content" id="logContent"></div>
+      </div>
+      <div class="tab-panel" id="panel-agent">
+        <div id="agentLogMeta" class="agent-log-meta"><span class="v">加载中...</span></div>
+        <div id="agentLogTail" class="agent-log-tail empty">Agent log 尚未产生内容（Claude CLI 非流式输出，等一整回合结束才会 flush）</div>
+        <button class="agent-log-prompt-toggle" id="promptToggle">▼ 查看本轮 Prompt</button>
+        <div id="agentLogPrompt" class="agent-log-prompt"></div>
+      </div>
+      <div class="tab-panel" id="panel-shots">
+        <div class="shots-summary" id="shotsSummary"><span class="v">加载中...</span></div>
+        <div class="shots-grid" id="shotsGrid"></div>
+      </div>
     </div>
+  </div>
+
+  <!-- Screenshot modal -->
+  <div class="shot-modal" id="shotModal" onclick="closeShotModal()">
+    <img id="shotModalImg" src="" alt="">
+    <div class="shot-modal-caption" id="shotModalCaption"></div>
   </div>
 
   <!-- Bottom Bar -->
@@ -194,12 +332,14 @@ const PHASE_MAP = {
 };
 
 const STATE_CONFIG = {
-  active:   { label: '进行中', dotColor: 'var(--mac-blue)',   badgeBg: 'var(--mac-tint)',          badgeColor: 'var(--mac-blue)' },
-  auditing: { label: '审查中', dotColor: 'var(--mac-purple)', badgeBg: 'hsla(280,60%,96%,1)',      badgeColor: 'var(--mac-purple)' },
-  passed:   { label: '已通过', dotColor: 'var(--mac-green)',  badgeBg: 'hsla(142,60%,95%,1)',      badgeColor: 'var(--mac-green)' },
-  failed:   { label: '未通过', dotColor: 'var(--mac-red)',    badgeBg: 'hsla(4,80%,96%,1)',        badgeColor: 'var(--mac-red)' },
-  blocked:  { label: '已阻塞', dotColor: 'var(--mac-orange)', badgeBg: 'hsla(36,80%,95%,1)',      badgeColor: 'var(--mac-orange)' },
-  pending:  { label: '待执行', dotColor: 'var(--mac-gray)',   badgeBg: 'transparent',              badgeColor: 'var(--muted)' },
+  developing: { label: '开发中',   dotColor: 'var(--mac-blue)',   badgeBg: 'var(--mac-tint)',          badgeColor: 'var(--mac-blue)' },
+  validating: { label: '验证中',   dotColor: 'var(--mac-orange)', badgeBg: 'hsla(36,80%,95%,1)',      badgeColor: 'var(--mac-orange)' },
+  auditing:   { label: '审查中',   dotColor: 'var(--mac-purple)', badgeBg: 'hsla(280,60%,96%,1)',      badgeColor: 'var(--mac-purple)' },
+  active:     { label: '进行中',   dotColor: 'var(--mac-blue)',   badgeBg: 'var(--mac-tint)',          badgeColor: 'var(--mac-blue)' },
+  passed:     { label: '已通过',   dotColor: 'var(--mac-green)',  badgeBg: 'hsla(142,60%,95%,1)',      badgeColor: 'var(--mac-green)' },
+  failed:     { label: '未通过',   dotColor: 'var(--mac-red)',    badgeBg: 'hsla(4,80%,96%,1)',        badgeColor: 'var(--mac-red)' },
+  blocked:    { label: '已阻塞',   dotColor: 'var(--mac-orange)', badgeBg: 'hsla(36,80%,95%,1)',      badgeColor: 'var(--mac-orange)' },
+  pending:    { label: '待执行',   dotColor: 'var(--mac-gray)',   badgeBg: 'transparent',              badgeColor: 'var(--muted)' },
 };
 
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
@@ -211,27 +351,59 @@ function fmtElapsed(s) {
 }
 
 let _auditGate = null;
+let _runtime = null;
 
-function getState(story, cur) {
-  // passes/blocked 优先于运行时状态，防止 Ralph 退出后冻结的 cur 覆盖真实结果
-  if (story.passes === true) return 'passed';
+function getState(story, cur, runtime, auditGate) {
   if (story.blocked) return 'blocked';
-  if (story.id === cur) return 'active';
-  if (_auditGate && _auditGate.story_id === story.id && _auditGate.status === 'pending') return 'auditing';
+  const isCurrent = story.id === cur;
+
+  if (isCurrent) {
+    // 优先看 audit-gate（权威）
+    if (auditGate && auditGate.story_id === story.id) {
+      if (auditGate.status === 'pending') return 'auditing';
+      if (auditGate.status === 'approved') return 'passed';
+    }
+    // 再看 phase
+    if (runtime && runtime.phase === 'developing') return 'developing';
+    if (runtime && runtime.phase === 'validating') return 'validating';
+    if (runtime && runtime.phase === 'waiting_audit') return 'auditing';
+    return 'active';
+  }
+
+  // 非当前 story：passes=true 说明已经 approved 过（否则 Ralph 不会跳到下一个）
+  if (story.passes === true) return 'passed';
   if (story.passes === false && (story.retryCount > 0 || story.notes)) return 'failed';
   return 'pending';
 }
 
-function renderStories(stories, cur) {
+function fmtMin(sec) {
+  if (sec < 60) return sec + 's';
+  return Math.floor(sec/60) + 'm';
+}
+
+function renderStories(stories, cur, runtime, auditGate) {
   const el = document.getElementById('storyList');
   el.innerHTML = stories.map(s => {
-    const st = getState(s, cur);
+    const st = getState(s, cur, runtime, auditGate);
     const cfg = STATE_CONFIG[st];
-    const isActive = st === 'active';
-    const isAuditing = st === 'auditing';
-    return `<div class="story-card ${st} ${isActive ? 'active-pulse' : ''} ${isAuditing ? 'active-pulse' : ''}">
+    const isRunning = ['developing', 'validating', 'auditing', 'active'].includes(st);
+    const isCurrent = s.id === cur;
+
+    // 当前 story 的实时进度（phase_elapsed / screenshots / log_bytes）
+    let progressBar = '';
+    if (isCurrent && runtime && isRunning) {
+      const parts = [];
+      if (runtime.phase_elapsed) parts.push(`⏱ ${fmtMin(runtime.phase_elapsed)}`);
+      if (runtime.screenshots_count > 0) parts.push(`📸 ${runtime.screenshots_count}`);
+      if (runtime.log_bytes !== undefined) parts.push(`📄 ${runtime.log_bytes}B`);
+      if (parts.length) {
+        progressBar = `<div class="notes" style="color:var(--muted)">${parts.join(' · ')}</div>`;
+      }
+    }
+
+    return `<div class="story-card ${st} ${isRunning ? 'active-pulse' : ''}">
       <div class="row">
-        <div class="dot ${isActive || isAuditing ? 'breathe' : ''}" style="background:${cfg.dotColor}"></div>
+        <div class="dot ${isRunning ? 'breathe' : ''}" style="background:${cfg.dotColor}"></div>
         <div class="info">
           <div class="header">
             <span class="id">${s.id}</span>
@@ -240,6 +412,7 @@ function renderStories(stories, cur) {
           </div>
           <div class="card-title">${esc(s.title)}</div>
           ${s.notes ? `<div class="notes">${esc(s.notes)}</div>` : ''}
+          ${progressBar}
         </div>
       </div>
     </div>`;
@@ -280,6 +453,12 @@ function renderPhase(rt) {
   if (cfg.animate) {
     const storyPart = rt.current_story ? ` · ${rt.current_story}` : '';
     label += storyPart + ` · Round ${rt.iteration}`;
+    // Validator 进度详情（实时显示 Validator 在干什么）
+    const detail = [];
+    if (rt.phase_elapsed !== undefined) detail.push(fmtMin(rt.phase_elapsed));
+    if (rt.screenshots_count > 0) detail.push(`📸${rt.screenshots_count}`);
+    if (rt.log_bytes !== undefined && rt.log_bytes > 0) detail.push(`📄${rt.log_bytes}B`);
+    if (detail.length) label += ` · ${detail.join(' · ')}`;
     label += '<span class="loading-dots"></span>';
   }
   text.innerHTML = label;
@@ -288,10 +467,10 @@ function renderPhase(rt) {
   document.getElementById('clock').textContent = new Date().toLocaleTimeString('zh-CN');
 }
 
-// ─── Data fetch (works with dashboard.py backend, or uses embedded fallback) ───
-let useFallback = false;
-
-const FALLBACK = {
+// ─── Data fetch ───
+// FALLBACK 仅在后端完全不可用（比如启动时 dashboard.py 还没起来）时用作占位
+// 每次 poll 都尝试真实 API，不会粘滞在 fallback
+const FALLBACK_DISABLED = {
   runtime: { iteration: 12, max_iterations: 50, phase: 'developing', current_story: 'US-003', elapsed: 340 },
   project: '简易笔记系统',
   stories: [
@@ -310,20 +489,26 @@ const FALLBACK = {
 
 async function poll() {
   let data;
-  if (!useFallback) {
-    try {
-      const res = await fetch('/api/state');
-      data = await res.json();
-    } catch (e) {
-      useFallback = true;
-      data = FALLBACK;
-    }
-  } else {
-    data = FALLBACK;
-    data.runtime.elapsed++;
+  try {
+    const res = await fetch('/api/state', { cache: 'no-store' });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    data = await res.json();
+  } catch (e) {
+    // 每次都重试，不 stick。展示连接失败状态（不误导用户）
+    console.warn('fetch /api/state failed:', e);
+    const logEl = document.getElementById('logContent');
+    if (logEl) logEl.innerHTML =
+      '<div style="text-align:center;color:var(--mac-red);padding:40px;font-style:italic">' +
+      '⚠️ 无法连接 Dashboard API（/api/state）<br><br>' +
+      '原因：' + esc(String(e.message || e)) + '<br><br>' +
+      '请检查 ralph.py 是否正在运行 (PID)。' +
+      '</div>';
+    document.getElementById('phaseText').innerHTML = '<span style="color:var(--mac-red)">⚠️ API 断连，下一轮重试</span>';
+    return;
   }
   _auditGate = data.auditGate || null;
-  renderStories(data.stories, data.runtime.current_story);
+  _runtime = data.runtime || null;
+  renderStories(data.stories, data.runtime.current_story, _runtime, _auditGate);
   renderProgress(data.stories);
   renderLogs(data.logs);
   renderPhase(data.runtime);
@@ -331,6 +516,141 @@ async function poll() {
 
 setInterval(poll, POLL_MS);
 poll();
+
+// ─── Tab switching ───
+let activeTab = 'progress';
+document.querySelectorAll('.tab').forEach(t => {
+  t.addEventListener('click', () => {
+    activeTab = t.dataset.tab;
+    document.querySelectorAll('.tab').forEach(x => x.classList.toggle('active', x === t));
+    document.querySelectorAll('.tab-panel').forEach(p => {
+      p.classList.toggle('active', p.id === 'panel-' + activeTab);
+    });
+    if (activeTab === 'agent') pollAgentLog();
+    if (activeTab === 'shots') pollShots();
+  });
+});
+
+// ─── Agent Log tab ───
+function fmtBytes(n) {
+  if (n < 1024) return n + ' B';
+  if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+  return (n / 1024 / 1024).toFixed(1) + ' MB';
+}
+
+async function pollAgentLog() {
+  try {
+    const res = await fetch('/api/agent-logs/current');
+    const data = await res.json();
+
+    // meta bar
+    const metaEl = document.getElementById('agentLogMeta');
+    if (data.file_name) {
+      metaEl.innerHTML = `
+        <span><span class="k">File:</span> <span class="v">${esc(data.file_name)}</span></span>
+        <span><span class="k">Size:</span> <span class="v">${fmtBytes(data.size_bytes)}</span></span>
+        <span><span class="k">Modified:</span> <span class="v">${esc(data.last_modified || '-')}</span></span>
+        <span><span class="k">Phase:</span> <span class="v">${esc(data.phase || '-')}</span></span>
+        <span><span class="k">Iter:</span> <span class="v">${esc(String(data.iteration || '-'))}</span></span>
+        <span><span class="k">Story:</span> <span class="v">${esc(data.story_id || '-')}</span></span>
+      `;
+    } else {
+      metaEl.innerHTML = '<span class="v">暂无活跃 agent log</span>';
+    }
+
+    // tail
+    const tailEl = document.getElementById('agentLogTail');
+    if (data.tail_content && data.tail_content.trim()) {
+      tailEl.classList.remove('empty');
+      tailEl.textContent = data.tail_content;
+      tailEl.scrollTop = tailEl.scrollHeight;
+    } else if (data.file_name) {
+      tailEl.classList.add('empty');
+      tailEl.textContent = `📄 ${data.file_name} · ${fmtBytes(data.size_bytes)}\n\nAgent 正在思考/跑命令，Claude CLI 非流式输出：\n回合结束后一次性 flush 完整 log 到此文件。\n\n查看下方 Prompt 了解 Agent 当前任务。`;
+    } else {
+      tailEl.classList.add('empty');
+      tailEl.textContent = '当前没有进行中的 Agent log（phase: ' + (data.phase || 'idle') + '）';
+    }
+
+    // prompt
+    const promptEl = document.getElementById('agentLogPrompt');
+    const toggleBtn = document.getElementById('promptToggle');
+    if (data.prompt_preview) {
+      promptEl.textContent = data.prompt_preview + (data.prompt_preview.length >= 3000 ? '\n\n[... 已截断 ...]' : '');
+      toggleBtn.style.display = 'block';
+      toggleBtn.textContent = (promptEl.classList.contains('open') ? '▲ 收起 ' : '▼ 查看 ') +
+        '本轮 Prompt' + (data.prompt_file_name ? ` (${data.prompt_file_name})` : '');
+    } else {
+      toggleBtn.style.display = 'none';
+      promptEl.classList.remove('open');
+    }
+
+    document.getElementById('agentLogBadge').textContent = data.file_name ? fmtBytes(data.size_bytes) : '-';
+  } catch (e) {
+    console.warn('pollAgentLog failed', e);
+  }
+}
+
+document.getElementById('promptToggle').addEventListener('click', () => {
+  const p = document.getElementById('agentLogPrompt');
+  const btn = document.getElementById('promptToggle');
+  p.classList.toggle('open');
+  btn.textContent = btn.textContent.replace(/^[▲▼]/, p.classList.contains('open') ? '▲' : '▼')
+    .replace('查看', p.classList.contains('open') ? '收起' : '查看');
+});
+
+// ─── Screenshots tab ───
+async function pollShots() {
+  try {
+    const res = await fetch('/api/screenshots/current');
+    const data = await res.json();
+    const shots = data.screenshots || [];
+    const summaryEl = document.getElementById('shotsSummary');
+    const passCount = shots.filter(s => s.result === 'pass').length;
+    const failCount = shots.filter(s => s.result === 'fail').length;
+
+    summaryEl.innerHTML = `
+      <span><span class="k">Story:</span> <span class="v">${esc(data.story_id || '-')}</span></span>
+      <span>✅ <span class="pass-count">${passCount}</span> PASS</span>
+      <span>❌ <span class="fail-count">${failCount}</span> FAIL</span>
+      <span><span class="v">共 ${shots.length} 张</span></span>
+    `;
+
+    const gridEl = document.getElementById('shotsGrid');
+    if (shots.length === 0) {
+      gridEl.innerHTML = '<div class="shots-empty">当前 story 暂无 Validator 截图</div>';
+    } else {
+      gridEl.innerHTML = shots.map(s => `
+        <div class="shot-card" onclick="openShotModal('${esc(s.url)}', '${esc(s.name)}')">
+          <img src="${esc(s.url)}" alt="${esc(s.name)}" loading="lazy">
+          <div class="shot-label ${s.result}">${s.result.toUpperCase()}</div>
+          <div class="shot-meta">
+            <span>${esc(s.name.replace(/^validator-us-\d{3}-(pass|fail)-/, '').replace('.png', ''))}</span>
+            <span>${esc(s.mtime_str)}</span>
+          </div>
+        </div>
+      `).join('');
+    }
+    document.getElementById('shotsBadge').textContent = shots.length;
+  } catch (e) {
+    console.warn('pollShots failed', e);
+  }
+}
+
+function openShotModal(url, name) {
+  document.getElementById('shotModalImg').src = url;
+  document.getElementById('shotModalCaption').textContent = name;
+  document.getElementById('shotModal').classList.add('open');
+}
+function closeShotModal() {
+  document.getElementById('shotModal').classList.remove('open');
+}
+
+// ─── Auto-refresh when active tab ───
+setInterval(() => {
+  if (activeTab === 'agent') pollAgentLog();
+  if (activeTab === 'shots') pollShots();
+}, 3000);
 </script>
 </body>
 </html>

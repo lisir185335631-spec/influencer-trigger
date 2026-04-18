@@ -17,12 +17,17 @@ export interface ScrapeTask {
   completed_at: string | null
   created_at: string
   updated_at: string
+  target_market?: string | null
+  search_keywords?: string | null
+  competitor_brands?: string | null
 }
 
 export interface ScrapeTaskCreate {
   platforms: string[]
   industry: string
   target_count: number
+  target_market?: string
+  competitor_brands?: string
 }
 
 export interface ScrapeInfluencerResult {
@@ -35,6 +40,8 @@ export interface ScrapeInfluencerResult {
   industry: string | null
   bio: string | null
   status: string
+  relevance_score?: number | null
+  match_reason?: string | null
 }
 
 export const scrapeApi = {

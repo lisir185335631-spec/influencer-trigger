@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { templatesApi, Template } from '../api/templates'
 import {
   emailsApi,
@@ -41,6 +42,7 @@ const STATUSES  = ['pending', 'sent', 'delivered', 'opened', 'clicked', 'replied
 const PAGE_SIZE = 20
 
 function StatusDashboard() {
+  const { t } = useTranslation()
   const [stats, setStats]       = useState<EmailStats | null>(null)
   const [items, setItems]       = useState<EmailListItem[]>([])
   const [total, setTotal]       = useState(0)
@@ -104,12 +106,12 @@ function StatusDashboard() {
   const handleStatusFilter   = (v: string)       => { setStatusFilter(v);   setPage(1) }
 
   const statCards = stats ? [
-    { label: 'Total Sent',  value: stats.total_sent, color: 'text-gray-900' },
-    { label: 'Delivered',   value: stats.delivered,  color: 'text-cyan-600' },
-    { label: 'Opened',      value: stats.opened,     color: 'text-yellow-600' },
-    { label: 'Replied',     value: stats.replied,    color: 'text-green-600' },
-    { label: 'No Reply',    value: stats.no_reply,   color: 'text-gray-400' },
-    { label: 'Bounced',     value: stats.bounced,    color: 'text-red-500' },
+    { label: t('emails.stats.totalSent'),  value: stats.total_sent, color: 'text-gray-900' },
+    { label: t('emails.stats.delivered'),  value: stats.delivered,  color: 'text-cyan-600' },
+    { label: t('emails.stats.opened'),     value: stats.opened,     color: 'text-yellow-600' },
+    { label: t('emails.stats.replied'),    value: stats.replied,    color: 'text-green-600' },
+    { label: t('emails.stats.noReply'),    value: stats.no_reply,   color: 'text-gray-400' },
+    { label: t('emails.stats.bounced'),    value: stats.bounced,    color: 'text-red-500' },
   ] : []
 
   return (
@@ -137,7 +139,7 @@ function StatusDashboard() {
           onChange={e => handleCampaignFilter(e.target.value ? Number(e.target.value) : '')}
           className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="">All campaigns</option>
+          <option value="">{t('emails.filter.allCampaigns')}</option>
           {campaigns.map(c => (
             <option key={c.id} value={c.id}>{c.name}</option>
           ))}
@@ -148,7 +150,7 @@ function StatusDashboard() {
           onChange={e => handlePlatformFilter(e.target.value)}
           className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="">All platforms</option>
+          <option value="">{t('emails.filter.allPlatforms')}</option>
           {PLATFORMS.map(p => (
             <option key={p} value={p}>{p.charAt(0).toUpperCase() + p.slice(1)}</option>
           ))}
@@ -159,7 +161,7 @@ function StatusDashboard() {
           onChange={e => handleStatusFilter(e.target.value)}
           className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          <option value="">All statuses</option>
+          <option value="">{t('emails.filter.allStatuses')}</option>
           {STATUSES.map(s => (
             <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
           ))}
@@ -170,12 +172,12 @@ function StatusDashboard() {
             onClick={resetFilters}
             className="text-xs text-gray-400 hover:text-gray-600 px-2"
           >
-            Clear filters
+            {t('emails.filter.clearFilters')}
           </button>
         )}
 
         <span className="ml-auto text-xs text-gray-400 self-center">
-          {total} email{total !== 1 ? 's' : ''}
+          {t('emails.emailCount', { count: total })}
         </span>
       </div>
 
@@ -184,12 +186,12 @@ function StatusDashboard() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100">
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">Influencer</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">Email</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">Campaign</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">Sent At</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">Status</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">Last Updated</th>
+              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.influencer')}</th>
+              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.email')}</th>
+              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.campaign')}</th>
+              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.sentAt')}</th>
+              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.status')}</th>
+              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.lastUpdated')}</th>
             </tr>
           </thead>
           <tbody>
@@ -207,7 +209,7 @@ function StatusDashboard() {
             {!loading && items.length === 0 && (
               <tr>
                 <td colSpan={6} className="text-center py-12 text-sm text-gray-400">
-                  No emails found
+                  {t('emails.noEmails')}
                 </td>
               </tr>
             )}
@@ -244,17 +246,17 @@ function StatusDashboard() {
             disabled={page <= 1}
             className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
           >
-            Previous
+            {t('emails.prev')}
           </button>
           <span className="text-xs text-gray-400">
-            Page {page} of {totalPages}
+            {t('emails.pageOf', { current: page, total: totalPages })}
           </span>
           <button
             onClick={() => setPage(p => Math.min(totalPages, p + 1))}
             disabled={page >= totalPages}
             className="px-3 py-1.5 text-sm border border-gray-200 rounded-lg disabled:opacity-40 hover:bg-gray-50 transition-colors"
           >
-            Next
+            {t('emails.next')}
           </button>
         </div>
       )}
@@ -275,6 +277,7 @@ interface ProgressState {
 }
 
 function SendPanel() {
+  const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [templates, setTemplates]       = useState<Template[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | ''>('')
@@ -298,7 +301,7 @@ function SendPanel() {
   useEffect(() => {
     templatesApi.list()
       .then(setTemplates)
-      .catch(() => setError('Failed to load templates'))
+      .catch(() => setError(t('emails.batch.loadTemplatesFailed')))
       .finally(() => setLoadingTemplates(false))
   }, [])
 
@@ -358,7 +361,7 @@ function SendPanel() {
       setProgress({ sent: 0, success: 0, failed: 0, total: resp.total_count, current_email: '' })
       setPhase('sending')
     } catch {
-      setError('Failed to start send. Check that mailboxes are configured.')
+      setError(t('emails.batch.sendFailed'))
     } finally {
       setSubmitting(false)
     }
@@ -379,9 +382,9 @@ function SendPanel() {
   if (phase === 'setup' && influencerIds.length === 0) {
     return (
       <div className="max-w-xl">
-        <h2 className="text-base font-semibold text-gray-900 mb-2">Batch Send</h2>
+        <h2 className="text-base font-semibold text-gray-900 mb-2">{t('emails.batch.title')}</h2>
         <p className="text-sm text-gray-500 mb-6">
-          Send personalised emails to influencers at scale using multi-mailbox rotation.
+          {t('emails.batch.subtitle')}
         </p>
         <div className="border border-gray-100 rounded-xl p-8 text-center">
           <div className="w-10 h-10 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -390,9 +393,9 @@ function SendPanel() {
                 d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
             </svg>
           </div>
-          <p className="text-sm text-gray-500 mb-1">No influencers selected</p>
+          <p className="text-sm text-gray-500 mb-1">{t('emails.batch.noInfluencers')}</p>
           <p className="text-xs text-gray-400">
-            Go to <a href="/scrape" className="text-blue-500 hover:underline">Scrape</a>, open a task, select influencers, and click "Send All".
+            {t('emails.batch.noInfluencersHint')}
           </p>
         </div>
       </div>
@@ -403,21 +406,21 @@ function SendPanel() {
   if (phase === 'setup') {
     return (
       <div className="max-w-xl">
-        <h2 className="text-base font-semibold text-gray-900 mb-1">Batch Send</h2>
-        <p className="text-sm text-gray-500 mb-6">Configure and launch your email campaign.</p>
+        <h2 className="text-base font-semibold text-gray-900 mb-1">{t('emails.batch.title')}</h2>
+        <p className="text-sm text-gray-500 mb-6">{t('emails.batch.configureHint')}</p>
 
         <div className="flex items-center gap-2 mb-6 p-3 bg-blue-50 rounded-lg border border-blue-100">
           <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-semibold">
             {influencerIds.length}
           </span>
           <span className="text-sm text-blue-700">
-            influencer{influencerIds.length !== 1 ? 's' : ''} selected
+            {t('emails.batch.influencersSelected', { count: influencerIds.length })}
           </span>
         </div>
 
         <div className="mb-4">
           <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">
-            Campaign Name <span className="text-gray-300 font-normal normal-case">(optional)</span>
+            {t('emails.batch.campaignName')} <span className="text-gray-300 font-normal normal-case">{t('emails.batch.optional')}</span>
           </label>
           <input
             type="text"
@@ -430,14 +433,14 @@ function SendPanel() {
 
         <div className="mb-6">
           <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">
-            Email Template <span className="text-red-400">*</span>
+            {t('emails.batch.emailTemplate')} <span className="text-red-400">*</span>
           </label>
           {loadingTemplates ? (
             <div className="h-10 bg-gray-50 rounded-lg animate-pulse" />
           ) : templates.length === 0 ? (
             <p className="text-sm text-gray-400">
-              No templates found.{' '}
-              <a href="/templates" className="text-blue-500 hover:underline">Create one first.</a>
+              {t('emails.batch.noTemplates')}{' '}
+              <a href="/templates" className="text-blue-500 hover:underline">{t('emails.batch.createFirst')}</a>
             </p>
           ) : (
             <select
@@ -445,10 +448,10 @@ function SendPanel() {
               onChange={e => setSelectedTemplateId(Number(e.target.value))}
               className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent bg-white"
             >
-              <option value="">Select a template…</option>
-              {templates.map(t => (
-                <option key={t.id} value={t.id}>
-                  {t.name}{t.industry ? ` · ${t.industry}` : ''}{t.style ? ` · ${t.style}` : ''}
+              <option value="">{t('emails.batch.selectTemplate')}</option>
+              {templates.map(tmpl => (
+                <option key={tmpl.id} value={tmpl.id}>
+                  {tmpl.name}{tmpl.industry ? ` · ${tmpl.industry}` : ''}{tmpl.style ? ` · ${tmpl.style}` : ''}
                 </option>
               ))}
             </select>
@@ -462,10 +465,10 @@ function SendPanel() {
           disabled={!selectedTemplateId || submitting || influencerIds.length === 0}
           className="w-full bg-gray-900 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
         >
-          {submitting ? 'Starting…' : `Send to ${influencerIds.length} Influencer${influencerIds.length !== 1 ? 's' : ''}`}
+          {submitting ? t('emails.batch.starting') : t('emails.batch.sendTo', { count: influencerIds.length })}
         </button>
         <p className="text-xs text-gray-400 mt-3 text-center">
-          Emails are sent with 30-60s intervals using your active mailboxes.
+          {t('emails.batch.rateHint')}
         </p>
       </div>
     )
@@ -479,27 +482,27 @@ function SendPanel() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-base font-semibold text-gray-900">
-            {isDone ? 'Campaign Complete' : 'Sending…'}
+            {isDone ? t('emails.batch.complete') : t('emails.batch.sending')}
           </h2>
           {campaign && <p className="text-sm text-gray-400 mt-0.5">{campaign.name}</p>}
         </div>
         {isDone ? (
           <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-green-50 text-green-700 border border-green-100">
-            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />Done
+            <span className="w-1.5 h-1.5 rounded-full bg-green-500" />{t('emails.batch.done')}
           </span>
         ) : (
           <span className="inline-flex items-center gap-1 text-xs font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-100">
-            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />Running
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-500 animate-pulse" />{t('emails.batch.running')}
           </span>
         )}
       </div>
 
       <div className="grid grid-cols-4 gap-3 mb-6">
         {[
-          { label: 'Total',   value: progress.total,   color: 'text-gray-900' },
-          { label: 'Sent',    value: progress.sent,    color: 'text-gray-900' },
-          { label: 'Success', value: progress.success, color: 'text-green-600' },
-          { label: 'Failed',  value: progress.failed,  color: 'text-red-500' },
+          { label: t('emails.batch.statsTotal'),   value: progress.total,   color: 'text-gray-900' },
+          { label: t('emails.batch.statsSent'),    value: progress.sent,    color: 'text-gray-900' },
+          { label: t('emails.batch.statsSuccess'), value: progress.success, color: 'text-green-600' },
+          { label: t('emails.batch.statsFailed'),  value: progress.failed,  color: 'text-red-500' },
         ].map(({ label, value, color }) => (
           <div key={label} className="border border-gray-100 rounded-xl p-3 text-center">
             <div className={`text-2xl font-semibold ${color}`}>{value}</div>
@@ -510,7 +513,7 @@ function SendPanel() {
 
       <div className="mb-4">
         <div className="flex justify-between text-xs text-gray-400 mb-1">
-          <span>{progressPct}% complete</span>
+          <span>{t('emails.batch.percentComplete', { percent: progressPct })}</span>
           <span>{progress.sent} / {progress.total}</span>
         </div>
         <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -523,12 +526,12 @@ function SendPanel() {
 
       {!isDone && progress.current_email && (
         <p className="text-xs text-gray-400 mb-6">
-          Sending to <span className="text-gray-600 font-medium">{progress.current_email}</span>…
+          {t('emails.batch.sendingTo', { email: progress.current_email })}
         </p>
       )}
       {!isDone && (
         <p className="text-xs text-gray-400 mb-6">
-          Sending with 30-60s intervals to avoid rate limits. This may take a while.
+          {t('emails.batch.sendingHint')}
         </p>
       )}
       {isDone && (
@@ -536,7 +539,7 @@ function SendPanel() {
           onClick={handleReset}
           className="w-full border border-gray-200 text-gray-700 text-sm font-medium py-2.5 rounded-lg hover:bg-gray-50 transition-colors"
         >
-          Send Another Batch
+          {t('emails.batch.sendAnother')}
         </button>
       )}
     </div>
@@ -548,6 +551,7 @@ function SendPanel() {
 type Tab = 'status' | 'send'
 
 export default function EmailsPage() {
+  const { t } = useTranslation()
   const [searchParams] = useSearchParams()
   const hasInfluencerIds = !!searchParams.get('influencer_ids')
 
@@ -562,8 +566,8 @@ export default function EmailsPage() {
       {/* Tab bar */}
       <div className="flex border-b border-gray-200 mb-6">
         {([
-          { key: 'status', label: 'Email Status' },
-          { key: 'send',   label: 'Batch Send'   },
+          { key: 'status', label: t('emails.tabStatus') },
+          { key: 'send',   label: t('emails.tabBatchSend') },
         ] as { key: Tab; label: string }[]).map(({ key, label }) => (
           <button
             key={key}

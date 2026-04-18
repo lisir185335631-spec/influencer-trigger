@@ -1,7 +1,7 @@
 from datetime import date, datetime, timedelta
 
 from fastapi import APIRouter, Depends
-from sqlalchemy import func, select
+from sqlalchemy import Date, and_, case, cast, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.admin.deps import require_admin
@@ -17,11 +17,6 @@ from app.schemas.auth import TokenData
 from app.websocket.manager import manager
 
 router = APIRouter(prefix="/overview", tags=["admin-overview"])
-
-
-async def _get_db() -> AsyncSession:
-    async with AsyncSessionLocal() as db:
-        return db
 
 
 def _today() -> date:
@@ -52,146 +47,186 @@ async def get_metrics(current_user: TokenData = Depends(require_admin)) -> dict:
     week_start = _week_start()
     month_start = _month_start()
     today_start = _day_start(today)
-    today_end = _day_end(today)
+    tomorrow_start = _day_start(today + timedelta(days=1))
+    trend_start = _day_start(today - timedelta(days=6))
+
+    sent_statuses = [EmailStatus.sent, EmailStatus.delivered, EmailStatus.opened, EmailStatus.replied]
 
     async with AsyncSessionLocal() as db:
-        # ── Users ──────────────────────────────────────────────────────────
-        total_users = (await db.execute(select(func.count(User.id)))).scalar_one()
-        active_users = (await db.execute(
-            select(func.count(User.id)).where(User.is_active == True)  # noqa: E712
-        )).scalar_one()
+        # ── Query 1: Users (total + active in one shot) ────────────────────
+        user_row = (await db.execute(
+            select(
+                func.count(User.id).label("total"),
+                func.sum(case((User.is_active == True, 1), else_=0)).label("active"),  # noqa: E712
+            )
+        )).one()
+        total_users = user_row.total or 0
+        active_users = user_row.active or 0
 
-        # ── Emails sent ────────────────────────────────────────────────────
-        sent_statuses = [EmailStatus.sent, EmailStatus.delivered, EmailStatus.opened, EmailStatus.replied]
+        # ── Query 2: Emails — 6 metrics in one shot ────────────────────────
+        # Half-open windows [start, next_start) avoid max-time precision edge cases.
+        email_row = (await db.execute(
+            select(
+                func.sum(case(
+                    (and_(Email.status.in_(sent_statuses),
+                           Email.sent_at >= today_start,
+                           Email.sent_at < tomorrow_start), 1),
+                    else_=0
+                )).label("sent_today"),
+                func.sum(case(
+                    (and_(Email.status.in_(sent_statuses),
+                           Email.sent_at >= week_start), 1),
+                    else_=0
+                )).label("sent_week"),
+                func.sum(case(
+                    (and_(Email.status.in_(sent_statuses),
+                           Email.sent_at >= month_start), 1),
+                    else_=0
+                )).label("sent_month"),
+                func.sum(case(
+                    (and_(Email.status == EmailStatus.replied,
+                           Email.replied_at >= today_start,
+                           Email.replied_at < tomorrow_start), 1),
+                    else_=0
+                )).label("replied_today"),
+                func.sum(case(
+                    (and_(Email.status == EmailStatus.replied,
+                           Email.replied_at >= week_start), 1),
+                    else_=0
+                )).label("replied_week"),
+                func.sum(case(
+                    (and_(Email.status == EmailStatus.replied,
+                           Email.replied_at >= month_start), 1),
+                    else_=0
+                )).label("replied_month"),
+            )
+        )).one()
+        emails_sent_today = email_row.sent_today or 0
+        emails_sent_week = email_row.sent_week or 0
+        emails_sent_month = email_row.sent_month or 0
+        emails_replied_today = email_row.replied_today or 0
+        emails_replied_week = email_row.replied_week or 0
+        emails_replied_month = email_row.replied_month or 0
 
-        def _sent_where(col):
-            return Email.status.in_(sent_statuses) if col is None else True
+        # ── Query 3: Influencers — 4 metrics in one shot ───────────────────
+        inf_row = (await db.execute(
+            select(
+                func.count(Influencer.id).label("total"),
+                func.sum(case(
+                    (and_(Influencer.created_at >= today_start,
+                           Influencer.created_at < tomorrow_start), 1),
+                    else_=0
+                )).label("today"),
+                func.sum(case(
+                    (Influencer.created_at >= week_start, 1),
+                    else_=0
+                )).label("this_week"),
+                func.sum(case(
+                    (Influencer.created_at >= month_start, 1),
+                    else_=0
+                )).label("this_month"),
+            )
+        )).one()
+        influencers_total = inf_row.total or 0
+        influencers_today = inf_row.today or 0
+        influencers_week = inf_row.this_week or 0
+        influencers_month = inf_row.this_month or 0
 
-        emails_sent_today = (await db.execute(
-            select(func.count(Email.id)).where(
-                Email.status.in_(sent_statuses),
-                Email.sent_at >= today_start,
-                Email.sent_at <= today_end,
+        # ── Query 4: ScrapeTasks — 3 metrics in one shot ───────────────────
+        scrape_row = (await db.execute(
+            select(
+                func.sum(case(
+                    (and_(ScrapeTask.created_at >= today_start,
+                           ScrapeTask.created_at < tomorrow_start), 1),
+                    else_=0
+                )).label("today"),
+                func.sum(case(
+                    (ScrapeTask.created_at >= week_start, 1),
+                    else_=0
+                )).label("this_week"),
+                func.sum(case(
+                    (ScrapeTask.created_at >= month_start, 1),
+                    else_=0
+                )).label("this_month"),
             )
-        )).scalar_one()
-        emails_sent_week = (await db.execute(
-            select(func.count(Email.id)).where(
-                Email.status.in_(sent_statuses),
-                Email.sent_at >= week_start,
-            )
-        )).scalar_one()
-        emails_sent_month = (await db.execute(
-            select(func.count(Email.id)).where(
-                Email.status.in_(sent_statuses),
-                Email.sent_at >= month_start,
-            )
-        )).scalar_one()
+        )).one()
+        scrape_today = scrape_row.today or 0
+        scrape_week = scrape_row.this_week or 0
+        scrape_month = scrape_row.this_month or 0
 
-        # ── Emails replied ─────────────────────────────────────────────────
-        emails_replied_today = (await db.execute(
-            select(func.count(Email.id)).where(
-                Email.status == EmailStatus.replied,
-                Email.replied_at >= today_start,
-                Email.replied_at <= today_end,
-            )
-        )).scalar_one()
-        emails_replied_week = (await db.execute(
-            select(func.count(Email.id)).where(
-                Email.status == EmailStatus.replied,
-                Email.replied_at >= week_start,
-            )
-        )).scalar_one()
-        emails_replied_month = (await db.execute(
-            select(func.count(Email.id)).where(
-                Email.status == EmailStatus.replied,
-                Email.replied_at >= month_start,
-            )
-        )).scalar_one()
-
-        # ── Influencers ────────────────────────────────────────────────────
-        influencers_total = (await db.execute(select(func.count(Influencer.id)))).scalar_one()
-        influencers_today = (await db.execute(
-            select(func.count(Influencer.id)).where(
-                Influencer.created_at >= today_start,
-                Influencer.created_at <= today_end,
-            )
-        )).scalar_one()
-        influencers_week = (await db.execute(
-            select(func.count(Influencer.id)).where(Influencer.created_at >= week_start)
-        )).scalar_one()
-        influencers_month = (await db.execute(
-            select(func.count(Influencer.id)).where(Influencer.created_at >= month_start)
-        )).scalar_one()
-
-        # ── Scrape tasks ───────────────────────────────────────────────────
-        scrape_today = (await db.execute(
-            select(func.count(ScrapeTask.id)).where(
-                ScrapeTask.created_at >= today_start,
-                ScrapeTask.created_at <= today_end,
-            )
-        )).scalar_one()
-        scrape_week = (await db.execute(
-            select(func.count(ScrapeTask.id)).where(ScrapeTask.created_at >= week_start)
-        )).scalar_one()
-        scrape_month = (await db.execute(
-            select(func.count(ScrapeTask.id)).where(ScrapeTask.created_at >= month_start)
-        )).scalar_one()
-
-        # ── Errors (notifications level=error) ────────────────────────────
+        # ── Query 5: Errors (notifications level=urgent) ───────────────────
         errors_today = (await db.execute(
             select(func.count(Notification.id)).where(
                 Notification.level == NotificationLevel.urgent,
                 Notification.created_at >= today_start,
-                Notification.created_at <= today_end,
+                Notification.created_at < tomorrow_start,
             )
         )).scalar_one()
 
-        # ── 7-day email trend ──────────────────────────────────────────────
+        # ── Query 6a: email_trend sent — GROUP BY sent_at date ─────────────
+        sent_trend_rows = (await db.execute(
+            select(
+                cast(Email.sent_at, Date).label("d"),
+                func.count(Email.id).label("sent"),
+            )
+            .where(
+                Email.status.in_(sent_statuses),
+                Email.sent_at >= trend_start,
+                Email.sent_at < tomorrow_start,
+            )
+            .group_by(cast(Email.sent_at, Date))
+        )).all()
+
+        # ── Query 6b: email_trend replied — GROUP BY replied_at date ───────
+        replied_trend_rows = (await db.execute(
+            select(
+                cast(Email.replied_at, Date).label("d"),
+                func.count(Email.id).label("replied"),
+            )
+            .where(
+                Email.status == EmailStatus.replied,
+                Email.replied_at >= trend_start,
+                Email.replied_at < tomorrow_start,
+            )
+            .group_by(cast(Email.replied_at, Date))
+        )).all()
+
+        sent_map = {r.d: r.sent for r in sent_trend_rows}
+        replied_map = {r.d: r.replied for r in replied_trend_rows}
         email_trend = []
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
-            ds = _day_start(d)
-            de = _day_end(d)
-            sent = (await db.execute(
-                select(func.count(Email.id)).where(
-                    Email.status.in_(sent_statuses),
-                    Email.sent_at >= ds,
-                    Email.sent_at <= de,
-                )
-            )).scalar_one()
-            replied = (await db.execute(
-                select(func.count(Email.id)).where(
-                    Email.status == EmailStatus.replied,
-                    Email.replied_at >= ds,
-                    Email.replied_at <= de,
-                )
-            )).scalar_one()
             email_trend.append({
                 "date": d.strftime("%m/%d"),
-                "sent": sent,
-                "replied": replied,
+                "sent": sent_map.get(d, 0),
+                "replied": replied_map.get(d, 0),
             })
 
-        # ── 7-day scrape task trend ────────────────────────────────────────
+        # ── Query 7: scrape_trend 7 days — GROUP BY created_at date ───────
+        scrape_trend_rows = (await db.execute(
+            select(
+                cast(ScrapeTask.created_at, Date).label("d"),
+                func.count(ScrapeTask.id).label("tasks"),
+            )
+            .where(
+                ScrapeTask.created_at >= trend_start,
+                ScrapeTask.created_at < tomorrow_start,
+            )
+            .group_by(cast(ScrapeTask.created_at, Date))
+        )).all()
+
+        scrape_by_date = {r.d: r.tasks for r in scrape_trend_rows}
         scrape_trend = []
         for i in range(6, -1, -1):
             d = today - timedelta(days=i)
-            ds = _day_start(d)
-            de = _day_end(d)
-            count = (await db.execute(
-                select(func.count(ScrapeTask.id)).where(
-                    ScrapeTask.created_at >= ds,
-                    ScrapeTask.created_at <= de,
-                )
-            )).scalar_one()
-            scrape_trend.append({"date": d.strftime("%m/%d"), "tasks": count})
+            scrape_trend.append({"date": d.strftime("%m/%d"), "tasks": scrape_by_date.get(d, 0)})
 
-        # ── Platform distribution ──────────────────────────────────────────
-        rows = (await db.execute(
+        # ── Query 8: Platform distribution ────────────────────────────────
+        platform_rows = (await db.execute(
             select(Influencer.platform, func.count(Influencer.id))
             .group_by(Influencer.platform)
         )).all()
-        platform_dist = [{"platform": r[0].value if r[0] else "other", "count": r[1]} for r in rows]
+        platform_dist = [{"platform": r[0].value if r[0] else "other", "count": r[1]} for r in platform_rows]
 
     return {
         "users": {"total": total_users, "active": active_users},

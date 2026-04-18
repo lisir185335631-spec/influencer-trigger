@@ -1,21 +1,23 @@
 import { ReactNode } from 'react'
 import { useLocation, useNavigate } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { useAuthContext } from '../../stores/AuthContext'
 import { useWebSocketContext } from '../../stores/WebSocketContext'
 import Sidebar from './Sidebar'
 import NotificationBell from '../NotificationBell'
+import LanguageSwitch from '../LanguageSwitch'
 
 const PAGE_TITLES: Record<string, string> = {
-  '/dashboard': 'Dashboard',
-  '/scrape': 'Scrape',
-  '/import': 'Import',
-  '/emails': 'Emails',
-  '/crm': 'CRM',
-  '/templates': 'Templates',
-  '/mailboxes': 'Mailboxes',
-  '/followup': 'Follow-up',
-  '/team': 'Team',
-  '/settings': 'Settings',
+  '/dashboard': 'mainLayout.pageTitles.dashboard',
+  '/scrape': 'mainLayout.pageTitles.scrape',
+  '/import': 'mainLayout.pageTitles.import',
+  '/emails': 'mainLayout.pageTitles.emails',
+  '/crm': 'mainLayout.pageTitles.crm',
+  '/templates': 'mainLayout.pageTitles.templates',
+  '/mailboxes': 'mainLayout.pageTitles.mailboxes',
+  '/followup': 'mainLayout.pageTitles.followUp',
+  '/team': 'mainLayout.pageTitles.team',
+  '/settings': 'mainLayout.pageTitles.settings',
 }
 
 const WS_STATUS_COLOR: Record<string, string> = {
@@ -25,12 +27,13 @@ const WS_STATUS_COLOR: Record<string, string> = {
 }
 
 export default function MainLayout({ children }: { children: ReactNode }) {
+  const { t } = useTranslation()
   const { username, logout } = useAuthContext()
   const { status } = useWebSocketContext()
   const location = useLocation()
   const navigate = useNavigate()
 
-  const pageTitle = PAGE_TITLES[location.pathname] ?? 'Influencer Trigger'
+  const pageTitle = t(PAGE_TITLES[location.pathname] ?? 'mainLayout.fallbackTitle')
 
   const handleLogout = () => {
     logout()
@@ -46,15 +49,17 @@ export default function MainLayout({ children }: { children: ReactNode }) {
         <header className="flex items-center justify-between px-6 py-3 border-b border-gray-100 bg-white shrink-0">
           {/* Breadcrumb */}
           <nav className="flex items-center gap-2 text-sm text-gray-400">
-            <span>Home</span>
+            <span>{t('mainLayout.home')}</span>
             <span>/</span>
             <span className="text-gray-800 font-medium">{pageTitle}</span>
           </nav>
 
           {/* Right: ws status + bell + user */}
           <div className="flex items-center gap-3">
+            <LanguageSwitch />
+
             {/* WebSocket status dot */}
-            <span title={`WebSocket: ${status}`}>
+            <span title={t('mainLayout.wsTooltip', { status })}>
               <span
                 className={`inline-block h-2 w-2 rounded-full ${WS_STATUS_COLOR[status]}`}
               />
@@ -69,7 +74,7 @@ export default function MainLayout({ children }: { children: ReactNode }) {
               onClick={handleLogout}
               className="text-sm text-gray-400 hover:text-gray-700 transition-colors"
             >
-              Sign out
+              {t('mainLayout.signOut')}
             </button>
           </div>
         </header>

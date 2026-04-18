@@ -21,6 +21,8 @@ async def create_scrape_task(
         industry=data.industry,
         target_count=data.target_count,
         created_by=user_id,
+        target_market=data.target_market,
+        competitor_brands=data.competitor_brands,
     )
     db.add(task)
     await db.commit()

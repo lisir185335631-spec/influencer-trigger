@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Settings, Clock, Mail, RefreshCw, Save, AlertCircle, CheckCircle } from 'lucide-react'
 import { followUpApi, FollowUpSettings, FollowUpLogItem } from '../api/follow_up'
 
@@ -40,6 +41,7 @@ function PlatformBadge({ platform }: { platform: string | null }) {
 // ── Settings Panel ────────────────────────────────────────────────────────────
 
 function SettingsPanel() {
+  const { t } = useTranslation()
   const [settings, setSettings] = useState<FollowUpSettings | null>(null)
   const [loading, setLoading]   = useState(true)
   const [saving, setSaving]     = useState(false)
@@ -61,7 +63,7 @@ function SettingsPanel() {
         setMaxCount(s.max_count)
         setHourUtc(s.hour_utc)
       })
-      .catch(() => setError('Failed to load settings'))
+      .catch(() => setError(t('followUp.strategy.loadFailed')))
       .finally(() => setLoading(false))
   }, [])
 
@@ -80,7 +82,7 @@ function SettingsPanel() {
       setSaved(true)
       setTimeout(() => setSaved(false), 3000)
     } catch {
-      setError('Failed to save settings')
+      setError(t('followUp.strategy.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -104,10 +106,10 @@ function SettingsPanel() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
         <div className="flex items-center gap-2">
           <Settings size={16} className="text-gray-400" />
-          <h2 className="text-sm font-semibold text-gray-800">Follow-up Strategy</h2>
+          <h2 className="text-sm font-semibold text-gray-800">{t('followUp.strategy.title')}</h2>
         </div>
         <label className="flex items-center gap-2 cursor-pointer select-none">
-          <span className="text-xs text-gray-500">Auto follow-up</span>
+          <span className="text-xs text-gray-500">{t('followUp.strategy.autoFollowUp')}</span>
           <div
             onClick={() => setEnabled(!enabled)}
             className={`relative w-9 h-5 rounded-full transition-colors ${enabled ? 'bg-gray-900' : 'bg-gray-200'}`}
@@ -124,7 +126,7 @@ function SettingsPanel() {
         {/* Interval */}
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1.5">
-            Follow-up interval (days)
+            {t('followUp.strategy.intervalLabel')}
           </label>
           <input
             type="number"
@@ -134,13 +136,13 @@ function SettingsPanel() {
             onChange={(e) => setIntervalDays(Number(e.target.value))}
             className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gray-400 transition-colors"
           />
-          <p className="mt-1 text-xs text-gray-400">Days since last email before sending follow-up</p>
+          <p className="mt-1 text-xs text-gray-400">{t('followUp.strategy.intervalHint')}</p>
         </div>
 
         {/* Max count */}
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1.5">
-            Max follow-up emails
+            {t('followUp.strategy.maxLabel')}
           </label>
           <input
             type="number"
@@ -150,13 +152,13 @@ function SettingsPanel() {
             onChange={(e) => setMaxCount(Number(e.target.value))}
             className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gray-400 transition-colors"
           />
-          <p className="mt-1 text-xs text-gray-400">Influencer archived after this many follow-ups</p>
+          <p className="mt-1 text-xs text-gray-400">{t('followUp.strategy.maxHint')}</p>
         </div>
 
         {/* Hour UTC */}
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1.5">
-            Send time (UTC hour)
+            {t('followUp.strategy.sendTimeLabel')}
           </label>
           <select
             value={hourUtc}
@@ -169,7 +171,7 @@ function SettingsPanel() {
               </option>
             ))}
           </select>
-          <p className="mt-1 text-xs text-gray-400">Daily check runs at this UTC hour</p>
+          <p className="mt-1 text-xs text-gray-400">{t('followUp.strategy.sendTimeHint')}</p>
         </div>
       </div>
 
@@ -185,12 +187,12 @@ function SettingsPanel() {
           {saved && (
             <div className="flex items-center gap-1.5 text-xs text-green-600">
               <CheckCircle size={12} />
-              Settings saved
+              {t('followUp.strategy.saved')}
             </div>
           )}
           {settings && !error && !saved && (
             <p className="text-xs text-gray-400">
-              Last updated: {new Date(settings.updated_at).toLocaleString()}
+              {t('followUp.strategy.lastUpdated', { date: new Date(settings.updated_at).toLocaleString() })}
             </p>
           )}
         </div>
@@ -200,7 +202,7 @@ function SettingsPanel() {
           className="flex items-center gap-1.5 bg-gray-900 text-white text-xs font-medium px-4 py-2 rounded-md hover:bg-gray-700 transition-colors disabled:opacity-50"
         >
           {saving ? <RefreshCw size={12} className="animate-spin" /> : <Save size={12} />}
-          {saving ? 'Saving…' : 'Save settings'}
+          {saving ? t('followUp.strategy.saving') : t('followUp.strategy.saveButton')}
         </button>
       </div>
     </div>
@@ -210,6 +212,7 @@ function SettingsPanel() {
 // ── Logs Table ────────────────────────────────────────────────────────────────
 
 function LogsTable() {
+  const { t } = useTranslation()
   const [items, setItems]     = useState<FollowUpLogItem[]>([])
   const [total, setTotal]     = useState(0)
   const [page, setPage]       = useState(1)
@@ -236,7 +239,7 @@ function LogsTable() {
       <div className="flex items-center justify-between px-6 py-4 border-b border-gray-50">
         <div className="flex items-center gap-2">
           <Mail size={16} className="text-gray-400" />
-          <h2 className="text-sm font-semibold text-gray-800">Follow-up Log</h2>
+          <h2 className="text-sm font-semibold text-gray-800">{t('followUp.log.title')}</h2>
           <span className="bg-gray-100 text-gray-500 text-xs px-2 py-0.5 rounded-full">{total}</span>
         </div>
         <button
@@ -250,19 +253,19 @@ function LogsTable() {
 
       {/* Table */}
       {loading && items.length === 0 ? (
-        <div className="p-8 text-center text-gray-400 text-sm">Loading…</div>
+        <div className="p-8 text-center text-gray-400 text-sm">{t('followUp.log.loading')}</div>
       ) : items.length === 0 ? (
         <div className="p-8 text-center">
           <Clock size={32} className="mx-auto text-gray-200 mb-2" />
-          <p className="text-gray-400 text-sm">No follow-up emails sent yet.</p>
-          <p className="text-gray-300 text-xs mt-1">Follow-ups run automatically each day at the configured UTC hour.</p>
+          <p className="text-gray-400 text-sm">{t('followUp.log.noLogs')}</p>
+          <p className="text-gray-300 text-xs mt-1">{t('followUp.log.noLogsHint')}</p>
         </div>
       ) : (
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-50">
-                {['Influencer', 'Platform', 'Subject', 'Follow-up #', 'Status', 'Sent at'].map((h) => (
+                {[t('followUp.log.table.influencer'), t('followUp.log.table.platform'), t('followUp.log.table.subject'), t('followUp.log.table.followUpNum'), t('followUp.log.table.status'), t('followUp.log.table.sentAt')].map((h) => (
                   <th key={h} className="px-4 py-3 text-left text-xs font-medium text-gray-400 whitespace-nowrap">
                     {h}
                   </th>
@@ -308,7 +311,7 @@ function LogsTable() {
       {totalPages > 1 && (
         <div className="flex items-center justify-between px-6 py-3 border-t border-gray-50">
           <span className="text-xs text-gray-400">
-            {total} total · page {page}/{totalPages}
+            {t('followUp.log.total', { count: total, current: page, pages: totalPages })}
           </span>
           <div className="flex gap-1">
             <button
@@ -316,14 +319,14 @@ function LogsTable() {
               disabled={page === 1}
               className="px-3 py-1.5 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 transition-colors"
             >
-              Prev
+              {t('common.prev')}
             </button>
             <button
               onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
               disabled={page === totalPages}
               className="px-3 py-1.5 text-xs border border-gray-200 rounded hover:bg-gray-50 disabled:opacity-40 transition-colors"
             >
-              Next
+              {t('common.next')}
             </button>
           </div>
         </div>
@@ -335,13 +338,14 @@ function LogsTable() {
 // ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function FollowUpPage() {
+  const { t } = useTranslation()
   return (
     <div className="p-6 space-y-5 max-w-5xl mx-auto">
       {/* Page title */}
       <div>
-        <h1 className="text-lg font-semibold text-gray-900">Automated Follow-up</h1>
+        <h1 className="text-lg font-semibold text-gray-900">{t('followUp.title')}</h1>
         <p className="text-xs text-gray-400 mt-0.5">
-          Configure automatic monthly follow-ups for non-responsive influencers. Each follow-up uses a different angle generated by GPT-4o.
+          {t('followUp.subtitle')}
         </p>
       </div>
 
