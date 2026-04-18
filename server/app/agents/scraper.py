@@ -147,7 +147,31 @@ _USER_AGENTS = [
 ]
 
 
-async def _new_context(browser: Browser) -> BrowserContext:
+def _load_youtube_cookies() -> list[dict] | None:
+    """Load cookies.json for authenticated YouTube scraping (unlocks 'View email
+    address' button that only shows for signed-in viewers).
+
+    Expected path: server/data/youtube-cookies.json
+    Format: Playwright storage_state format OR array of cookie dicts.
+    Returns None if file missing or unparseable (scraper still works, just
+    misses creators who hide email behind the sign-in wall).
+    """
+    from pathlib import Path
+    cookie_path = Path(__file__).resolve().parents[3] / "data" / "youtube-cookies.json"
+    if not cookie_path.exists():
+        return None
+    try:
+        data = json.loads(cookie_path.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "cookies" in data:
+            return data["cookies"]
+        if isinstance(data, list):
+            return data
+    except Exception as e:
+        logger.warning("Failed to parse youtube-cookies.json: %s", e)
+    return None
+
+
+async def _new_context(browser: Browser, use_yt_cookies: bool = False) -> BrowserContext:
     ctx = await browser.new_context(
         user_agent=random.choice(_USER_AGENTS),
         viewport={"width": 1280, "height": 800},
@@ -155,6 +179,16 @@ async def _new_context(browser: Browser) -> BrowserContext:
         timezone_id="America/New_York",
     )
     await ctx.add_init_script(_STEALTH_INIT_SCRIPT)
+    if use_yt_cookies:
+        cookies = _load_youtube_cookies()
+        if cookies:
+            try:
+                await ctx.add_cookies(cookies)
+                logger.info("[YouTube] loaded %d cookies for authenticated scraping", len(cookies))
+            except Exception as e:
+                logger.warning("[YouTube] add_cookies failed: %s", e)
+        else:
+            logger.info("[YouTube] no cookies.json — running anonymous (some emails hidden)")
     return ctx
 
 
@@ -174,7 +208,7 @@ async def _scrape_youtube(
     """
     Search YouTube for '{industry} influencer', extract channel About pages for emails.
     """
-    ctx = await _new_context(browser)
+    ctx = await _new_context(browser, use_yt_cookies=True)
     page = await ctx.new_page()
     await stealth_async(page)
 
@@ -257,6 +291,46 @@ async def _scrape_youtube(
                     "[YouTube] [%d] html_len=%d view_email_btn=%d emails_found=%d",
                     ch_idx + 1, len(content), view_email_btn_count, len(emails),
                 )
+
+                # Fallback: if /about has no email, try scraping one of the
+                # channel's own videos. Creators often put contact info in the
+                # video description even when they omit it from the channel bio.
+                if not emails:
+                    try:
+                        video_matches = re.findall(
+                            r'"url":"(/watch\?v=[A-Za-z0-9_\-]{11})',
+                            content,
+                        )
+                        # Dedupe, take the first
+                        if not video_matches:
+                            # about page doesn't embed videos; visit channel home
+                            await page.goto(ch_url.rstrip("/"), wait_until="domcontentloaded", timeout=15000)
+                            await asyncio.sleep(1.5)
+                            home_html = await page.content()
+                            video_matches = re.findall(
+                                r'"url":"(/watch\?v=[A-Za-z0-9_\-]{11})',
+                                home_html,
+                            )
+                        if video_matches:
+                            video_url = f"https://www.youtube.com{video_matches[0]}"
+                            logger.info("[YouTube] [%d] fallback to video: %s", ch_idx + 1, video_url)
+                            await page.goto(video_url, wait_until="domcontentloaded", timeout=15000)
+                            await asyncio.sleep(2)  # let description hydrate
+                            try:
+                                expand = page.locator("tp-yt-paper-button#expand, #expand, button:has-text('Show more')")
+                                if await expand.count() > 0:
+                                    await expand.first.click(timeout=2000)
+                                    await asyncio.sleep(1)
+                            except Exception:
+                                pass
+                            video_html = await page.content()
+                            emails = _extract_emails(video_html)
+                            logger.info(
+                                "[YouTube] [%d] video-fallback emails_found=%d",
+                                ch_idx + 1, len(emails),
+                            )
+                    except Exception as e:
+                        logger.debug("[YouTube] video fallback failed: %s", e)
 
                 # Also grab channel name
                 name = ""

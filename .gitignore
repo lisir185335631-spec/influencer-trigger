@@ -32,6 +32,8 @@ Thumbs.db
 *.sqlite
 *.sqlite3
 data/
+# …but README-*.md inside data/ is OK (setup docs, no sensitive content)
+!server/data/README-*.md
 
 # Logs
 *.log
