@@ -1,7 +1,7 @@
 import csv
 import io
 from typing import Optional
-from sqlalchemy import select, delete, func, case
+from sqlalchemy import select, delete, func, case, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.influencer import Influencer, InfluencerStatus, InfluencerPriority, ReplyIntent
@@ -10,6 +10,9 @@ from app.models.influencer_tag import InfluencerTag
 from app.models.note import Note
 from app.models.collaboration import Collaboration
 from app.models.email import Email
+from app.models.email_event import EmailEvent
+from app.models.notification import Notification
+from app.models.scrape_task_influencer import ScrapeTaskInfluencer
 from app.schemas.influencer import (
     BatchUpdateRequest,
     InfluencerUpdate,
@@ -224,6 +227,43 @@ async def update_influencer(
     await db.commit()
     await db.refresh(inf)
     return inf
+
+
+async def delete_influencer(db: AsyncSession, influencer_id: int) -> bool:
+    # SQLite runs without PRAGMA foreign_keys=ON, so ondelete=CASCADE in the
+    # model is not enforced — we clean related rows manually in the right order.
+    inf = await db.get(Influencer, influencer_id)
+    if not inf:
+        return False
+
+    email_ids = (
+        await db.execute(select(Email.id).where(Email.influencer_id == influencer_id))
+    ).scalars().all()
+    if email_ids:
+        await db.execute(
+            update(Notification)
+            .where(Notification.email_id.in_(email_ids))
+            .values(email_id=None)
+        )
+
+    await db.execute(
+        update(Notification)
+        .where(Notification.influencer_id == influencer_id)
+        .values(influencer_id=None)
+    )
+
+    await db.execute(delete(EmailEvent).where(EmailEvent.influencer_id == influencer_id))
+    await db.execute(delete(Email).where(Email.influencer_id == influencer_id))
+    await db.execute(delete(InfluencerTag).where(InfluencerTag.influencer_id == influencer_id))
+    await db.execute(delete(Note).where(Note.influencer_id == influencer_id))
+    await db.execute(delete(Collaboration).where(Collaboration.influencer_id == influencer_id))
+    await db.execute(
+        delete(ScrapeTaskInfluencer).where(ScrapeTaskInfluencer.influencer_id == influencer_id)
+    )
+
+    await db.delete(inf)
+    await db.commit()
+    return True
 
 
 # ── Email timeline ───────────────────────────────────────────────────────────

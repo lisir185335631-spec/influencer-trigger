@@ -349,6 +349,7 @@
     "industry": "Industry…",
     "allIntents": "All intents",
     "table": {
+      "id": "ID",
       "influencer": "Influencer",
       "platform": "Platform",
       "email": "Email",
@@ -356,7 +357,36 @@
       "status": "Status",
       "tags": "Tags",
       "priority": "Priority",
-      "lastEmail": "Last Email"
+      "lastEmail": "Last Email",
+      "actions": "Actions"
+    },
+    "actions": {
+      "edit": "Edit",
+      "delete": "Delete",
+      "confirmTitle": "Confirm Delete",
+      "deleteConfirm": "Delete \"{{name}}\"? Related emails, tags and notes will be purged and cannot be restored.",
+      "deleteFailed": "Delete failed, please try again."
+    },
+    "editModal": {
+      "title": "Edit Influencer",
+      "nickname": "Nickname",
+      "platform": "Platform",
+      "profileUrl": "Profile URL",
+      "followers": "Followers",
+      "industry": "Industry",
+      "bio": "Bio",
+      "status": "Status",
+      "priority": "Priority",
+      "platformNone": "—",
+      "statusNew": "New",
+      "statusContacted": "Contacted",
+      "statusReplied": "Replied",
+      "statusArchived": "Archived",
+      "priorityHigh": "High",
+      "priorityMedium": "Medium",
+      "priorityLow": "Low",
+      "saving": "Saving…",
+      "saveFailed": "Save failed, please check your input."
     },
     "loading": "Loading…",
     "noInfluencers": "No influencers found",

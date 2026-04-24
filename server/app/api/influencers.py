@@ -26,6 +26,7 @@ from app.services.influencer_service import (
     assign_tags,
     batch_update_influencers,
     create_tag,
+    delete_influencer,
     delete_tag,
     export_influencers_csv,
     get_influencer_detail,
@@ -141,6 +142,17 @@ async def update_influencer_endpoint(
         raise HTTPException(status_code=404, detail="Influencer not found")
     detail = await get_influencer_detail(db, influencer_id)
     return detail  # type: ignore[return-value]
+
+
+@router.delete("/influencers/{influencer_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def delete_influencer_endpoint(
+    influencer_id: int,
+    db: AsyncSession = Depends(get_db),
+    _: TokenData = Depends(get_current_user),
+) -> None:
+    deleted = await delete_influencer(db, influencer_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Influencer not found")
 
 
 # ── Email timeline ───────────────────────────────────────────────────────────

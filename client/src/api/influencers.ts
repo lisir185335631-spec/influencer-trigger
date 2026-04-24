@@ -174,6 +174,10 @@ export async function updateInfluencer(id: number, data: InfluencerUpdate): Prom
   return res.data
 }
 
+export async function deleteInfluencer(id: number): Promise<void> {
+  await apiClient.delete(`/influencers/${id}`)
+}
+
 export async function getInfluencerEmails(id: number): Promise<EmailTimelineItem[]> {
   const res = await apiClient.get(`/influencers/${id}/emails`)
   return res.data

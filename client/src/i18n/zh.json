@@ -349,6 +349,7 @@
     "industry": "行业…",
     "allIntents": "全部意向",
     "table": {
+      "id": "ID",
       "influencer": "网红",
       "platform": "平台",
       "email": "邮箱",
@@ -356,7 +357,36 @@
       "status": "状态",
       "tags": "标签",
       "priority": "优先级",
-      "lastEmail": "最近邮件"
+      "lastEmail": "最近邮件",
+      "actions": "操作"
+    },
+    "actions": {
+      "edit": "编辑",
+      "delete": "删除",
+      "confirmTitle": "确认删除",
+      "deleteConfirm": "确定删除「{{name}}」吗？关联的邮件、标签、备注等数据都会被清理，且无法恢复。",
+      "deleteFailed": "删除失败，请稍后重试。"
+    },
+    "editModal": {
+      "title": "编辑网红信息",
+      "nickname": "昵称",
+      "platform": "平台",
+      "profileUrl": "主页链接",
+      "followers": "粉丝数",
+      "industry": "行业",
+      "bio": "简介",
+      "status": "状态",
+      "priority": "优先级",
+      "platformNone": "—",
+      "statusNew": "未联系",
+      "statusContacted": "已联系",
+      "statusReplied": "已回复",
+      "statusArchived": "已归档",
+      "priorityHigh": "高",
+      "priorityMedium": "中",
+      "priorityLow": "低",
+      "saving": "保存中…",
+      "saveFailed": "保存失败，请检查输入后重试。"
     },
     "loading": "加载中…",
     "noInfluencers": "未找到网红",
