@@ -66,6 +66,9 @@ class Settings(BaseSettings):
     feishu_webhook_url: str = ""
     slack_webhook_url: str = ""
 
+    # Brave Search API (powers Instagram scraper's Google-Dork entry)
+    brave_search_api_key: str = ""
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

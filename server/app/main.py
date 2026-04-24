@@ -15,6 +15,7 @@ from app.limiter import limiter
 from app.scheduler import scheduler
 from app.websocket.manager import manager
 from app.api.health import router as health_router
+from app.api.image_proxy import router as image_proxy_router
 # noqa: F401 — import models so create_all sees them
 import app.models.scrape_task_influencer  # noqa: F401
 import app.models.system_settings  # noqa: F401
@@ -160,6 +161,7 @@ app.add_middleware(AuditMiddleware)
 
 # Register routers
 app.include_router(health_router, prefix="/api")
+app.include_router(image_proxy_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(mailboxes_router, prefix="/api")
 app.include_router(templates_router, prefix="/api")

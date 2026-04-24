@@ -16,6 +16,7 @@ import re
 from datetime import datetime, timezone
 
 import dns.resolver
+import httpx
 import sqlalchemy as sa
 from playwright.async_api import async_playwright, Browser, BrowserContext, Page
 from playwright_stealth import stealth_async
@@ -556,6 +557,289 @@ async def _scrape_youtube(
         await ctx.close()
 
 
+# ── Instagram helpers ────────────────────────────────────────────────────────
+# Strategy: IG's explore page requires login since 2024 — DOM-based entry
+# collapses to ~0 hits. Instead we Google-Dork via the Brave Search API to
+# surface public IG profile URLs, then visit each profile with Playwright.
+# When a profile's SSR bio has no email we follow its Linktree / bio.link /
+# beacons outbound link (common IG creator pattern) and extract from there.
+#
+# Why Brave (not DDG/Bing)? DDG returns HTTP 418 and Bing serves a captcha
+# wall to this machine's IP, so HTTP-scraped search engines yield 0 results.
+# Brave gives us an authorized JSON API with 2000 free queries/month — 1–2
+# orders of magnitude more than a typical scrape task needs.
+
+_IG_DORK_TEMPLATES = (
+    'site:instagram.com "{q}" "gmail.com"',
+    'site:instagram.com "{q}" "business inquiries"',
+    'site:instagram.com "{q}" creator collab',
+    'site:instagram.com "{q}" email "@"',
+)
+
+# Paths under instagram.com/... that are NOT user profiles.
+_IG_RESERVED_PATHS = frozenset({
+    "", "p", "reel", "reels", "tv", "explore", "accounts", "about",
+    "directory", "stories", "developer", "legal", "press", "api",
+    "privacy", "safety", "hashtag", "web", "ar", "invites",
+    "session", "direct", "emails", "static",
+})
+
+_IG_PROFILE_URL_RE = re.compile(
+    r'https?://(?:www\.)?instagram\.com/([A-Za-z0-9._]{2,30})/?',
+    re.IGNORECASE,
+)
+
+_LINK_AGGREGATOR_RE = re.compile(
+    r'https?://(?:www\.)?(?:linktr\.ee|beacons\.ai|linkin\.bio|campsite\.bio|'
+    r'bio\.link|carrd\.co|lnk\.bio|allmylinks\.com|many\.link|flowcode\.com)'
+    r'/[A-Za-z0-9._\-]+',
+    re.IGNORECASE,
+)
+
+_IG_FOLLOWERS_RE = re.compile(
+    r'([\d.,]+\s*[KMB]?)\s*Followers?',
+    re.IGNORECASE,
+)
+
+_IG_OG_DESC_RE = re.compile(
+    r'<meta\s+(?:property|name)="og:description"\s+content="([^"]*)"',
+    re.IGNORECASE,
+)
+_IG_OG_TITLE_RE = re.compile(
+    r'<meta\s+(?:property|name)="og:title"\s+content="([^"]*)"',
+    re.IGNORECASE,
+)
+_IG_OG_IMAGE_RE = re.compile(
+    r'<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"',
+    re.IGNORECASE,
+)
+
+def _ig_profile_url_from_href(href: str) -> str | None:
+    """Return canonical `https://www.instagram.com/<username>/` if href matches
+    an IG user profile (not a reserved path), else None."""
+    m = _IG_PROFILE_URL_RE.match(href)
+    if not m:
+        return None
+    username = m.group(1)
+    if username.lower() in _IG_RESERVED_PATHS:
+        return None
+    return f"https://www.instagram.com/{username}/"
+
+
+async def _search_brave(query: str, limit: int = 20) -> list[str]:
+    """Brave Search Web API → dedup Instagram profile URL list.
+    Requires BRAVE_SEARCH_API_KEY in env. Returns [] and logs a warning
+    when the key is absent or the API returns non-200 — the task completes
+    with 0 results rather than crashing so ops can diagnose from the log.
+    """
+    settings = get_settings()
+    api_key = (settings.brave_search_api_key or "").strip()
+    if not api_key:
+        logger.warning(
+            "[Instagram] BRAVE_SEARCH_API_KEY not configured — IG scraper cannot "
+            "discover profiles. Add the key to server/.env and restart."
+        )
+        return []
+
+    profiles: list[str] = []
+    try:
+        async with httpx.AsyncClient(
+            timeout=15.0,
+            headers={
+                "X-Subscription-Token": api_key,
+                "Accept": "application/json",
+                "Accept-Encoding": "gzip",
+            },
+        ) as client:
+            resp = await client.get(
+                "https://api.search.brave.com/res/v1/web/search",
+                params={
+                    "q": query,
+                    "count": max(1, min(limit, 20)),
+                    "country": "US",
+                    "search_lang": "en",
+                },
+            )
+    except Exception as e:
+        logger.warning("[Instagram] Brave request failed for %r: %s", query, e)
+        return profiles
+
+    if resp.status_code == 429:
+        logger.warning(
+            "[Instagram] Brave rate limit hit (monthly quota or QPS). "
+            "Remaining=%s Reset=%s",
+            resp.headers.get("X-RateLimit-Remaining", "?"),
+            resp.headers.get("X-RateLimit-Reset", "?"),
+        )
+        return profiles
+    if resp.status_code != 200:
+        logger.warning(
+            "[Instagram] Brave status %d for %r: %s",
+            resp.status_code, query, resp.text[:200],
+        )
+        return profiles
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        logger.warning("[Instagram] Brave JSON decode failed: %s", e)
+        return profiles
+
+    for item in data.get("web", {}).get("results", []) or []:
+        url = item.get("url") or ""
+        canonical = _ig_profile_url_from_href(url)
+        if canonical and canonical not in profiles:
+            profiles.append(canonical)
+            if len(profiles) >= limit:
+                break
+    return profiles
+
+
+async def _discover_ig_profiles(
+    industry: str,
+    queries: list[str] | None,
+    target_urls: int,
+) -> list[str]:
+    """Generate Google-Dork queries from LLM-suggested seeds (or the raw
+    industry keyword as fallback), run them through Brave Search, return
+    a dedup profile URL list capped at target_urls."""
+    seeds = [q.strip() for q in (queries or [industry]) if q and q.strip()]
+    if not seeds:
+        seeds = [industry]
+
+    dorks: list[str] = []
+    for q in seeds:
+        for tpl in _IG_DORK_TEMPLATES:
+            dorks.append(tpl.format(q=q))
+
+    all_profiles: list[str] = []
+    seen: set[str] = set()
+
+    for i, dork in enumerate(dorks):
+        if len(all_profiles) >= target_urls:
+            break
+        logger.info("[Instagram] search #%d/%d dork=%r", i + 1, len(dorks), dork)
+
+        urls = await _search_brave(dork, limit=20)
+        logger.info(
+            "[Instagram] dork #%d: brave=%d total_so_far=%d",
+            i + 1, len(urls), len(all_profiles) + sum(1 for u in urls if u not in seen),
+        )
+
+        for u in urls:
+            if u not in seen:
+                seen.add(u)
+                all_profiles.append(u)
+                if len(all_profiles) >= target_urls:
+                    break
+
+        # Brave free tier caps at 1 QPS — stay polite (and under limit).
+        await asyncio.sleep(random.uniform(1.1, 1.6))
+
+    logger.info(
+        "[Instagram] discovery done: %d unique profile URLs from %d dorks",
+        len(all_profiles), len(dorks),
+    )
+    return all_profiles
+
+
+def _extract_instagram_profile_metadata(html: str, username_fallback: str) -> dict:
+    """Mirror of `_extract_youtube_channel_metadata` for IG profile SSR HTML.
+    All fields independent — any can be None."""
+    name: str | None = None
+    m = _IG_OG_TITLE_RE.search(html)
+    if m and m.group(1):
+        raw = html_module.unescape(m.group(1)).strip()
+        # og:title variants we've observed:
+        #   "Username (@handle) • Instagram photos and videos"
+        #   "Username on Instagram: \"bio...\""
+        #   "@handle • Instagram photos and videos"
+        cleaned = re.sub(r"\s*[•·]\s*Instagram.*$", "", raw, flags=re.IGNORECASE).strip()
+        cleaned = re.sub(r"\s+on Instagram.*$", "", cleaned, flags=re.IGNORECASE).strip()
+        if cleaned:
+            name = cleaned[:256]
+    if not name:
+        name = f"@{username_fallback}"[:256]
+
+    bio: str | None = None
+    followers: int | None = None
+    m = _IG_OG_DESC_RE.search(html)
+    if m and m.group(1):
+        desc = html_module.unescape(m.group(1))
+        fm = _IG_FOLLOWERS_RE.search(desc)
+        if fm:
+            followers = _parse_subscriber_count(fm.group(1))
+        # Strip IG's boilerplate "<N> Followers, <N> Following, <N> Posts - "
+        # prefix and "See Instagram photos and videos from @..." so `bio` holds
+        # only the creator-authored part.
+        bio_part = re.sub(
+            r'^[\d.,]+\s*[KMB]?\s*Followers?,\s*[\d.,]+\s*[KMB]?\s*Following,\s*'
+            r'[\d.,]+\s*[KMB]?\s*Posts\s*[-–—]\s*',
+            '',
+            desc,
+            flags=re.IGNORECASE,
+        )
+        bio_part = re.sub(
+            r'^See Instagram photos and videos from\s+@?[\w.]+',
+            '',
+            bio_part,
+            flags=re.IGNORECASE,
+        ).strip(' -–—"\'')
+        if bio_part:
+            bio = bio_part[:4000]
+
+    avatar_url: str | None = None
+    m = _IG_OG_IMAGE_RE.search(html)
+    if m and m.group(1):
+        # IG CDN signed URLs are ~600-900 chars and the og:image attribute
+        # HTML-escapes '&' as '&amp;'. Skipping unescape or truncating below
+        # the signature (oh=...&oe=...) guarantees a 403 from the CDN, so
+        # both must be handled.
+        avatar_url = html_module.unescape(m.group(1))[:1024]
+
+    return {
+        "name": name,
+        "bio": bio,
+        "followers": followers,
+        "avatar_url": avatar_url,
+    }
+
+
+def _extract_linktree_url(html: str) -> str | None:
+    m = _LINK_AGGREGATOR_RE.search(html)
+    return m.group(0) if m else None
+
+
+async def _scrape_aggregator_emails(
+    ctx: BrowserContext,
+    aggregator_url: str,
+    timeout_sec: float = 8.0,
+) -> list[str]:
+    """Open a Linktree/bio.link/beacons page (public, no login wall) and
+    extract emails from its rendered HTML. Uses a short-lived page in the
+    caller's context to keep stealth + UA continuity."""
+    agg_page: Page | None = None
+    try:
+        async with asyncio.timeout(timeout_sec):
+            agg_page = await ctx.new_page()
+            await agg_page.goto(
+                aggregator_url,
+                wait_until="domcontentloaded",
+                timeout=int(timeout_sec * 1000),
+            )
+            content = await agg_page.content()
+            return await asyncio.to_thread(_extract_emails, content)
+    except Exception as e:
+        logger.debug("[Instagram] linktree %s failed: %s", aggregator_url, e)
+        return []
+    finally:
+        if agg_page is not None:
+            try:
+                await agg_page.close()
+            except Exception:
+                pass
+
+
 async def _scrape_instagram(
     browser: Browser,
     industry: str,
@@ -564,118 +848,140 @@ async def _scrape_instagram(
     queries: list[str] | None = None,
 ) -> None:
     """
-    Search Instagram hashtag explore page for influencer profiles, extract bio emails.
-    Note: Instagram requires login for most content; this extracts from public meta tags.
+    Instagram scraper — Phase 1 rewrite:
+      - Entry: Google-Dork via DuckDuckGo + Bing (HTTP, no Playwright).
+        Replaces hashtag explore page which redirects to login since 2024.
+      - Per candidate: open IG profile with Playwright, extract bio email +
+        SSR metadata. If no bio email, follow outbound Linktree/bio.link link
+        and extract from there.
+      - Concurrency / hard per-profile timeout / candidate pool 15× /
+        resource blocking / regex-to-thread / stop_event — all mirror
+        `_scrape_youtube` so IG stops being the pipeline's bottleneck.
     """
+    target_urls = target_count * 15
+    profile_urls = await _discover_ig_profiles(industry, queries, target_urls)
+
+    if not profile_urls:
+        logger.warning(
+            "[Instagram] no profile URLs found — search engines returned 0 hits. "
+            "Check network / retry with different industry keyword."
+        )
+        return
+
     ctx = await _new_context(browser)
-    page = await ctx.new_page()
-    await stealth_async(page)
-
     try:
-        hashtags = queries or [industry.lower().replace(" ", "")]
-        all_post_hrefs: list[str] = []
+        max_to_visit = min(len(profile_urls), target_urls)
 
-        for hashtag in hashtags:
-            explore_url = f"https://www.instagram.com/explore/tags/{hashtag}/"
-            logger.info("[Instagram] Navigating to: %s", explore_url)
-            await page.goto(explore_url, wait_until="domcontentloaded", timeout=30000)
-            await _random_delay()
+        # Slightly longer than YouTube's 15s because IG SSR occasionally stalls
+        # under heavier reverse-proxy layers (Meta's edge); still short enough
+        # that a single slow profile can't starve the task.
+        _IG_PROFILE_BUDGET = 18.0
+        _IG_CONCURRENCY = 3
 
-            # Collect post links
-            post_links: list[str] = []
-            for _ in range(3):
-                links = await page.eval_on_selector_all(
-                    "a[href*='/p/']",
-                    "els => [...new Set(els.map(e => e.href))]",
-                )
-                post_links.extend(l for l in links if l not in post_links)
-                if len(post_links) >= target_count * 3:
-                    break
-                await page.evaluate("window.scrollBy(0, 1200)")
-                await asyncio.sleep(1.5)
+        found_counter = 0
+        found_lock = asyncio.Lock()
+        stop_event = asyncio.Event()
+        sem = asyncio.Semaphore(_IG_CONCURRENCY)
 
-            for link in post_links:
-                if link not in all_post_hrefs:
-                    all_post_hrefs.append(link)
+        async def _process_profile(idx: int, profile_url: str) -> None:
+            nonlocal found_counter
+            if stop_event.is_set():
+                return
+            async with sem:
+                if stop_event.is_set():
+                    return
 
-            if len(all_post_hrefs) >= target_count * 3:
-                break
+                m = _IG_PROFILE_URL_RE.match(profile_url)
+                username = m.group(1) if m else ""
+                if not username:
+                    return
 
-        logger.info("[Instagram] Found %d post links (across %d hashtags)", len(all_post_hrefs), len(hashtags))
+                ig_page: Page | None = None
+                try:
+                    async with asyncio.timeout(_IG_PROFILE_BUDGET):
+                        ig_page = await ctx.new_page()
+                        await stealth_async(ig_page)
 
-        visited_profiles: set[str] = set()
-        found = 0
+                        logger.info(
+                            "[Instagram] [%d/%d] visiting %s",
+                            idx + 1, max_to_visit, profile_url,
+                        )
+                        await ig_page.goto(
+                            profile_url, wait_until="domcontentloaded", timeout=15000,
+                        )
 
-        for post_url in all_post_hrefs[:target_count * 3]:
-            if found >= target_count:
-                break
-            try:
-                await page.goto(post_url, wait_until="domcontentloaded", timeout=20000)
+                        # If IG redirected us to /accounts/login/, skip fast —
+                        # the SSR HTML will have no bio/email for us.
+                        landed_url = ig_page.url or ""
+                        if "/accounts/login" in landed_url:
+                            logger.info(
+                                "[Instagram] [%d] login wall, skipping %s",
+                                idx + 1, profile_url,
+                            )
+                            return
+
+                        content = await ig_page.content()
+                        emails = await asyncio.to_thread(_extract_emails, content)
+                        meta = await asyncio.to_thread(
+                            _extract_instagram_profile_metadata, content, username,
+                        )
+
+                        # Linktree / bio.link fallback when bio has no email.
+                        if not emails:
+                            aggregator_url = _extract_linktree_url(content)
+                            if aggregator_url:
+                                logger.info(
+                                    "[Instagram] [%d] no bio email, trying aggregator: %s",
+                                    idx + 1, aggregator_url,
+                                )
+                                emails = await _scrape_aggregator_emails(ctx, aggregator_url)
+
+                        logger.info(
+                            "[Instagram] [%d] html_len=%d emails=%d name=%r "
+                            "followers=%s avatar=%s",
+                            idx + 1, len(content), len(emails), meta["name"],
+                            meta["followers"], "yes" if meta["avatar_url"] else "no",
+                        )
+
+                        for email in emails:
+                            domain = email.split("@")[1]
+                            if await _mx_valid(domain):
+                                await on_found(
+                                    email,
+                                    meta["name"] or f"@{username}",
+                                    profile_url,
+                                    followers=meta["followers"],
+                                    bio=meta["bio"],
+                                    avatar_url=meta["avatar_url"],
+                                )
+                                async with found_lock:
+                                    found_counter += 1
+                                    if found_counter >= target_count:
+                                        stop_event.set()
+                                break
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "[Instagram] [%d/%d] hard timeout %.0fs, skipping: %s",
+                        idx + 1, max_to_visit, _IG_PROFILE_BUDGET, profile_url,
+                    )
+                except Exception as e:
+                    logger.debug("[Instagram] Error on %s: %s", profile_url, e)
+                finally:
+                    if ig_page is not None:
+                        try:
+                            await ig_page.close()
+                        except Exception:
+                            pass
                 await _random_delay()
 
-                # Extract username from the post
-                username = ""
-                try:
-                    username_el = await page.query_selector("a[href*='/']:not([href*='/p/'])")
-                    if username_el:
-                        href = await username_el.get_attribute("href")
-                        if href:
-                            username = href.strip("/").split("/")[-1]
-                except Exception:
-                    pass
-
-                if not username or username in visited_profiles:
-                    continue
-                visited_profiles.add(username)
-
-                profile_url = f"https://www.instagram.com/{username}/"
-                await page.goto(profile_url, wait_until="domcontentloaded", timeout=20000)
-                await _random_delay()
-
-                content = await page.content()
-                emails = _extract_emails(content)
-
-                # Extract Instagram metadata from SSR meta tags
-                bio: str | None = None
-                followers: int | None = None
-                avatar_url: str | None = None
-
-                try:
-                    desc_m = re.search(
-                        r'<meta\s+(?:property|name)="og:description"\s+content="([^"]+)"',
-                        content,
-                    )
-                    if desc_m:
-                        desc = html_module.unescape(desc_m.group(1))
-                        # followers from "1,234 Followers" embedded in description
-                        fm = re.search(r'([\d.,]+\s*[KMB]?)\s*Followers?', desc, re.IGNORECASE)
-                        if fm:
-                            followers = _parse_subscriber_count(fm.group(1))
-                        bio = desc[:2000]
-                except Exception:
-                    pass
-
-                try:
-                    img_m = re.search(
-                        r'<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"',
-                        content,
-                    )
-                    if img_m and img_m.group(1):
-                        avatar_url = img_m.group(1)[:512]
-                except Exception:
-                    pass
-
-                for email in emails:
-                    domain = email.split("@")[1]
-                    if await _mx_valid(domain):
-                        await on_found(email, username, profile_url, followers=followers, bio=bio, avatar_url=avatar_url)
-                        found += 1
-                        break
-
-            except Exception as e:
-                logger.debug("[Instagram] Error: %s", e)
-
-            await _random_delay()
+        await asyncio.gather(
+            *[_process_profile(i, url) for i, url in enumerate(profile_urls[:max_to_visit])],
+            return_exceptions=True,
+        )
+        logger.info(
+            "[Instagram] profile phase done: valid=%d / target=%d (visited up to %d)",
+            found_counter, target_count, max_to_visit,
+        )
 
     finally:
         await ctx.close()
@@ -749,13 +1055,19 @@ async def _generate_search_strategy(
 def _fallback_queries(industry: str, platforms: list[str]) -> dict[str, list[str]]:
     """Fallback search queries when LLM is unavailable."""
     result: dict[str, list[str]] = {}
+    base = industry.strip()
     for p in platforms:
         if p == "youtube":
-            result[p] = [f"{industry} creator contact email"]
+            result[p] = [f"{base} creator contact email"]
         elif p == "instagram":
-            result[p] = [industry.lower().replace(" ", "")]
+            # Brave Search is a natural-language engine — preserve spaces and
+            # give a few seed variants so recall doesn't collapse when LLM is
+            # unavailable. Historical "replace(' ', '')" compression was a
+            # leftover from the old hashtag-explore entry (hashtags cannot
+            # contain spaces); Brave needs the opposite.
+            result[p] = [base, f"{base} creator", f"{base} influencer"]
         else:
-            result[p] = [industry]
+            result[p] = [base]
     return result
 
 
@@ -1029,10 +1341,25 @@ async def run_scraper_agent(task_id: int) -> None:
                     seen_emails.add(email)
                     found_total += 1
 
-                    existing_result = await db.execute(
-                        select(Influencer).where(Influencer.email == email)
-                    )
-                    existing = existing_result.scalar_one_or_none()
+                    # Dedup by (platform, profile_url) first — one channel
+                    # may expose several emails (business/info/creator), and
+                    # we only want one Influencer row per channel. Fall back
+                    # to email lookup for legacy rows with no profile_url.
+                    existing: Influencer | None = None
+                    if profile_url:
+                        by_profile = await db.execute(
+                            select(Influencer).where(
+                                Influencer.platform == plat,
+                                Influencer.profile_url == profile_url,
+                            )
+                        )
+                        existing = by_profile.scalar_one_or_none()
+
+                    if existing is None:
+                        existing_result = await db.execute(
+                            select(Influencer).where(Influencer.email == email)
+                        )
+                        existing = existing_result.scalar_one_or_none()
 
                     if existing is None:
                         inf = Influencer(
@@ -1076,6 +1403,19 @@ async def run_scraper_agent(task_id: int) -> None:
                             "tags": [],
                         })
                     else:
+                        # Back-fill avatar_url when it's missing or historically
+                        # corrupted. Pre-fix IG URLs were HTML-escaped ('&amp;')
+                        # and 512-truncated — the frontend image proxy rejects
+                        # those as 403s. Overwriting only in these two cases
+                        # preserves the general upsert policy (bio/followers/
+                        # nickname stay untouched for already-known rows).
+                        avatar_backfilled = False
+                        if avatar_url:
+                            old_avatar = existing.avatar_url
+                            if not old_avatar or "&amp;" in old_avatar:
+                                existing.avatar_url = avatar_url
+                                avatar_backfilled = True
+
                         # already exists — link to this task if not already linked
                         link_result = await db.execute(
                             select(ScrapeTaskInfluencer).where(
@@ -1087,6 +1427,8 @@ async def run_scraper_agent(task_id: int) -> None:
                             db.add(ScrapeTaskInfluencer(
                                 scrape_task_id=task_id, influencer_id=existing.id
                             ))
+                            await db.commit()
+                        elif avatar_backfilled:
                             await db.commit()
                         valid_total += 1
 
