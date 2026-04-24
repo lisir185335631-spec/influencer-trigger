@@ -171,6 +171,27 @@ def _load_youtube_cookies() -> list[dict] | None:
     return None
 
 
+# Resource types we never need for email/bio/follower scraping. Blocking these
+# dramatically reduces Playwright CDP event volume (a single YouTube page
+# normally fetches 100+ sub-resources), which in turn frees up the Windows
+# ProactorEventLoop to serve HTTP requests while the scraper is running.
+# `ytInitialData` (our data source) is inline in the main HTML, so skipping
+# images/CSS/fonts/media/trackers doesn't lose any extractable field.
+_BLOCK_RESOURCE_TYPES = frozenset({"image", "stylesheet", "font", "media"})
+
+
+async def _block_non_essential(route) -> None:
+    try:
+        if route.request.resource_type in _BLOCK_RESOURCE_TYPES:
+            await route.abort()
+        else:
+            await route.continue_()
+    except Exception:
+        # If routing fails mid-request (context closed, page gone), swallow —
+        # the request either succeeded already or will raise upstream.
+        pass
+
+
 async def _new_context(browser: Browser, use_yt_cookies: bool = False) -> BrowserContext:
     ctx = await browser.new_context(
         user_agent=random.choice(_USER_AGENTS),
@@ -179,6 +200,8 @@ async def _new_context(browser: Browser, use_yt_cookies: bool = False) -> Browse
         timezone_id="America/New_York",
     )
     await ctx.add_init_script(_STEALTH_INIT_SCRIPT)
+    # Block images/CSS/fonts/media/tracking BEFORE any navigation happens.
+    await ctx.route("**/*", _block_non_essential)
     if use_yt_cookies:
         cookies = _load_youtube_cookies()
         if cookies:
@@ -193,7 +216,109 @@ async def _new_context(browser: Browser, use_yt_cookies: bool = False) -> Browse
 
 
 async def _random_delay() -> None:
-    await asyncio.sleep(random.uniform(5.0, 15.0))
+    # 2-5s: short enough to not bottleneck throughput, long enough to look
+    # human-ish. YouTube does not ban an IP for opening several channel pages
+    # within 30s when each uses its own UA + stealth. If reCAPTCHA/detection
+    # ever triggers, widen this back to 5-15.
+    await asyncio.sleep(random.uniform(2.0, 5.0))
+
+
+# ── YouTube channel metadata extraction ──────────────────────────────────────
+# These regexes operate on the raw HTML of a channel /about page. They must NOT
+# be applied to video-page HTML, because e.g. og:title on a video page is the
+# video title, not the channel name — the earlier bug where nickname showed up
+# as "12 productivity apps that got me through college" happened because
+# page.title() was called after fallback navigated to a video.
+
+_OG_TITLE_RE = re.compile(
+    r'<meta\s+(?:property|name)="og:title"\s+content="([^"]*)"',
+    re.IGNORECASE,
+)
+_OG_DESC_RE = re.compile(
+    r'<meta\s+(?:property|name)="(?:og:description|description)"\s+content="([^"]*)"',
+    re.IGNORECASE,
+)
+_OG_IMAGE_RE = re.compile(
+    r'<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"',
+    re.IGNORECASE,
+)
+# ytInitialData subscriberCountText — two SSR variants
+_YT_SUB_SIMPLE_RE = re.compile(
+    r'"subscriberCountText":\s*\{\s*"(?:simpleText|content)":\s*"([^"]+)"'
+)
+_YT_SUB_ACCESS_RE = re.compile(
+    r'"subscriberCountText":[^}]*?"label":"([^"]*subscribers?[^"]*)"',
+)
+# ytInitialData channel avatar: look inside the c4TabbedHeaderRenderer block,
+# then pick the highest-resolution thumbnail URL (yt3.ggpht.com / yt4.ggpht.com).
+_YT_AVATAR_BLOCK_RE = re.compile(
+    r'"c4TabbedHeaderRenderer":\s*\{.*?"avatar":\s*\{\s*"thumbnails":\s*\[([^\]]*)\]',
+    re.DOTALL,
+)
+_YT_THUMB_URL_RE = re.compile(r'"url":"(https?://[^"]+)"')
+# YouTube's "no avatar" placeholders we should skip when choosing avatar
+_AVATAR_PLACEHOLDER_MARKERS = ("no-channel-avatar", "yts/img/no-av", "default_profile")
+
+
+def _extract_youtube_channel_metadata(html: str) -> dict:
+    """Extract channel-level fields (nickname/bio/followers/avatar_url) from an
+    /about page HTML. ONLY call on about page HTML — video pages would give
+    video-scoped values (wrong nickname, wrong follower count).
+    All fields are independent — any can be None on failure."""
+    name: str | None = None
+    m = _OG_TITLE_RE.search(html)
+    if m:
+        raw = html_module.unescape(m.group(1)).strip()
+        # Some pages still include " - YouTube" suffix even in og:title
+        raw = re.sub(r"\s*[\-–]\s*YouTube\s*$", "", raw).strip()
+        if raw:
+            name = raw[:256]
+
+    bio: str | None = None
+    m = _OG_DESC_RE.search(html)
+    if m and m.group(1):
+        raw = html_module.unescape(m.group(1))
+        # Collapse 3+ consecutive newlines to 2 for downstream readability
+        raw = re.sub(r"\n{3,}", "\n\n", raw).strip()
+        if raw:
+            bio = raw[:4000]
+
+    followers: int | None = None
+    # Prefer structured ytInitialData sources over generic text regex, because the
+    # text regex can match "1.2K subscribers" that appears anywhere on the page
+    # (e.g. a related channel in sidebar).
+    m = _YT_SUB_SIMPLE_RE.search(html)
+    if not m:
+        m = _YT_SUB_ACCESS_RE.search(html)
+    if m:
+        followers = _parse_subscriber_count(m.group(1))
+    if followers is None:
+        m = re.search(r'([\d.,]+\s*[KMB]?)\s*subscribers?', html, re.IGNORECASE)
+        if m:
+            followers = _parse_subscriber_count(m.group(1))
+
+    avatar_url: str | None = None
+    # 1) og:image — usually the channel avatar; skip if it's a known placeholder
+    m = _OG_IMAGE_RE.search(html)
+    if m and m.group(1):
+        candidate = m.group(1)
+        if not any(marker in candidate for marker in _AVATAR_PLACEHOLDER_MARKERS):
+            avatar_url = candidate[:512]
+    # 2) ytInitialData c4TabbedHeaderRenderer avatar — pick the last (highest-res)
+    if not avatar_url:
+        block_m = _YT_AVATAR_BLOCK_RE.search(html)
+        if block_m:
+            urls = _YT_THUMB_URL_RE.findall(block_m.group(1))
+            urls = [u for u in urls if not any(marker in u for marker in _AVATAR_PLACEHOLDER_MARKERS)]
+            if urls:
+                avatar_url = urls[-1][:512]
+
+    return {
+        "name": name,
+        "bio": bio,
+        "followers": followers,
+        "avatar_url": avatar_url,
+    }
 
 
 # ── platform scrapers ────────────────────────────────────────────────────────
@@ -229,11 +354,16 @@ async def _scrape_youtube(
             await _random_delay()
 
             # Extract channels from this page. Scroll a few times to trigger
-            # lazy-load appends to ytInitialData.
+            # lazy-load appends to ytInitialData. A larger pool is needed when
+            # the keyword's email-hit rate is low (e.g. ~20-30% for AI / Notion
+            # type queries) — we aim for 5× target_count candidates so even
+            # 20% hit rate still yields the target.
             found_this_query: set[str] = set()
-            for scroll_i in range(3):
+            for scroll_i in range(8):
                 html = await page.content()
-                matches = _YT_CHANNEL_PATH_RE.findall(html)
+                # Regex over 1–2 MB HTML on the event-loop thread freezes all
+                # HTTP handlers. Offload to thread pool.
+                matches = await asyncio.to_thread(_YT_CHANNEL_PATH_RE.findall, html)
                 new_count = 0
                 for path in matches:
                     full_url = f"https://www.youtube.com{path}"
@@ -244,7 +374,7 @@ async def _scrape_youtube(
                     "[YouTube] scroll #%d: html_len=%d regex_hits=%d new_channels=%d total_this_query=%d",
                     scroll_i + 1, len(html), len(matches), new_count, len(found_this_query),
                 )
-                if len(found_this_query) >= target_count * 3:
+                if len(found_this_query) >= target_count * 15:
                     break
                 await page.evaluate("window.scrollBy(0, 1800)")
                 await asyncio.sleep(2)
@@ -253,7 +383,7 @@ async def _scrape_youtube(
                 if link not in all_channel_links:
                     all_channel_links.append(link)
 
-            if len(all_channel_links) >= target_count * 3:
+            if len(all_channel_links) >= target_count * 15:
                 break
 
         logger.info(
@@ -261,135 +391,166 @@ async def _scrape_youtube(
             len(all_channel_links), len(search_queries),
         )
 
-        found = 0
-        max_to_visit = min(len(all_channel_links), target_count * 3)
-        for ch_idx, ch_url in enumerate(all_channel_links[:max_to_visit]):
-            if found >= target_count:
-                break
-            try:
-                # Normalize to /about tab
-                about_url = ch_url.rstrip("/") + "/about"
-                logger.info("[YouTube] [%d/%d] visiting %s", ch_idx + 1, max_to_visit, about_url)
-                await page.goto(about_url, wait_until="domcontentloaded", timeout=20000)
-                await _random_delay()
+        # Visit up to 5× the target count. Empirical hit rate:
+        #   商业化关键词 (Canva / ChatGPT review): ~35%
+        #   AI tools / Notion productivity:          ~20-27%
+        # 5× buffer means even a 20% hit rate still delivers target_count.
+        max_to_visit = min(len(all_channel_links), target_count * 15)
 
-                # Try clicking "View email address" button if present
-                view_email_btn_count = 0
+        # Per-channel hard watchdog: playwright's own op-level timeouts don't
+        # always fire (e.g. `page.content()` has no internal timeout), so we
+        # wrap each channel's work in asyncio.timeout.
+        #
+        # 90 → 30 → 15: once video fallback was removed, a successful
+        # channel = about goto (≤8s) + hydration 1.2s + regex <1s +
+        # _random_delay (2-5s) + overhead ≈ 10s. 15s gives 5s buffer for
+        # slow YouTube responses. Dead channels (20s goto timeout) still
+        # get shed within the budget.
+        _CHANNEL_BUDGET = 15.0
+
+        # Parallel channel processing. Each task creates its own page (shares
+        # the same context — so cookies, stealth init script, and UA rotation
+        # all carry over).
+        #
+        # History of this constant:
+        #   3 → 2: Windows IOCP accept-socket errors cascaded under sustained
+        #          Playwright×3 load, eventually killing uvicorn's accept loop.
+        #   2 → 1: concurrency=2 still caused health-probe 3s timeouts and
+        #          scraper progress stalled. Pre-subresource-block CDP event
+        #          volume was ~thousands/page (every image/CSS/font/tracker
+        #          hit the event loop via IOCP).
+        #   1 → 3: after adding `ctx.route("**/*", _block_non_essential)` which
+        #          aborts 80% of sub-resource requests at the browser side,
+        #          CDP event volume dropped ~5×. Restoring concurrency=3
+        #          (MEMORY's proven 1.6 min config) with the lighter CDP
+        #          traffic should fit within Windows IOCP's headroom.
+        #
+        # The regex CPU fix (`asyncio.to_thread` on _extract_* calls) stays
+        # in place — regex on 2MB HTML must not block the event loop or
+        # /api/* endpoints lag.
+        _CHANNEL_CONCURRENCY = 3
+
+        found_counter = 0
+        found_lock = asyncio.Lock()
+        stop_event = asyncio.Event()
+        sem = asyncio.Semaphore(_CHANNEL_CONCURRENCY)
+
+        async def _process_channel(ch_idx: int, ch_url: str) -> None:
+            nonlocal found_counter
+            # Fast pre-check: if target already reached before we even queue
+            # for the semaphore, skip cheaply (no new_page cost).
+            if stop_event.is_set():
+                return
+            async with sem:
+                if stop_event.is_set():
+                    return
+                ch_page = None
                 try:
-                    btn = page.locator("button:has-text('View email address')")
-                    view_email_btn_count = await btn.count()
-                    if view_email_btn_count > 0:
-                        await btn.first.click(timeout=3000)
-                        await asyncio.sleep(1)
-                except Exception:
-                    pass
+                    async with asyncio.timeout(_CHANNEL_BUDGET):
+                        ch_page = await ctx.new_page()
+                        await stealth_async(ch_page)
 
-                content = await page.content()
-                emails = _extract_emails(content)
-
-                logger.info(
-                    "[YouTube] [%d] html_len=%d view_email_btn=%d emails_found=%d",
-                    ch_idx + 1, len(content), view_email_btn_count, len(emails),
-                )
-
-                # Fallback: if /about has no email, try scraping one of the
-                # channel's own videos. Creators often put contact info in the
-                # video description even when they omit it from the channel bio.
-                if not emails:
-                    try:
-                        video_matches = re.findall(
-                            r'"url":"(/watch\?v=[A-Za-z0-9_\-]{11})',
-                            content,
+                        about_url = ch_url.rstrip("/") + "/about"
+                        logger.info(
+                            "[YouTube] [%d/%d] visiting %s",
+                            ch_idx + 1, max_to_visit, about_url,
                         )
-                        # Dedupe, take the first
-                        if not video_matches:
-                            # about page doesn't embed videos; visit channel home
-                            await page.goto(ch_url.rstrip("/"), wait_until="domcontentloaded", timeout=15000)
-                            await asyncio.sleep(1.5)
-                            home_html = await page.content()
-                            video_matches = re.findall(
-                                r'"url":"(/watch\?v=[A-Za-z0-9_\-]{11})',
-                                home_html,
-                            )
-                        if video_matches:
-                            video_url = f"https://www.youtube.com{video_matches[0]}"
-                            logger.info("[YouTube] [%d] fallback to video: %s", ch_idx + 1, video_url)
-                            await page.goto(video_url, wait_until="domcontentloaded", timeout=15000)
-                            await asyncio.sleep(2)  # let description hydrate
+                        await ch_page.goto(about_url, wait_until="domcontentloaded", timeout=20000)
+                        # Hydration wait: 1.2s lets client-side JS render the
+                        # "View email address" button (only visible when
+                        # logged in via cookies.json). Metadata extraction
+                        # below is SSR-based so it doesn't need hydration,
+                        # but the email-reveal button does.
+                        await asyncio.sleep(1.2)
+
+                        view_email_btn_count = 0
+                        try:
+                            btn = ch_page.locator("button:has-text('View email address')")
+                            view_email_btn_count = await btn.count()
+                            if view_email_btn_count > 0:
+                                await btn.first.click(timeout=3000)
+                                await asyncio.sleep(1)
+                        except Exception:
+                            pass
+
+                        content = await ch_page.content()
+                        # CPU-bound regex work goes to the default thread pool so
+                        # it doesn't stall the event loop (otherwise all HTTP
+                        # handlers block while the scraper is mid-channel).
+                        emails = await asyncio.to_thread(_extract_emails, content)
+
+                        # Lock channel metadata from the /about page BEFORE any
+                        # fallback navigation.
+                        meta = await asyncio.to_thread(_extract_youtube_channel_metadata, content)
+                        name = meta["name"] or ""
+                        bio = meta["bio"]
+                        followers = meta["followers"]
+                        avatar_url = meta["avatar_url"]
+                        if not name:
                             try:
-                                expand = page.locator("tp-yt-paper-button#expand, #expand, button:has-text('Show more')")
-                                if await expand.count() > 0:
-                                    await expand.first.click(timeout=2000)
-                                    await asyncio.sleep(1)
+                                t = await ch_page.title()
+                                name = re.sub(r"\s*[\-–]\s*YouTube\s*$", "", (t or "").strip())
                             except Exception:
                                 pass
-                            video_html = await page.content()
-                            emails = _extract_emails(video_html)
-                            logger.info(
-                                "[YouTube] [%d] video-fallback emails_found=%d",
-                                ch_idx + 1, len(emails),
-                            )
-                    except Exception as e:
-                        logger.debug("[YouTube] video fallback failed: %s", e)
 
-                # Also grab channel name
-                name = ""
-                try:
-                    name = await page.title()
-                    name = name.replace(" - YouTube", "").strip()
-                except Exception:
-                    pass
+                        logger.info(
+                            "[YouTube] [%d] html_len=%d view_email_btn=%d emails_found=%d "
+                            "name=%r followers=%s avatar=%s",
+                            ch_idx + 1, len(content), view_email_btn_count, len(emails),
+                            name, followers, "yes" if avatar_url else "no",
+                        )
 
-                # Extract channel bio (og:description) + subscriber count
-                # (from SSR'd JSON inside the page HTML)
-                bio: str | None = None
-                followers: int | None = None
-                try:
-                    m = re.search(
-                        r'<meta\s+(?:property|name)="(?:og:description|description)"\s+content="([^"]*)"',
-                        content,
+                        # Video fallback intentionally removed. Rationale:
+                        #   - Subresource block (image/stylesheet/font/media)
+                        #     breaks YouTube video player hydration, so
+                        #     `page.content()` on a video page rarely yields
+                        #     useful HTML — hit rate approaches 0.
+                        #   - Each dead fallback still eats ~20-30s of a
+                        #     scarce concurrency slot, bloating total task
+                        #     time from ~2min to 20min+.
+                        #   - Pure about-page mode + wider candidate pool
+                        #     (target_count * 15) compensates with more
+                        #     first-hop lookups instead.
+                        # If you reintroduce fallback later, also relax the
+                        # subresource block for video URLs and bump
+                        # _CHANNEL_BUDGET ≥ 60s.
+
+                        for email in emails:
+                            domain = email.split("@")[1]
+                            if await _mx_valid(domain):
+                                await on_found(email, name, ch_url, followers=followers, bio=bio, avatar_url=avatar_url)
+                                async with found_lock:
+                                    found_counter += 1
+                                    if found_counter >= target_count:
+                                        stop_event.set()
+                                break
+                except asyncio.TimeoutError:
+                    logger.warning(
+                        "[YouTube] [%d/%d] hard timeout %.0fs, skipping: %s",
+                        ch_idx + 1, max_to_visit, _CHANNEL_BUDGET, ch_url,
                     )
-                    if m and m.group(1):
-                        bio = html_module.unescape(m.group(1))[:2000]
-                except Exception:
-                    pass
-                try:
-                    # YouTube renders "1.2M subscribers" / "123K subscribers" / "456 subscribers"
-                    # in multiple places (page body, JSON metadata, aria labels).
-                    # A direct text regex is resilient to their SSR schema changes.
-                    sm = re.search(
-                        r'([\d.,]+\s*[KMB]?)\s*subscribers?',
-                        content,
-                        re.IGNORECASE,
-                    )
-                    if sm:
-                        followers = _parse_subscriber_count(sm.group(1))
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.debug("[YouTube] Error on %s: %s", ch_url, e)
+                finally:
+                    if ch_page is not None:
+                        try:
+                            await ch_page.close()
+                        except Exception:
+                            pass
+                # Each task paces itself independently before releasing the
+                # semaphore. With concurrency=3 and 2-5s delay, effective rate
+                # ~1 new channel request per ~1s, which stays within normal
+                # browsing patterns.
+                await _random_delay()
 
-                avatar_url: str | None = None
-                try:
-                    # og:image is typically the channel avatar
-                    m = re.search(
-                        r'<meta\s+(?:property|name)="og:image"\s+content="([^"]+)"',
-                        content,
-                    )
-                    if m and m.group(1):
-                        avatar_url = m.group(1)[:512]
-                except Exception:
-                    pass
-
-                for email in emails:
-                    domain = email.split("@")[1]
-                    if await _mx_valid(domain):
-                        await on_found(email, name, ch_url, followers=followers, bio=bio, avatar_url=avatar_url)
-                        found += 1
-                        break
-
-            except Exception as e:
-                logger.debug("[YouTube] Error on %s: %s", ch_url, e)
-
-            await _random_delay()
+        await asyncio.gather(
+            *[_process_channel(i, url) for i, url in enumerate(all_channel_links[:max_to_visit])],
+            return_exceptions=True,
+        )
+        logger.info(
+            "[YouTube] channel phase done: valid=%d / target=%d (visited up to %d)",
+            found_counter, target_count, max_to_visit,
+        )
 
     finally:
         await ctx.close()
@@ -598,24 +759,70 @@ def _fallback_queries(industry: str, platforms: list[str]) -> dict[str, list[str
     return result
 
 
+# ── Heuristic relevance scoring (LLM enrichment fallback) ────────────────────
+
+_BIZ_KEYWORDS_RE = re.compile(
+    r"collab|business|sponsor|partner|contact|合作|商务|联系|赞助",
+    re.IGNORECASE,
+)
+_PRODUCT_KEYWORDS_RE = re.compile(
+    r"ai\b|tutorial|review|productivity|canva|chatgpt|\bgpt\b|netflix|notion|"
+    r"subscription|tools|creator|learning|教程|评测|软件|订阅|工具",
+    re.IGNORECASE,
+)
+_EMAIL_IN_BIO_RE = re.compile(
+    r"[\w.+%\-]+@[\w.\-]+\.[a-z]{2,}",
+    re.IGNORECASE,
+)
+
+
+def _heuristic_score(inf: Influencer) -> tuple[float, str]:
+    """Compute a rough relevance score when LLM is unavailable or fails.
+    Range 0.0–1.0, returns (score, match_reason)."""
+    followers = inf.followers or 0
+    bio = inf.bio or ""
+
+    # Followers tier (base 0.05–0.35)
+    if 10_000 <= followers < 1_000_000:
+        base, tier_label = 0.35, "粉丝处于黄金区间"
+    elif followers >= 1_000_000:
+        base, tier_label = 0.30, "大号粉丝量"
+    elif 1_000 <= followers < 10_000:
+        base, tier_label = 0.25, "粉丝量适中"
+    elif 100 <= followers < 1_000:
+        base, tier_label = 0.15, "粉丝较少"
+    else:
+        base, tier_label = 0.05, "粉丝极少或未知"
+
+    # Bio signal bonuses (capped at +0.30)
+    signals: list[str] = []
+    bonus = 0.0
+    if _EMAIL_IN_BIO_RE.search(bio):
+        bonus += 0.15
+        signals.append("bio 含邮箱")
+    if _BIZ_KEYWORDS_RE.search(bio):
+        bonus += 0.10
+        signals.append("有合作信号")
+    if _PRODUCT_KEYWORDS_RE.search(bio):
+        bonus += 0.10
+        signals.append("品类相关")
+    bonus = min(bonus, 0.30)
+
+    score = round(min(1.0, base + bonus), 2)
+    reason = (tier_label + ("，" + "，".join(signals) if signals else ""))[:30]
+    return score, reason
+
+
 async def _enrich_results(
     task_id: int,
     industry: str,
     target_market: str | None = None,
 ) -> None:
-    """LLM post-processing: score each influencer's relevance and generate match reason."""
+    """Two-phase scoring: always assign a heuristic score first so every
+    influencer has a relevance_score / match_reason. Then, if OpenAI is
+    configured, upgrade each batch with an LLM score. LLM batch failures
+    fall through silently — the heuristic score stays."""
     settings = get_settings()
-    if not settings.openai_api_key:
-        logger.info("No OpenAI API key, skipping result enrichment")
-        return
-
-    from app.prompts import load_prompt
-    try:
-        business_ctx = load_prompt(f"scraper/_shared/{settings.active_business}.business")
-        system = load_prompt("scraper/enrich_results.system", business_context=business_ctx)
-    except FileNotFoundError as e:
-        logger.warning("Prompt template not found, skipping result enrichment: %s", e)
-        return
 
     async with AsyncSessionLocal() as db:
         from app.models.scrape_task_influencer import ScrapeTaskInfluencer
@@ -630,9 +837,40 @@ async def _enrich_results(
         if not influencers:
             return
 
+        # Phase 1: heuristic baseline for every influencer that still lacks a
+        # score (e.g. freshly inserted from this task). Pre-existing scores
+        # from prior tasks are left untouched.
+        heuristic_applied = 0
+        for inf in influencers:
+            if inf.relevance_score is None:
+                score, reason = _heuristic_score(inf)
+                inf.relevance_score = score
+                inf.match_reason = reason
+                heuristic_applied += 1
+        if heuristic_applied:
+            await db.commit()
+            logger.info(
+                "Heuristic baseline applied to %d/%d influencers (task %d)",
+                heuristic_applied, len(influencers), task_id,
+            )
+
+        # Phase 2: LLM upgrade. Skip if no API key or prompt templates missing.
+        if not settings.openai_api_key:
+            logger.info("No OpenAI API key, keeping heuristic scores for task %d", task_id)
+            return
+
+        from app.prompts import load_prompt
+        try:
+            business_ctx = load_prompt(f"scraper/_shared/{settings.active_business}.business")
+            system = load_prompt("scraper/enrich_results.system", business_context=business_ctx)
+        except FileNotFoundError as e:
+            logger.warning("Prompt template not found, keeping heuristic scores: %s", e)
+            return
+
         from app.tools.llm_client import chat as llm_chat
 
         batch_size = 10
+        llm_upgraded = 0
         for i in range(0, len(influencers), batch_size):
             batch = influencers[i:i + batch_size]
             profiles = [
@@ -670,19 +908,29 @@ async def _enrich_results(
 
                 for item in enrichments:
                     inf_id = item.get("id")
-                    if inf_id is not None:
-                        for inf in batch:
-                            if inf.id == inf_id:
-                                score = item.get("relevance_score")
-                                inf.relevance_score = float(score) if score is not None else None
-                                inf.match_reason = item.get("match_reason")
-                                break
+                    if inf_id is None:
+                        continue
+                    for inf in batch:
+                        if inf.id != inf_id:
+                            continue
+                        score = item.get("relevance_score")
+                        reason = item.get("match_reason")
+                        # Only overwrite when both fields look valid. Otherwise
+                        # keep the heuristic baseline.
+                        if score is not None and reason:
+                            inf.relevance_score = float(score)
+                            inf.match_reason = str(reason)[:100]
+                            llm_upgraded += 1
+                        break
                 await db.commit()
             except Exception as e:
-                logger.warning("LLM enrichment batch failed: %s", e)
+                logger.warning("LLM enrichment batch failed (heuristic stays): %s", e)
                 await db.rollback()
 
-    logger.info("Result enrichment completed for task %d", task_id)
+        logger.info(
+            "Enrichment done for task %d: %d heuristic / %d LLM-upgraded out of %d",
+            task_id, heuristic_applied, llm_upgraded, len(influencers),
+        )
 
 
 # ── main agent entry point ───────────────────────────────────────────────────
@@ -802,6 +1050,31 @@ async def run_scraper_agent(task_id: int) -> None:
                         db.add(ScrapeTaskInfluencer(scrape_task_id=task_id, influencer_id=inf.id))
                         await db.commit()
                         valid_total += 1
+                        # Broadcast full influencer payload so the 网红数据
+                        # page can prepend the row in real time. Only fires on
+                        # first insert — re-linking an existing influencer
+                        # doesn't broadcast (it's already in the page's list).
+                        await manager.broadcast("influencer:created", {
+                            "id": inf.id,
+                            "nickname": inf.nickname,
+                            "email": inf.email,
+                            "platform": plat.value,
+                            "avatar_url": inf.avatar_url,
+                            "profile_url": inf.profile_url,
+                            "followers": inf.followers,
+                            "industry": inf.industry,
+                            "bio": inf.bio,
+                            "status": "new",
+                            "priority": "medium",
+                            "relevance_score": None,
+                            "match_reason": None,
+                            "reply_intent": None,
+                            "reply_summary": None,
+                            "follow_up_count": 0,
+                            "last_email_sent_at": None,
+                            "created_at": (inf.created_at or datetime.now(timezone.utc)).isoformat(),
+                            "tags": [],
+                        })
                     else:
                         # already exists — link to this task if not already linked
                         link_result = await db.execute(

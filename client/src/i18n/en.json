@@ -71,7 +71,7 @@
     "scrape": "Scrape",
     "import": "Import",
     "emails": "Emails",
-    "crm": "Influencer Emails",
+    "crm": "Influencer Data",
     "templates": "Templates",
     "mailboxes": "Mailboxes",
     "followUp": "Follow-up",
@@ -102,7 +102,7 @@
       "scrape": "Scrape",
       "import": "Import",
       "emails": "Emails",
-      "crm": "Influencer Emails",
+      "crm": "Influencer Data",
       "templates": "Templates",
       "mailboxes": "Mailboxes",
       "followUp": "Follow-up",
@@ -204,7 +204,7 @@
     "emptyTitle": "No results yet",
     "emptyInProgress": "Scraping in progress — results will appear when emails are found.",
     "emptyNoResults": "This task found no influencer emails.",
-    "selected": "{{selected}} of {{total}} selected",
+    "totalInfluencers": "{{count}} influencer(s)",
     "sortMost": "Followers ↑ Most",
     "sortLeast": "Followers ↑ Least",
     "table": {
@@ -216,8 +216,6 @@
       "relevance": "Relevance",
       "matchReason": "Match Reason"
     },
-    "hint": "Uncheck influencers you don't want to contact, then click Send All.",
-    "sendAll": "Send All ({{count}})",
     "expand": {
       "platform": "Platform",
       "followers": "Followers",
@@ -338,7 +336,7 @@
     }
   },
   "crm": {
-    "title": "CRM",
+    "title": "Influencer Data",
     "totalCount": "{{count}} influencer(s) total",
     "exportCsv": "Export CSV",
     "tabAll": "All Influencers",

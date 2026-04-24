@@ -1,1014 +1,266 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import {
-  Search,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Tag,
-  Archive,
-  ChevronDown,
-  X,
-} from 'lucide-react'
-import {
-  listInfluencers,
-  listTags,
-  batchUpdateInfluencers,
-  exportInfluencers,
-  updateInfluencer,
-  type InfluencerListItem,
-  type TagOut,
-} from '../api/influencers'
+import { ExternalLink, Loader2 } from 'lucide-react'
+import { listInfluencers, type InfluencerListItem } from '../api/influencers'
+import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
 import AvatarBadge from '../components/AvatarBadge'
 
-// ── constants ────────────────────────────────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
-const STATUS_COLORS: Record<string, string> = {
-  new: 'bg-gray-100 text-gray-600',
-  contacted: 'bg-blue-50 text-blue-600',
-  replied: 'bg-green-50 text-green-600',
-  archived: 'bg-yellow-50 text-yellow-600',
-}
-
-const PRIORITY_COLORS: Record<string, string> = {
-  high: 'bg-red-50 text-red-600',
-  medium: 'bg-amber-50 text-amber-600',
-  low: 'bg-gray-100 text-gray-500',
-}
-
-const PRIORITY_DOT: Record<string, string> = {
-  high: 'bg-red-500',
-  medium: 'bg-amber-400',
-  low: 'bg-gray-400',
-}
-
-const PLATFORM_ICONS: Record<string, string> = {
-  tiktok: '🎵',
-  instagram: '📸',
-  youtube: '▶️',
-  twitter: '🐦',
-  facebook: '📘',
-  other: '🌐',
-}
-
-
-const REPLY_INTENT_COLORS: Record<string, string> = {
-  interested: 'bg-green-50 text-green-700',
-  pricing: 'bg-blue-50 text-blue-700',
-  declined: 'bg-red-50 text-red-600',
-  auto_reply: 'bg-gray-100 text-gray-500',
-  irrelevant: 'bg-gray-100 text-gray-500',
-}
-
-// ── helpers ───────────────────────────────────────────────────────────────────
-
-function formatFollowers(n: number | null): string {
+function formatFollowers(n: number | null | undefined): string {
   if (n == null) return '—'
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
   return String(n)
 }
 
-function formatDate(d: string | null): string {
-  if (!d) return '—'
-  return new Date(d).toLocaleDateString('zh-CN')
-}
-
-// ── tag multi-select dropdown ─────────────────────────────────────────────────
-
-function TagMultiSelect({
-  allTags,
-  selected,
-  onChange,
-}: {
-  allTags: TagOut[]
-  selected: number[]
-  onChange: (ids: number[]) => void
-}) {
-  const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handle)
-    return () => document.removeEventListener('mousedown', handle)
-  }, [])
-
-  function toggle(id: number) {
-    onChange(selected.includes(id) ? selected.filter((x) => x !== id) : [...selected, id])
+function PlatformBadge({ platform }: { platform: string | null }) {
+  if (!platform) return <span className="text-gray-400 text-xs">—</span>
+  const colors: Record<string, string> = {
+    instagram: 'bg-pink-50 text-pink-700',
+    youtube: 'bg-red-50 text-red-700',
+    tiktok: 'bg-gray-900 text-white',
+    twitter: 'bg-sky-50 text-sky-700',
+    facebook: 'bg-blue-50 text-blue-700',
   }
-
-  const label =
-    selected.length === 0
-      ? t('crm.tagSelect.allTags')
-      : selected.length === 1
-      ? (allTags.find((tag) => tag.id === selected[0])?.name ?? '1 tag')
-      : `${selected.length} tags`
-
+  const cls = colors[platform] ?? 'bg-gray-100 text-gray-600'
   return (
-    <div ref={ref} className="relative">
-      <button
-        onClick={() => setOpen((o) => !o)}
-        className="flex items-center gap-1 text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600 bg-white hover:bg-gray-50 min-w-[110px] justify-between"
-      >
-        <span>{label}</span>
-        <ChevronDown size={13} className="text-gray-400 shrink-0" />
-      </button>
-      {open && (
-        <div className="absolute z-20 mt-1 bg-white border border-gray-100 rounded-xl shadow-lg py-1 min-w-[160px] max-h-60 overflow-y-auto">
-          {allTags.length === 0 && (
-            <p className="text-xs text-gray-400 px-3 py-2">{t('crm.tagSelect.noTags')}</p>
-          )}
-          {allTags.map((tag) => (
-            <label
-              key={tag.id}
-              className="flex items-center gap-2 px-3 py-1.5 hover:bg-gray-50 cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                className="rounded"
-                checked={selected.includes(tag.id)}
-                onChange={() => toggle(tag.id)}
-              />
-              <span
-                className="w-2 h-2 rounded-full shrink-0"
-                style={{ backgroundColor: tag.color }}
-              />
-              <span className="text-sm text-gray-700">{tag.name}</span>
-            </label>
-          ))}
-        </div>
-      )}
-    </div>
+    <span className={`inline-block px-1.5 py-0.5 text-[11px] font-medium rounded capitalize ${cls}`}>
+      {platform}
+    </span>
   )
 }
 
-// ── batch tag modal ───────────────────────────────────────────────────────────
-
-function BatchTagModal({
-  allTags,
-  onConfirm,
-  onClose,
-}: {
-  allTags: TagOut[]
-  onConfirm: (tagIds: number[]) => void
-  onClose: () => void
-}) {
-  const { t } = useTranslation()
-  const [selected, setSelected] = useState<number[]>([])
-
-  function toggle(id: number) {
-    setSelected((prev) => (prev.includes(id) ? prev.filter((x) => x !== id) : [...prev, id]))
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20">
-      <div className="bg-white rounded-2xl shadow-xl p-6 w-80">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-gray-900">{t('crm.tagModal.title')}</h3>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
-            <X size={16} />
-          </button>
-        </div>
-        <div className="space-y-1 max-h-52 overflow-y-auto mb-4">
-          {allTags.map((tag) => (
-            <label
-              key={tag.id}
-              className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-gray-50 cursor-pointer"
-            >
-              <input
-                type="checkbox"
-                className="rounded"
-                checked={selected.includes(tag.id)}
-                onChange={() => toggle(tag.id)}
-              />
-              <span className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: tag.color }} />
-              <span className="text-sm text-gray-700">{tag.name}</span>
-            </label>
-          ))}
-          {allTags.length === 0 && (
-            <p className="text-sm text-gray-400 py-2 text-center">{t('crm.tagModal.noTags')}</p>
-          )}
-        </div>
-        <div className="flex gap-2">
-          <button
-            onClick={onClose}
-            className="flex-1 px-4 py-2 text-sm border border-gray-200 rounded-lg hover:bg-gray-50 text-gray-600"
-          >
-            {t('common.cancel')}
-          </button>
-          <button
-            onClick={() => { if (selected.length) onConfirm(selected) }}
-            disabled={selected.length === 0}
-            className="flex-1 px-4 py-2 text-sm bg-indigo-600 text-white rounded-lg hover:bg-indigo-700 disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            {t('common.apply')}
-          </button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
-// ── priority dropdown ─────────────────────────────────────────────────────────
-
-function PriorityDropdown({
-  value,
-  onChange,
-}: {
-  value: string
-  onChange: (p: string) => void
-}) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
-
-  useEffect(() => {
-    function handle(e: MouseEvent) {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener('mousedown', handle)
-    return () => document.removeEventListener('mousedown', handle)
-  }, [])
-
-  const options = ['high', 'medium', 'low']
-
-  return (
-    <div ref={ref} className="relative inline-block">
-      <button
-        onClick={(e) => { e.stopPropagation(); setOpen((o) => !o) }}
-        className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-full font-medium cursor-pointer ${PRIORITY_COLORS[value] ?? 'bg-gray-100 text-gray-500'}`}
-      >
-        <span className={`w-1.5 h-1.5 rounded-full ${PRIORITY_DOT[value] ?? 'bg-gray-400'}`} />
-        {value}
-        <ChevronDown size={10} className="opacity-60" />
-      </button>
-      {open && (
-        <div className="absolute z-30 right-0 mt-1 bg-white border border-gray-100 rounded-xl shadow-lg py-1 min-w-[90px]">
-          {options.map((p) => (
-            <button
-              key={p}
-              onClick={(e) => { e.stopPropagation(); onChange(p); setOpen(false) }}
-              className={`w-full flex items-center gap-2 px-3 py-1.5 text-xs hover:bg-gray-50 ${p === value ? 'font-semibold' : ''}`}
-            >
-              <span className={`w-1.5 h-1.5 rounded-full ${PRIORITY_DOT[p] ?? 'bg-gray-400'}`} />
-              <span className="capitalize">{p}</span>
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── replied view ──────────────────────────────────────────────────────────────
-
-function RepliedView() {
-  const { t } = useTranslation()
-  const navigate = useNavigate()
-  const [items, setItems] = useState<InfluencerListItem[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
-  const [loading, setLoading] = useState(true)
-  const [updatingId, setUpdatingId] = useState<number | null>(null)
-
-  useEffect(() => { load() }, [page]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  async function load() {
-    setLoading(true)
-    try {
-      const res = await listInfluencers({
-        page,
-        page_size: 20,
-        status: 'replied',
-        sort_by: 'priority',
-      })
-      setItems(res.items)
-      setTotal(res.total)
-      setTotalPages(res.total_pages)
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function handlePriorityChange(id: number, priority: string) {
-    setUpdatingId(id)
-    try {
-      await updateInfluencer(id, { priority })
-      setItems((prev) => prev.map((inf) => inf.id === id ? { ...inf, priority } : inf))
-    } finally {
-      setUpdatingId(null)
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-4">
-      <p className="text-sm text-gray-400">{t('crm.replied.subtitle', { count: total })}</p>
-
-      <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-        <table className="w-full text-sm">
-          <thead>
-            <tr className="border-b border-gray-100 bg-gray-50">
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.influencer')}</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.platform')}</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.followers')}</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.replyIntent')}</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.replySummary')}</th>
-              <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('crm.replied.table.priority')}</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {loading && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">{t('crm.replied.loading')}</td>
-              </tr>
-            )}
-            {!loading && items.length === 0 && (
-              <tr>
-                <td colSpan={6} className="px-4 py-8 text-center text-sm text-gray-400">
-                  {t('crm.replied.noReplied')}
-                </td>
-              </tr>
-            )}
-            {!loading && items.map((inf) => (
-              <tr key={inf.id} className="hover:bg-gray-50 transition-colors">
-                <td
-                  className="px-4 py-3 cursor-pointer"
-                  onClick={() => navigate(`/crm/${inf.id}`)}
-                >
-                  <p className="font-medium text-gray-900 hover:text-indigo-600 transition-colors">
-                    {inf.nickname ?? '—'}
-                  </p>
-                  <p className="text-xs text-gray-400">{inf.email}</p>
-                </td>
-                <td className="px-4 py-3 text-gray-600">
-                  {inf.platform ? (
-                    <span>
-                      {PLATFORM_ICONS[inf.platform] ?? '🌐'}{' '}
-                      <span className="capitalize">{inf.platform}</span>
-                    </span>
-                  ) : '—'}
-                </td>
-                <td className="px-4 py-3 text-gray-600">{formatFollowers(inf.followers)}</td>
-                <td className="px-4 py-3">
-                  {inf.reply_intent ? (
-                    <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${REPLY_INTENT_COLORS[inf.reply_intent] ?? 'bg-gray-100 text-gray-500'}`}>
-                      {t(`common.intent.${inf.reply_intent}`, { defaultValue: inf.reply_intent })}
-                    </span>
-                  ) : '—'}
-                </td>
-                <td className="px-4 py-3 text-xs text-gray-500 max-w-xs">
-                  {inf.reply_summary ? (
-                    <span className="line-clamp-2">{inf.reply_summary}</span>
-                  ) : '—'}
-                </td>
-                <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
-                  {updatingId === inf.id ? (
-                    <span className="text-xs text-gray-400">{t('crm.replied.saving')}</span>
-                  ) : (
-                    <PriorityDropdown
-                      value={inf.priority}
-                      onChange={(p) => handlePriorityChange(inf.id, p)}
-                    />
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {totalPages > 1 && (
-        <div className="flex items-center justify-between text-sm text-gray-500">
-          <span>{t('common.pageOf', { current: page, total: totalPages })}</span>
-          <div className="flex gap-2">
-            <button
-              onClick={() => setPage((p) => Math.max(1, p - 1))}
-              disabled={page === 1}
-              className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              <ChevronLeft size={14} />
-              {t('common.prev')}
-            </button>
-            <button
-              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-              disabled={page === totalPages}
-              className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-            >
-              {t('common.next')}
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}
-
-// ── main page ─────────────────────────────────────────────────────────────────
+// ── Page ──────────────────────────────────────────────────────────────────────
 
 export default function CRMPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
-
-  // tab
-  const [tab, setTab] = useState<'all' | 'replied'>('all')
-
-  // data
   const [items, setItems] = useState<InfluencerListItem[]>([])
-  const [allTags, setAllTags] = useState<TagOut[]>([])
-  const [total, setTotal] = useState(0)
-  const [page, setPage] = useState(1)
-  const [totalPages, setTotalPages] = useState(1)
   const [loading, setLoading] = useState(true)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(20)
+  const [total, setTotal] = useState(0)
+  const [totalPages, setTotalPages] = useState(1)
 
-  // filters
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
-  const [statusFilter, setStatusFilter] = useState('')
-  const [platformFilter, setPlatformFilter] = useState('')
-  const [tagFilter, setTagFilter] = useState<number[]>([])
-  const [followersMin, setFollowersMin] = useState('')
-  const [followersMax, setFollowersMax] = useState('')
-  const [industryFilter, setIndustryFilter] = useState('')
-  const [replyIntentFilter, setReplyIntentFilter] = useState('')
-
-  // selection
-  const [selected, setSelected] = useState<Set<number>>(new Set())
-  const [batchTagOpen, setBatchTagOpen] = useState(false)
-  const [batchLoading, setBatchLoading] = useState(false)
-
-  // accordion expand
-  const [expandedId, setExpandedId] = useState<number | null>(null)
-
-  // debounce search
-  useEffect(() => {
-    const t = setTimeout(() => setDebouncedSearch(search), 300)
-    return () => clearTimeout(t)
-  }, [search])
-
-  // reset page on filter change
-  useEffect(() => {
-    setPage(1)
-    setSelected(new Set())
-  }, [debouncedSearch, statusFilter, platformFilter, tagFilter, followersMin, followersMax, industryFilter, replyIntentFilter])
-
-  // load data (only in "all" tab)
-  useEffect(() => {
-    if (tab === 'all') load()
-  }, [page, debouncedSearch, statusFilter, platformFilter, tagFilter, followersMin, followersMax, industryFilter, replyIntentFilter, tab]) // eslint-disable-line react-hooks/exhaustive-deps
-
-  // load tags once
-  useEffect(() => {
-    listTags().then(setAllTags).catch(() => {})
-  }, [])
-
-  async function load() {
+  const load = useCallback(async () => {
     setLoading(true)
     try {
-      const res = await listInfluencers({
-        page,
-        page_size: 20,
-        search: debouncedSearch || undefined,
-        status: statusFilter || undefined,
-        platform: platformFilter || undefined,
-        tag_ids: tagFilter.length ? tagFilter : undefined,
-        followers_min: followersMin ? parseInt(followersMin) : undefined,
-        followers_max: followersMax ? parseInt(followersMax) : undefined,
-        industry: industryFilter || undefined,
-        reply_intent: replyIntentFilter || undefined,
-      })
-      setItems(res.items)
-      setTotal(res.total)
-      setTotalPages(res.total_pages)
+      const resp = await listInfluencers({ page, page_size: pageSize })
+      // Backend returns items ordered by created_at DESC (newest first), which
+      // matches the "real-time sync" narrative — new scraped influencers
+      // surface on page 1 automatically.
+      setItems(resp.items)
+      setTotal(resp.total)
+      setTotalPages(Math.max(1, resp.total_pages))
+    } catch {
+      setItems([])
+      setTotal(0)
+      setTotalPages(1)
     } finally {
       setLoading(false)
     }
-  }
+  }, [page, pageSize])
 
-  // ── selection helpers ──────────────────────────────────────────────────────
+  useEffect(() => { load() }, [load])
 
-  const allPageSelected = items.length > 0 && items.every((i) => selected.has(i.id))
+  // If pageSize change puts current page past the new last page, step back.
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
 
-  function toggleSelectAll() {
-    if (allPageSelected) {
-      setSelected((prev) => {
-        const next = new Set(prev)
-        items.forEach((i) => next.delete(i.id))
-        return next
-      })
-    } else {
-      setSelected((prev) => {
-        const next = new Set(prev)
-        items.forEach((i) => next.add(i.id))
-        return next
-      })
+  // ── WebSocket: new influencers from scraper land here in real time ─────────
+  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+  useWebSocket(wsUrl, useCallback((msg: WsMessage) => {
+    if (msg.event !== 'influencer:created') return
+    const newItem = msg.data as InfluencerListItem
+    if (!newItem || typeof newItem.id !== 'number') return
+    // Only prepend live when the user is on page 1 — otherwise pagination
+    // would break (the bottom item of page 1 would overlap with the top of
+    // page 2). Users on other pages will see the new data when they navigate
+    // back to page 1 (which triggers a fresh fetch).
+    if (page !== 1) {
+      setTotal((t) => t + 1)
+      return
     }
-  }
-
-  function toggleRow(id: number) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) { next.delete(id) } else { next.add(id) }
-      return next
+    setItems((prev) => {
+      if (prev.some((r) => r.id === newItem.id)) return prev
+      // Prepend + cap length to keep page size stable; the displaced last
+      // item has moved to page 2 logically and will appear there on refetch.
+      return [newItem, ...prev].slice(0, pageSize)
     })
-  }
-
-  // ── batch actions ──────────────────────────────────────────────────────────
-
-  async function handleBatchArchive() {
-    if (!selected.size) return
-    setBatchLoading(true)
-    try {
-      await batchUpdateInfluencers({ influencer_ids: [...selected], action: 'archive' })
-      setSelected(new Set())
-      await load()
-    } finally {
-      setBatchLoading(false)
-    }
-  }
-
-  async function handleBatchTag(tagIds: number[]) {
-    setBatchLoading(true)
-    try {
-      await batchUpdateInfluencers({ influencer_ids: [...selected], action: 'assign_tags', tag_ids: tagIds })
-      setBatchTagOpen(false)
-      setSelected(new Set())
-      await load()
-    } finally {
-      setBatchLoading(false)
-    }
-  }
-
-  async function handleExport() {
-    const blob = await exportInfluencers({
-      status: statusFilter || undefined,
-      platform: platformFilter || undefined,
-      search: debouncedSearch || undefined,
-      tag_ids: tagFilter.length ? tagFilter : undefined,
-      followers_min: followersMin ? parseInt(followersMin) : undefined,
-      followers_max: followersMax ? parseInt(followersMax) : undefined,
-      industry: industryFilter || undefined,
-      reply_intent: replyIntentFilter || undefined,
-    })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = 'influencers.csv'
-    a.click()
-    URL.revokeObjectURL(url)
-  }
-
-  // ── render ─────────────────────────────────────────────────────────────────
+    setTotal((t) => t + 1)
+  }, [page, pageSize]))
 
   return (
-    <div className="p-6 flex flex-col gap-5">
+    <div className="p-6 space-y-5">
       {/* Header */}
-      <div className="flex items-center justify-between">
-        <div>
-          <h1 className="text-lg font-semibold text-gray-900">{t('crm.title')}</h1>
-          {tab === 'all' && (
-            <p className="text-sm text-gray-400 mt-0.5">
-              {t('crm.totalCount', { count: total })}
-            </p>
-          )}
+      <div>
+        <h1 className="text-2xl font-semibold text-gray-900">{t('crm.title')}</h1>
+        <p className="text-xs text-gray-400 mt-1">{t('crm.totalCount', { count: total })}</p>
+      </div>
+
+      {loading && items.length === 0 ? (
+        <div className="flex items-center justify-center h-64 text-gray-400">
+          <Loader2 size={20} className="animate-spin mr-2" />
+          <span className="text-sm">{t('crm.loading')}</span>
         </div>
-        {tab === 'all' && (
-          <button
-            onClick={handleExport}
-            className="flex items-center gap-1.5 text-sm border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 text-gray-600"
-          >
-            <Download size={14} />
-            {t('crm.exportCsv')}
-          </button>
-        )}
-      </div>
-
-      {/* Tabs */}
-      <div className="flex gap-0 border-b border-gray-100">
-        <button
-          onClick={() => setTab('all')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            tab === 'all'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          {t('crm.tabAll')}
-        </button>
-        <button
-          onClick={() => setTab('replied')}
-          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
-            tab === 'replied'
-              ? 'border-indigo-600 text-indigo-600'
-              : 'border-transparent text-gray-500 hover:text-gray-700'
-          }`}
-        >
-          {t('crm.tabReplied')}
-        </button>
-      </div>
-
-      {/* Replied tab */}
-      {tab === 'replied' && <RepliedView />}
-
-      {/* All tab */}
-      {tab === 'all' && (
-        <>
-          {/* Filters */}
-          <div className="flex flex-wrap gap-2.5">
-            {/* Search */}
-            <div className="relative">
-              <Search size={14} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400" />
-              <input
-                type="text"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-                placeholder={t('crm.search')}
-                className="pl-8 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:border-indigo-400 w-48"
-              />
-            </div>
-
-            {/* Platform */}
-            <select
-              value={platformFilter}
-              onChange={(e) => setPlatformFilter(e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600"
-            >
-              <option value="">{t('crm.allPlatforms')}</option>
-              <option value="tiktok">{t('common.platform.tiktok')}</option>
-              <option value="instagram">{t('common.platform.instagram')}</option>
-              <option value="youtube">{t('common.platform.youtube')}</option>
-              <option value="twitter">{t('common.platform.twitter')}</option>
-              <option value="facebook">{t('common.platform.facebook')}</option>
-              <option value="other">{t('common.platform.other')}</option>
-            </select>
-
-            {/* Status */}
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600"
-            >
-              <option value="">{t('crm.allStatuses')}</option>
-              <option value="new">{t('common.status.new')}</option>
-              <option value="contacted">{t('common.status.contacted')}</option>
-              <option value="replied">{t('common.status.replied')}</option>
-              <option value="archived">{t('common.status.archived')}</option>
-            </select>
-
-            {/* Tags multi-select */}
-            <TagMultiSelect allTags={allTags} selected={tagFilter} onChange={setTagFilter} />
-
-            {/* Followers range */}
-            <div className="flex items-center gap-1">
-              <input
-                type="number"
-                value={followersMin}
-                onChange={(e) => setFollowersMin(e.target.value)}
-                placeholder={t('crm.followersMin')}
-                className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 w-28 text-gray-600"
-              />
-              <span className="text-gray-400 text-sm">–</span>
-              <input
-                type="number"
-                value={followersMax}
-                onChange={(e) => setFollowersMax(e.target.value)}
-                placeholder={t('crm.followersMax')}
-                className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 w-20 text-gray-600"
-              />
-            </div>
-
-            {/* Industry */}
-            <input
-              type="text"
-              value={industryFilter}
-              onChange={(e) => setIndustryFilter(e.target.value)}
-              placeholder={t('crm.industry')}
-              className="text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 focus:outline-none focus:border-indigo-400 w-32 text-gray-600"
-            />
-
-            {/* Reply intent */}
-            <select
-              value={replyIntentFilter}
-              onChange={(e) => setReplyIntentFilter(e.target.value)}
-              className="text-sm border border-gray-200 rounded-lg px-2 py-1.5 focus:outline-none focus:border-indigo-400 text-gray-600"
-            >
-              <option value="">{t('crm.allIntents')}</option>
-              <option value="interested">{t('common.intent.interested')}</option>
-              <option value="pricing">{t('common.intent.pricing')}</option>
-              <option value="declined">{t('common.intent.declined')}</option>
-              <option value="auto_reply">{t('common.intent.auto_reply')}</option>
-              <option value="irrelevant">{t('common.intent.irrelevant')}</option>
-            </select>
-          </div>
-
-          {/* Table */}
-          <div className="bg-white border border-gray-100 rounded-xl overflow-hidden">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="border-b border-gray-100 bg-gray-50">
-                  <th className="px-4 py-3 w-8">
-                    <input
-                      type="checkbox"
-                      className="rounded"
-                      checked={allPageSelected}
-                      onChange={toggleSelectAll}
-                    />
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    {t('crm.table.influencer')}
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    {t('crm.table.platform')}
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    {t('crm.table.email')}
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    {t('crm.table.followers')}
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    {t('crm.table.status')}
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    {t('crm.table.tags')}
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    {t('crm.table.priority')}
-                  </th>
-                  <th className="text-left px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">
-                    {t('crm.table.lastEmail')}
-                  </th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-50">
-                {loading && (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
-                      {t('crm.loading')}
-                    </td>
-                  </tr>
-                )}
-                {!loading && items.length === 0 && (
-                  <tr>
-                    <td colSpan={9} className="px-4 py-8 text-center text-sm text-gray-400">
-                      {t('crm.noInfluencers')}
-                    </td>
-                  </tr>
-                )}
-                {!loading &&
-                  items.map((inf) => {
-                    const isExpanded = expandedId === inf.id
-                    return (
-                      <>
-                        <tr
-                          key={inf.id}
-                          className={`hover:bg-gray-50 transition-colors ${selected.has(inf.id) ? 'bg-indigo-50/40' : ''}`}
+      ) : items.length === 0 ? (
+        <div className="flex items-center justify-center h-64 text-gray-400">
+          <span className="text-sm">{t('crm.noInfluencers')}</span>
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="border-b border-gray-100 bg-gray-50/60">
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.name')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.platform')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.email')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.followers')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.bio')}</th>
+                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">{t('scrapeDetail.table.relevance')}</th>
+                <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">{t('scrapeDetail.table.matchReason')}</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {items.map((inf) => (
+                <tr
+                  key={inf.id}
+                  className="transition-colors bg-white hover:bg-gray-50/60 cursor-pointer"
+                  onClick={() => navigate(`/crm/${inf.id}`)}
+                >
+                  <td className="px-4 py-3 text-left align-middle" style={{ verticalAlign: 'middle' }}>
+                    <div className="flex items-center gap-1.5">
+                      <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={24} />
+                      <span className="text-xs font-medium text-gray-800 truncate max-w-[120px]">
+                        {inf.nickname || '—'}
+                      </span>
+                      {inf.profile_url && (
+                        <a
+                          href={inf.profile_url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-gray-300 hover:text-gray-600 transition-colors shrink-0"
+                          onClick={(e) => e.stopPropagation()}
                         >
-                          <td className="px-4 py-3 w-8" onClick={(e) => e.stopPropagation()}>
-                            <input
-                              type="checkbox"
-                              className="rounded"
-                              checked={selected.has(inf.id)}
-                              onChange={() => toggleRow(inf.id)}
-                            />
-                          </td>
-                          <td
-                            className="px-4 py-3 cursor-pointer"
-                            onClick={() => navigate(`/crm/${inf.id}`)}
-                          >
-                            <div className="flex items-center gap-2">
-                              <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={24} />
-                              <div className="flex-1 min-w-0">
-                                <p className="font-medium text-gray-900 hover:text-indigo-600 transition-colors truncate">
-                                  {inf.nickname ?? '—'}
-                                </p>
-                              </div>
-                              <button
-                                onClick={(e) => { e.stopPropagation(); setExpandedId(isExpanded ? null : inf.id) }}
-                                className="p-0.5 text-gray-300 hover:text-gray-700 transition-colors flex-shrink-0"
-                              >
-                                <ChevronDown
-                                  size={12}
-                                  className={isExpanded ? 'rotate-180 transition-transform' : 'transition-transform'}
-                                />
-                              </button>
-                            </div>
-                          </td>
-                          <td className="px-4 py-3 text-gray-600">
-                            {inf.platform ? (
-                              <span>
-                                {PLATFORM_ICONS[inf.platform] ?? '🌐'}{' '}
-                                <span className="capitalize">{inf.platform}</span>
-                              </span>
-                            ) : (
-                              '—'
-                            )}
-                          </td>
-                          <td className="px-4 py-3 text-gray-500 text-xs">{inf.email}</td>
-                          <td className="px-4 py-3 text-gray-600">
-                            {formatFollowers(inf.followers)}
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[inf.status] ?? 'bg-gray-100 text-gray-600'}`}
-                            >
-                              {inf.status}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3">
-                            <div className="flex flex-wrap gap-1">
-                              {inf.tags.slice(0, 3).map((tag) => (
-                                <span
-                                  key={tag.id}
-                                  className="text-xs px-1.5 py-0.5 rounded-full text-white"
-                                  style={{ backgroundColor: tag.color }}
-                                >
-                                  {tag.name}
-                                </span>
-                              ))}
-                              {inf.tags.length > 3 && (
-                                <span className="text-xs text-gray-400">+{inf.tags.length - 3}</span>
-                              )}
-                            </div>
-                          </td>
-                          <td className="px-4 py-3">
-                            <span
-                              className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[inf.priority] ?? 'bg-gray-100 text-gray-500'}`}
-                            >
-                              {inf.priority}
-                            </span>
-                          </td>
-                          <td className="px-4 py-3 text-xs text-gray-400">
-                            {formatDate(inf.last_email_sent_at)}
-                          </td>
-                        </tr>
-                        {isExpanded && (
-                          <tr key={`${inf.id}-expand`}>
-                            <td colSpan={9} className="bg-gray-50/60 px-6 py-5">
-                              <div className="grid grid-cols-[auto_1fr] gap-5 max-w-4xl">
-                                <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={72} />
-                                <div className="space-y-3">
-                                  <div>
-                                    <h3 className="text-base font-semibold text-gray-900">{inf.nickname || '—'}</h3>
-                                    <p className="text-xs text-gray-400">{inf.email}</p>
-                                  </div>
-                                  <div className="grid grid-cols-3 gap-4 text-sm">
-                                    <div>
-                                      <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.platform')}</div>
-                                      <div className="font-medium text-gray-700 mt-1">{inf.platform || '—'}</div>
-                                    </div>
-                                    <div>
-                                      <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.followers')}</div>
-                                      <div className="font-medium text-gray-700 mt-1">{formatFollowers(inf.followers)}</div>
-                                    </div>
-                                    <div>
-                                      <div className="text-[10px] text-gray-400 uppercase">{t('scrapeDetail.expand.email')}</div>
-                                      <div className="font-mono text-xs text-gray-700 mt-1 break-all">{inf.email}</div>
-                                    </div>
-                                  </div>
-                                  <div className="grid grid-cols-3 gap-4 text-sm">
-                                    <div>
-                                      <div className="text-[10px] text-gray-400 uppercase">Status</div>
-                                      <div className="mt-1">
-                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${STATUS_COLORS[inf.status] ?? 'bg-gray-100 text-gray-600'}`}>
-                                          {inf.status}
-                                        </span>
-                                      </div>
-                                    </div>
-                                    <div>
-                                      <div className="text-[10px] text-gray-400 uppercase">Priority</div>
-                                      <div className="mt-1">
-                                        <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${PRIORITY_COLORS[inf.priority] ?? 'bg-gray-100 text-gray-500'}`}>
-                                          {inf.priority}
-                                        </span>
-                                      </div>
-                                    </div>
-                                    {inf.reply_intent && (
-                                      <div>
-                                        <div className="text-[10px] text-gray-400 uppercase">Intent</div>
-                                        <div className="mt-1">
-                                          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${REPLY_INTENT_COLORS[inf.reply_intent] ?? 'bg-gray-100 text-gray-500'}`}>
-                                            {inf.reply_intent}
-                                          </span>
-                                        </div>
-                                      </div>
-                                    )}
-                                  </div>
-                                  {inf.reply_summary && (
-                                    <div>
-                                      <div className="text-[10px] text-gray-400 uppercase mb-1">Reply Summary</div>
-                                      <p className="text-sm text-gray-700 leading-relaxed">{inf.reply_summary}</p>
-                                    </div>
-                                  )}
-                                  {inf.tags.length > 0 && (
-                                    <div>
-                                      <div className="text-[10px] text-gray-400 uppercase mb-1">Tags</div>
-                                      <div className="flex flex-wrap gap-1">
-                                        {inf.tags.map((tag) => (
-                                          <span
-                                            key={tag.id}
-                                            className="text-xs px-1.5 py-0.5 rounded-full text-white"
-                                            style={{ backgroundColor: tag.color }}
-                                          >
-                                            {tag.name}
-                                          </span>
-                                        ))}
-                                      </div>
-                                    </div>
-                                  )}
-                                </div>
-                              </div>
-                            </td>
-                          </tr>
-                        )}
-                      </>
-                    )
-                  })}
-              </tbody>
-            </table>
+                          <ExternalLink size={10} />
+                        </a>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-center align-middle" style={{ verticalAlign: 'middle' }}>
+                    <PlatformBadge platform={inf.platform} />
+                  </td>
+                  <td className="px-4 py-3 text-center text-xs text-gray-700 font-mono align-middle" style={{ verticalAlign: 'middle' }}>
+                    {inf.email}
+                  </td>
+                  <td className="px-4 py-3 text-center text-xs font-medium text-gray-800 align-middle" style={{ verticalAlign: 'middle' }}>
+                    {formatFollowers(inf.followers)}
+                  </td>
+                  <td className="px-4 py-3 text-center text-xs text-gray-400 align-middle whitespace-pre-wrap max-w-[320px]" style={{ verticalAlign: 'middle' }}>
+                    {inf.bio || '—'}
+                  </td>
+                  <td className="px-3 py-2 text-center text-sm align-middle" style={{ verticalAlign: 'middle' }}>
+                    {inf.relevance_score != null ? (
+                      <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+                        inf.relevance_score >= 0.7 ? 'bg-green-50 text-green-700' :
+                        inf.relevance_score >= 0.4 ? 'bg-yellow-50 text-yellow-700' :
+                        'bg-gray-50 text-gray-500'
+                      }`}>
+                        {(inf.relevance_score * 100).toFixed(0)}%
+                      </span>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
+                  </td>
+                  <td
+                    className="px-3 py-2 text-center text-sm text-gray-600 align-middle whitespace-pre-wrap max-w-[240px]"
+                    style={{ verticalAlign: 'middle' }}
+                    title={inf.match_reason || ''}
+                  >
+                    {inf.match_reason ? inf.match_reason : <span className="text-gray-300">—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* Pagination footer */}
+      {total > 0 && (
+        <div className="flex items-center justify-end gap-6 text-xs text-gray-500 pt-2">
+          {/* Left: page size selector */}
+          <div className="flex items-center gap-2">
+            <span>每页</span>
+            <select
+              value={pageSize}
+              onChange={(e) => { setPageSize(Number(e.target.value)); setPage(1) }}
+              className="border border-gray-200 rounded px-2 py-1 text-xs bg-white focus:outline-none focus:border-gray-400 cursor-pointer"
+            >
+              <option value={10}>10</option>
+              <option value={20}>20</option>
+            </select>
+            <span>条</span>
           </div>
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div className="flex items-center justify-between text-sm text-gray-500">
-              <span>
-                {t('common.pageOf', { current: page, total: totalPages })}
-              </span>
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setPage((p) => Math.max(1, p - 1))}
-                  disabled={page === 1}
-                  className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  <ChevronLeft size={14} />
-                  {t('common.prev')}
-                </button>
-                <button
-                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                  disabled={page === totalPages}
-                  className="flex items-center gap-1 px-3 py-1.5 border border-gray-200 rounded-lg hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                >
-                  {t('common.next')}
-                  <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
-          )}
+          {/* Middle: page navigator */}
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page <= 1}
+              className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              ‹ 上一页
+            </button>
+            {renderPageButtons(page, totalPages, setPage)}
+            <button
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page >= totalPages}
+              className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              下一页 ›
+            </button>
+          </div>
 
-          {/* Batch action bar */}
-          {selected.size > 0 && (
-            <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 flex items-center gap-3 bg-gray-900 text-white px-5 py-3 rounded-2xl shadow-xl">
-              <span className="text-sm font-medium">{t('crm.batch.selected', { count: selected.size })}</span>
-              <div className="w-px h-4 bg-white/20" />
-              <button
-                onClick={() => setBatchTagOpen(true)}
-                disabled={batchLoading}
-                className="flex items-center gap-1.5 text-sm hover:text-indigo-300 transition-colors disabled:opacity-50"
-              >
-                <Tag size={14} />
-                {t('crm.batch.assignTags')}
-              </button>
-              <button
-                onClick={handleBatchArchive}
-                disabled={batchLoading}
-                className="flex items-center gap-1.5 text-sm hover:text-yellow-300 transition-colors disabled:opacity-50"
-              >
-                <Archive size={14} />
-                {t('crm.batch.archive')}
-              </button>
-              <button
-                onClick={handleExport}
-                disabled={batchLoading}
-                className="flex items-center gap-1.5 text-sm hover:text-green-300 transition-colors disabled:opacity-50"
-              >
-                <Download size={14} />
-                {t('crm.batch.exportCsv')}
-              </button>
-              <div className="w-px h-4 bg-white/20" />
-              <button
-                onClick={() => setSelected(new Set())}
-                className="text-white/60 hover:text-white"
-              >
-                <X size={14} />
-              </button>
-            </div>
-          )}
-
-          {/* Batch tag modal */}
-          {batchTagOpen && (
-            <BatchTagModal
-              allTags={allTags}
-              onConfirm={handleBatchTag}
-              onClose={() => setBatchTagOpen(false)}
-            />
-          )}
-        </>
+          {/* Right: counters */}
+          <div className="text-gray-400">
+            共 {total} 条 · 第 {page}/{totalPages} 页
+          </div>
+        </div>
       )}
     </div>
+  )
+}
+
+// Build a compact page-number list: always show first / last / current ±1
+// with '…' collapsing the rest. Keeps the footer scannable even at 100+ pages.
+function renderPageButtons(cur: number, total: number, setPage: (n: number) => void) {
+  if (total <= 1) return null
+  const pages: (number | '...')[] = []
+  const add = (n: number) => { if (!pages.includes(n)) pages.push(n) }
+  add(1)
+  if (cur - 1 > 2) pages.push('...')
+  for (let n = Math.max(2, cur - 1); n <= Math.min(total - 1, cur + 1); n++) add(n)
+  if (cur + 1 < total - 1) pages.push('...')
+  if (total > 1) add(total)
+  return pages.map((p, i) =>
+    p === '...' ? (
+      <span key={`gap-${i}`} className="px-1 text-gray-300">…</span>
+    ) : (
+      <button
+        key={p}
+        onClick={() => setPage(p)}
+        className={`min-w-[28px] px-2 py-1 rounded transition-colors ${
+          p === cur
+            ? 'bg-gray-900 text-white'
+            : 'hover:bg-gray-100 text-gray-600'
+        }`}
+      >
+        {p}
+      </button>
+    ),
   )
 }

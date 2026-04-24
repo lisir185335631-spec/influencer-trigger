@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, Fragment } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -6,11 +6,8 @@ import {
   ArrowUpDown,
   ArrowUp,
   ArrowDown,
-  Send,
   Loader2,
   Users,
-  CheckSquare,
-  Square,
   ExternalLink,
   ChevronDown,
 } from 'lucide-react'
@@ -97,7 +94,6 @@ export default function ScrapeTaskDetailPage() {
   const [task, setTask] = useState<ScrapeTask | null>(null)
   const [results, setResults] = useState<ScrapeInfluencerResult[]>([])
   const [loading, setLoading] = useState(true)
-  const [selected, setSelected] = useState<Set<number>>(new Set())
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [live, setLive] = useState<LiveProgress | null>(null)
   const [emailStream, setEmailStream] = useState<{ email: string; at: number }[]>([])
@@ -118,11 +114,6 @@ export default function ScrapeTaskDetailPage() {
           return prev
         }
         return resultsData
-      })
-      setSelected((prev) => {
-        // Only reset selection on initial (non-silent) load to avoid losing user's uncheck state
-        if (silent && prev.size > 0) return prev
-        return new Set(resultsData.map((r) => r.id))
       })
     } catch {
       /* silent */
@@ -172,33 +163,6 @@ export default function ScrapeTaskDetailPage() {
     return sortDir === 'desc' ? fb - fa : fa - fb
   })
 
-  // ── Selection helpers ──────────────────────────────────────────────────────
-  const allSelected = results.length > 0 && selected.size === results.length
-  const someSelected = selected.size > 0 && selected.size < results.length
-
-  function toggleAll() {
-    if (allSelected) {
-      setSelected(new Set())
-    } else {
-      setSelected(new Set(results.map((r) => r.id)))
-    }
-  }
-
-  function toggleOne(id: number) {
-    setSelected((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
-  }
-
-  // ── Send all selected ──────────────────────────────────────────────────────
-  function handleSendAll() {
-    const ids = [...selected].join(',')
-    navigate(`/emails?influencer_ids=${ids}`)
-  }
-
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) {
     return (
@@ -239,8 +203,9 @@ export default function ScrapeTaskDetailPage() {
         </div>
       </div>
 
-      {/* Live progress dashboard */}
-      {task && (task.status === 'running' || task.status === 'pending' || live) && (
+      {/* Progress dashboard — always shown once task data loads so completed
+           tasks still display the final % / status pill / stat cards. */}
+      {task && (
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-2xl p-6 space-y-5">
           {/* Status pill + big percentage */}
           <div className="flex items-center justify-between">
@@ -337,7 +302,7 @@ export default function ScrapeTaskDetailPage() {
           {/* Table controls */}
           <div className="flex items-center justify-between">
             <p className="text-xs text-gray-500">
-              {t('scrapeDetail.selected', { selected: selected.size, total: results.length })}
+              {t('scrapeDetail.totalInfluencers', { count: results.length })}
             </p>
             <button
               onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
@@ -353,17 +318,6 @@ export default function ScrapeTaskDetailPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 bg-gray-50/60">
-                  <th className="px-4 py-3 text-left w-10">
-                    <button onClick={toggleAll} className="text-gray-400 hover:text-gray-700 transition-colors">
-                      {allSelected ? (
-                        <CheckSquare size={14} className="text-gray-900" />
-                      ) : someSelected ? (
-                        <CheckSquare size={14} className="text-gray-400" />
-                      ) : (
-                        <Square size={14} />
-                      )}
-                    </button>
-                  </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.name')}</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.platform')}</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.email')}</th>
@@ -381,27 +335,11 @@ export default function ScrapeTaskDetailPage() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {sorted.map((inf) => {
-                  const isChecked = selected.has(inf.id)
                   const isExpanded = expandedId === inf.id
                   return (
-                    <>
-                      <tr
-                        key={inf.id}
-                        className={`transition-colors ${isChecked ? 'bg-white hover:bg-gray-50/60' : 'bg-gray-50/40 opacity-60 hover:opacity-80'}`}
-                      >
-                        <td className="px-4 py-3">
-                          <button
-                            onClick={() => toggleOne(inf.id)}
-                            className="text-gray-400 hover:text-gray-700 transition-colors"
-                          >
-                            {isChecked ? (
-                              <CheckSquare size={14} className="text-gray-900" />
-                            ) : (
-                              <Square size={14} />
-                            )}
-                          </button>
-                        </td>
-                        <td className="px-4 py-3">
+                    <Fragment key={inf.id}>
+                      <tr className="transition-colors bg-white hover:bg-gray-50/60">
+                        <td className="px-4 py-3 align-middle">
                           <div className="flex items-center gap-1.5">
                             <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={24} />
                             <span className="text-xs font-medium text-gray-800 truncate max-w-[120px]">
@@ -429,19 +367,19 @@ export default function ScrapeTaskDetailPage() {
                             </button>
                           </div>
                         </td>
-                        <td className="px-4 py-3">
+                        <td className="px-4 py-3 align-middle">
                           <PlatformBadge platform={inf.platform} />
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-700 font-mono truncate max-w-[180px]">
+                        <td className="px-4 py-3 text-xs text-gray-700 font-mono truncate max-w-[180px] align-middle">
                           {inf.email}
                         </td>
-                        <td className="px-4 py-3 text-right text-xs font-medium text-gray-800">
+                        <td className="px-4 py-3 text-right text-xs font-medium text-gray-800 align-middle">
                           {formatFollowers(inf.followers)}
                         </td>
-                        <td className="px-4 py-3 text-xs text-gray-400 truncate max-w-[200px]">
-                          {inf.bio ? inf.bio.slice(0, 80) + (inf.bio.length > 80 ? '…' : '') : '—'}
+                        <td className="px-4 py-3 text-xs text-gray-400 align-middle whitespace-pre-wrap max-w-[320px]">
+                          {inf.bio || '—'}
                         </td>
-                        <td className="px-3 py-2 text-sm">
+                        <td className="px-3 py-2 text-sm align-middle">
                           {inf.relevance_score != null ? (
                             <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
                               inf.relevance_score >= 0.7 ? 'bg-green-50 text-green-700' :
@@ -454,13 +392,13 @@ export default function ScrapeTaskDetailPage() {
                             <span className="text-gray-300">—</span>
                           )}
                         </td>
-                        <td className="px-3 py-2 text-sm text-gray-600 max-w-[200px] truncate" title={inf.match_reason || ''}>
+                        <td className="px-3 py-2 text-sm text-gray-600 align-middle whitespace-pre-wrap max-w-[240px]" title={inf.match_reason || ''}>
                           {inf.match_reason ? inf.match_reason : <span className="text-gray-300">—</span>}
                         </td>
                       </tr>
                       {isExpanded && (
-                        <tr key={`${inf.id}-expand`}>
-                          <td colSpan={8} className="bg-gray-50/60 px-6 py-5">
+                        <tr>
+                          <td colSpan={7} className="bg-gray-50/60 px-6 py-5">
                             <div className="grid grid-cols-[auto_1fr] gap-5 max-w-4xl">
                               {/* 大头像 */}
                               <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={72} />
@@ -518,27 +456,13 @@ export default function ScrapeTaskDetailPage() {
                           </td>
                         </tr>
                       )}
-                    </>
+                    </Fragment>
                   )
                 })}
               </tbody>
             </table>
           </div>
 
-          {/* Bottom action bar */}
-          <div className="flex items-center justify-between pt-1">
-            <p className="text-xs text-gray-400">
-              {t('scrapeDetail.hint')}
-            </p>
-            <button
-              onClick={handleSendAll}
-              disabled={selected.size === 0}
-              className="flex items-center gap-2 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-            >
-              <Send size={13} />
-              {t('scrapeDetail.sendAll', { count: selected.size })}
-            </button>
-          </div>
         </>
       )}
     </div>

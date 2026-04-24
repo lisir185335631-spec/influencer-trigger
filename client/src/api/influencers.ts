@@ -71,12 +71,16 @@ export interface InfluencerListItem {
   email: string
   platform: string | null
   avatar_url?: string | null
+  profile_url?: string | null
   followers: number | null
   industry: string | null
+  bio?: string | null
   status: string
   priority: string
   reply_intent: string | null
   reply_summary: string | null
+  relevance_score?: number | null
+  match_reason?: string | null
   follow_up_count: number
   last_email_sent_at: string | null
   created_at: string

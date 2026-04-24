@@ -89,6 +89,13 @@ def _token_hash(token: str) -> str:
     return hashlib.sha256(token.encode()).hexdigest()
 
 
+# Short Redis timeouts so a missing Redis instance doesn't stall /auth/refresh
+# by the default 5s-per-op × 2-ops path (connect + command). Fail open in that
+# case — the blacklist is a defense-in-depth, not the primary guard.
+_REDIS_CONNECT_TIMEOUT = 0.5
+_REDIS_OP_TIMEOUT = 0.5
+
+
 async def blacklist_refresh_token(token: str) -> None:
     """Add a refresh token to the Redis blacklist so it cannot be reused."""
     settings = get_settings()
@@ -96,11 +103,16 @@ async def blacklist_refresh_token(token: str) -> None:
     key = f"rt_blacklist:{_token_hash(token)}"
     try:
         import redis.asyncio as aioredis
-        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        r = aioredis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=_REDIS_CONNECT_TIMEOUT,
+            socket_timeout=_REDIS_OP_TIMEOUT,
+        )
         await r.setex(key, ttl_seconds, "1")
         await r.aclose()
     except Exception as exc:
-        logger.warning("Redis blacklist write failed (non-fatal): %s", exc)
+        logger.debug("Redis blacklist write failed (non-fatal): %s", exc)
 
 
 async def is_refresh_token_blacklisted(token: str) -> bool:
@@ -109,12 +121,17 @@ async def is_refresh_token_blacklisted(token: str) -> bool:
     key = f"rt_blacklist:{_token_hash(token)}"
     try:
         import redis.asyncio as aioredis
-        r = aioredis.from_url(settings.redis_url, decode_responses=True)
+        r = aioredis.from_url(
+            settings.redis_url,
+            decode_responses=True,
+            socket_connect_timeout=_REDIS_CONNECT_TIMEOUT,
+            socket_timeout=_REDIS_OP_TIMEOUT,
+        )
         result = await r.get(key)
         await r.aclose()
         return result is not None
     except Exception as exc:
-        logger.warning("Redis blacklist read failed (fail-open): %s", exc)
+        logger.debug("Redis blacklist read failed (fail-open): %s", exc)
         return False  # Fail open — do not block login if Redis is down
 
 

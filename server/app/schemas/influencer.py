@@ -110,12 +110,16 @@ class InfluencerListItem(BaseModel):
     email: str
     platform: Optional[str] = None
     avatar_url: Optional[str] = None
+    profile_url: Optional[str] = None
     followers: Optional[int] = None
     industry: Optional[str] = None
+    bio: Optional[str] = None
     status: str
     priority: str
     reply_intent: Optional[str] = None
     reply_summary: Optional[str] = None
+    relevance_score: Optional[float] = None
+    match_reason: Optional[str] = None
     follow_up_count: int
     last_email_sent_at: Optional[datetime] = None
     created_at: datetime
