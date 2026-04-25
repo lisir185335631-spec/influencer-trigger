@@ -245,7 +245,11 @@
       },
       "phases": {
         "starting": "正在启动…",
+        "querying_history": "查询历史已抓 channel…",
+        "llm_thinking": "LLM 生成搜索 query…",
         "strategy_ready": "搜索策略已生成",
+        "browser_starting": "启动无头浏览器…",
+        "searching": "首次搜索 YouTube/IG…",
         "crawling": "正在抓取频道并提取邮箱…",
         "enriching": "正在用 LLM 打分评估…",
         "completed": "已完成"

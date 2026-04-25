@@ -2157,26 +2157,58 @@ async def run_scraper_agent(task_id: int) -> None:
         industry = task.industry
         target_per_platform = max(1, task.target_count // max(1, len(platforms)))
 
-        # Phase 1/5: starting (0%)
-        await update_task_status(db, task, ScrapeTaskStatus.running, progress=0)
-        await manager.broadcast("scrape:progress", {
-            "task_id": task_id,
-            "status": "running",
-            "progress": 0,
-            "phase": "starting",
-            "found_count": 0,
-            "valid_count": 0,
-            "new_count": 0,
-            "reused_count": 0,
-        })
+        # ── Helper: progress broadcast with full counter set ────────────
+        # All early-phase events share these zero counters. Centralising
+        # avoids the field-drift between phases that bit us during the
+        # quota-error rollout (tasks #28-#31 silently dropped fields).
+        async def _ph(progress: int, phase: str) -> None:
+            await update_task_status(db, task, ScrapeTaskStatus.running, progress=progress)
+            await manager.broadcast("scrape:progress", {
+                "task_id": task_id,
+                "status": "running",
+                "progress": progress,
+                "phase": phase,
+                "found_count": 0,
+                "valid_count": 0,
+                "new_count": 0,
+                "reused_count": 0,
+            })
 
-        # Phase 2/5: LLM 生成搜索策略 (5%)
-        # Build "excluded channels" — channels we've successfully extracted
-        # emails from in prior tasks of the same industry within the last 30
-        # days. Passing these to the LLM (as a negative-context hint) and to
-        # the YouTube scraper (as a hard filter on the candidate pool) is the
-        # only way to keep new tasks from re-mining the same 18 "old reliables"
-        # over and over (the pre-fix behaviour observed in tasks #14-#23).
+        # Phase 1/9: starting (0%)
+        await _ph(0, "starting")
+
+        # ── Background: kick off Playwright launch in parallel with the
+        # LLM call below. Browser launch takes 2-3s on a warm machine;
+        # running it concurrently with the 5-15s LLM call hides that cost
+        # entirely. We hand-roll the lifecycle (start() / stop()) instead
+        # of `async with async_playwright()` because that context manager
+        # forces the launch into the synchronous code path. The pw + browser
+        # tuple is awaited just before we need them (right before the
+        # crawl phase).
+        async def _start_browser() -> tuple[object, Browser]:
+            pw_ctx = await async_playwright().start()
+            br = await pw_ctx.chromium.launch(
+                headless=True,
+                args=["--no-sandbox", "--disable-dev-shm-usage"],
+            )
+            return pw_ctx, br
+
+        playwright_task = asyncio.create_task(_start_browser())
+        # Track the started Playwright pieces so the outer finally below
+        # can close them even if the body raises before the inner
+        # try/finally would do it.
+        pw_for_cleanup: object | None = None
+        browser_for_cleanup: Browser | None = None
+
+        # Phase 2/9: querying_history (1%) — DB excluded_channels lookup
+        await _ph(1, "querying_history")
+
+        # Phase 3/9: build "excluded channels" — channels we've successfully
+        # extracted emails from in prior tasks of the same industry within
+        # the last 30 days. Passing these to the LLM (negative context) +
+        # the YouTube scraper (hard filter) is the only way to keep new
+        # tasks from re-mining the same 18 "old reliables" (the pre-fix
+        # behaviour observed in tasks #14-#23).
         from datetime import timedelta
         excluded_profile_urls: list[str] = []
         try:
@@ -2201,6 +2233,9 @@ async def run_scraper_agent(task_id: int) -> None:
             task_id, len(excluded_profile_urls), task.industry,
         )
 
+        # Phase 4/9: llm_thinking (3%) — LLM is about to generate queries
+        await _ph(3, "llm_thinking")
+
         search_queries, fallback_reason = await _generate_search_strategy(
             task.industry, platforms, task.target_market, task.competitor_brands,
             excluded_channels=excluded_profile_urls,
@@ -2214,17 +2249,8 @@ async def run_scraper_agent(task_id: int) -> None:
             task.error_message = f"LLM 搜索策略不可用，使用 fallback 关键词。原因: {fallback_reason}"
         await db.commit()
 
-        await update_task_status(db, task, ScrapeTaskStatus.running, progress=5)
-        await manager.broadcast("scrape:progress", {
-            "task_id": task_id,
-            "status": "running",
-            "progress": 5,
-            "phase": "strategy_ready",
-            "found_count": 0,
-            "valid_count": 0,
-            "new_count": 0,
-            "reused_count": 0,
-        })
+        # Phase 5/9: strategy_ready (5%)
+        await _ph(5, "strategy_ready")
 
         found_total = 0
         valid_total = 0
@@ -2413,31 +2439,64 @@ async def run_scraper_agent(task_id: int) -> None:
                     await _scrape_stub(platform)
 
         try:
-            # Phase 3/5 continues: actual channel crawling now
-            await manager.broadcast("scrape:progress", {
-                "task_id": task_id,
-                "status": "running",
-                "progress": 15,
-                "phase": "crawling",
-                "found_count": 0,
-                "valid_count": 0,
-                "new_count": 0,
-                "reused_count": 0,
-            })
+            # Phase 6/9: browser_starting (7%) — wait for the parallel
+            # Playwright launch we kicked off above. By now the LLM call
+            # finished, so the browser launch (started ~10s earlier in
+            # the background) is usually already complete and this `await`
+            # returns immediately. Worst case we still need to wait the
+            # remaining ~1-2s of browser startup, but that's overlapped
+            # with the LLM cost we already paid.
+            await _ph(7, "browser_starting")
+            try:
+                pw, browser = await playwright_task
+                pw_for_cleanup = pw
+                browser_for_cleanup = browser
+            except Exception as exc:
+                logger.exception("Playwright launch failed: %s", exc)
+                # If the parallel launch crashed, the task can't proceed.
+                # Re-raise into the outer except: clause so the task is
+                # marked failed with a clear error.
+                raise
 
-            async with async_playwright() as pw:
-                browser: Browser = await pw.chromium.launch(
-                    headless=True,
-                    args=["--no-sandbox", "--disable-dev-shm-usage"],
+            try:
+                # Phase 7/9: searching (10%) — scrapers are about to make
+                # their first HTTP call (YouTube search / Brave dork).
+                await _ph(10, "searching")
+
+                # Phase 8/9: crawling (15%) — channel/profile visits start
+                await manager.broadcast("scrape:progress", {
+                    "task_id": task_id,
+                    "status": "running",
+                    "progress": 15,
+                    "phase": "crawling",
+                    "found_count": 0,
+                    "valid_count": 0,
+                    "new_count": 0,
+                    "reused_count": 0,
+                })
+                await update_task_status(db, task, ScrapeTaskStatus.running, progress=15)
+
+                # Run all platforms concurrently, limited by scrape_concurrency semaphore.
+                await asyncio.gather(
+                    *[run_platform(browser, p) for p in platforms],
+                    return_exceptions=True,
                 )
+            finally:
+                # Tear down browser + pw in reverse-construction order.
+                # Wrap each in its own try so a browser-close failure
+                # doesn't prevent pw.stop() from running.
                 try:
-                    # Run all platforms concurrently, limited by scrape_concurrency semaphore.
-                    await asyncio.gather(
-                        *[run_platform(browser, p) for p in platforms],
-                        return_exceptions=True,
-                    )
-                finally:
                     await browser.close()
+                except Exception as e:
+                    logger.warning("[scraper] browser.close() failed: %s", e)
+                try:
+                    await pw.stop()
+                except Exception as e:
+                    logger.warning("[scraper] pw.stop() failed: %s", e)
+                # Mark as already-cleaned so the outer finally below
+                # doesn't try to close them a second time.
+                pw_for_cleanup = None
+                browser_for_cleanup = None
 
             # Phase 4/5: LLM enrichment (relevance scoring)
             await update_task_status(db, task, ScrapeTaskStatus.running, progress=85)
@@ -2575,3 +2634,55 @@ async def run_scraper_agent(task_id: int) -> None:
                 "quota_exceeded": bool(failed_quota_payload),
                 "quota_errors": failed_quota_payload,
             })
+        finally:
+            # ── Outer Playwright cleanup ─────────────────────────────
+            # Three exit paths converge here, in order of likelihood:
+            #
+            # 1) Inner crawl finally already ran (pw_for_cleanup =
+            #    browser_for_cleanup = None) — happy path. Nothing to do.
+            #
+            # 2) Phase 6 await playwright_task succeeded but the inner
+            #    try block raised before the inner finally fired (rare).
+            #    pw_for_cleanup / browser_for_cleanup are non-None.
+            #    Close them.
+            #
+            # 3) Phase 6 await playwright_task hadn't returned yet, but
+            #    the body raised somewhere else — the parallel launch
+            #    might still be in flight. Cancel it; if it already
+            #    succeeded into a stray (pw, browser) tuple, salvage
+            #    and close.
+            if browser_for_cleanup is not None:
+                try:
+                    await browser_for_cleanup.close()
+                except Exception as e:
+                    logger.warning("[scraper] outer browser.close() failed: %s", e)
+            if pw_for_cleanup is not None:
+                try:
+                    await pw_for_cleanup.stop()
+                except Exception as e:
+                    logger.warning("[scraper] outer pw.stop() failed: %s", e)
+            elif playwright_task is not None:
+                if not playwright_task.done():
+                    playwright_task.cancel()
+                    try:
+                        await playwright_task
+                    except (asyncio.CancelledError, Exception):
+                        pass
+                else:
+                    # Done but neither awaited successfully into
+                    # *_for_cleanup nor errored before that — i.e. the
+                    # body raised between the await and the assignment.
+                    # Salvage and clean.
+                    if playwright_task.exception() is None:
+                        try:
+                            stray_pw, stray_browser = playwright_task.result()
+                            try:
+                                await stray_browser.close()
+                            except Exception:
+                                pass
+                            try:
+                                await stray_pw.stop()
+                            except Exception:
+                                pass
+                        except Exception:
+                            pass

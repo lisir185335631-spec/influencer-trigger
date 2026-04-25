@@ -245,7 +245,11 @@
       },
       "phases": {
         "starting": "Initializing…",
-        "strategy_ready": "Search strategy generated",
+        "querying_history": "Loading recently-mined channels…",
+        "llm_thinking": "LLM generating search queries…",
+        "strategy_ready": "Search strategy ready",
+        "browser_starting": "Launching headless browser…",
+        "searching": "First-pass search on YouTube/IG…",
         "crawling": "Crawling channels & extracting emails…",
         "enriching": "Scoring relevance with LLM…",
         "completed": "Completed"

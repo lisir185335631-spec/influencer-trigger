@@ -55,7 +55,16 @@ type LiveProgress = {
   task_id: number
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
   progress: number
-  phase?: 'starting' | 'strategy_ready' | 'crawling' | 'enriching' | 'completed'
+  phase?:
+    | 'starting'
+    | 'querying_history'
+    | 'llm_thinking'
+    | 'strategy_ready'
+    | 'browser_starting'
+    | 'searching'
+    | 'crawling'
+    | 'enriching'
+    | 'completed'
   found_count: number
   valid_count: number
   new_count?: number
