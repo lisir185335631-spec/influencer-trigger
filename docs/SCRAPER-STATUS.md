@@ -137,6 +137,9 @@ LLM 返回的 query 里：
 | YouTube DOM 变更 | YouTube 改 SPA 结构 | 用 ytInitialData JSON regex（比 selector 抗变） |
 | `agent_runs` 状态与 `scrape_tasks` 不一致 | scraper 内部消化异常未 re-raise | **已知遗留**，影响 admin 页面而非业务，未来如需可让 supervisor 反查 task 状态 |
 | Windows 日志 GBK 编码 emoji 报 UnicodeEncodeError | sqlalchemy INFO log 含 ☑ 等 emoji | **已知遗留**，仅日志显示问题，不影响业务；需要可设 `PYTHONIOENCODING=utf-8` |
+| admin `/api/admin/scrape/tasks` 不返回 display_number | scrape_admin.py 直接构造 dict，绕开 ScrapeTaskResponse | **已知遗留 — 设计选择**。admin 看主键 id 反而便于和后端日志、`agent_runs.task_id`、URL 对应；展示编号是给业务用户看的语义。普通用户看不到 admin 页面 |
+| settings.py 写 cookies 用 `write_text` 非原子 | 单次 `Path.write_text(json.dumps(...))` 是 truncate-then-write | **已知遗留 — 评估后未修**。单 worker uvicorn + Python GIL 单进程内顺序执行；连点保存 = 后写覆盖前写（预期行为，不是 corruption）。修需 5 行 tempfile + os.replace，引入 cleanup 责任和测试面，得不偿失 |
+| settings.py POST cookies 无 payload 大小限制 | `YouTubeCookiesPayload.raw: str` 无 `max_length` | **已知遗留 — 评估后未修**。前置 `require_manager_or_above` auth gate 已是更靠前防御层；典型 cookies < 10KB；FastAPI 默认 body 解析自带合理上限 |
 
 ## 调优时间线
 
@@ -159,6 +162,9 @@ LLM 返回的 query 里：
 | 2026-04-24 | `a89f5a7` | excluded 短暂改成 all-time/all-industry（之后回退） |
 | 2026-04-25 | `c4c2647` | 精度+稳定性+work-aligned progress overhaul |
 | 2026-04-25 | `2c26b6a` | Windows asyncio policy + outer-except 诊断 + #65 follow-up |
+| 2026-04-25 | `d11f522` | scrape display_number 连续编号（按 id asc 实时计算，删除自动重排） |
+| 2026-04-25 | `a0c3dd7` | settings UI YouTube cookies 管理面板（粘贴 DevTools cookie 字符串、F12 引导、auth-critical 校验） |
+| 2026-04-26 | `620d6e6` | scraper cookies 路径 off-by-one 修复 — `parents[3]` → `parents[2]`，与 settings.py / import script / README 对齐到 `server/data/youtube-cookies.json`（修复前所有 cookies 配置都被 scraper 静默忽略） |
 
 ## 服务启动（Windows）
 
