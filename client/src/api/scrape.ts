@@ -11,6 +11,14 @@ export interface ScrapeTask {
   progress: number
   found_count: number
   valid_count: number
+  // Split valid_count into the two cases the UI cares about:
+  //   new_count    — influencers freshly discovered by this task
+  //   reused_count — channels already mined by an earlier task; under the
+  //                  default fresh-only mode this is usually 0
+  // Backend always populates these; old records (before the 2026-04-25
+  // migration) have new_count == valid_count and reused_count == 0.
+  new_count: number
+  reused_count: number
   error_message: string | null
   created_by: number | null
   started_at: string | null

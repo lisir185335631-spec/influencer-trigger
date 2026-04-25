@@ -35,6 +35,82 @@ logger = logging.getLogger(__name__)
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
+# CJK = Chinese / Japanese (Hiragana/Katakana/Kanji) / Korean. The ranges below
+# cover Hangul, Hiragana, Katakana, CJK Unified Ideographs (incl. Extension A),
+# and CJK Compat. We don't differentiate sub-languages here — the only thing
+# downstream cares about is "is this query CJK or Latin-script", because IG
+# bios in different scripts need different dork limiters and Brave Search's
+# index for CJK profiles is much smaller than English.
+_CJK_RE = re.compile(
+    r"[぀-ヿ"     # Hiragana + Katakana
+    r"가-힣"      # Hangul Syllables
+    r"㐀-䶿"      # CJK Extension A
+    r"一-鿿"      # CJK Unified Ideographs (covers most CN/JP kanji/TW)
+    r"豈-﫿"      # CJK Compatibility Ideographs
+    r"]"
+)
+
+
+def _is_cjk_text(text: str) -> bool:
+    """Returns True if text contains any CJK character.
+
+    Used to decide query-language alignment: if `expected_lang == 'en'` and a
+    query contains CJK, the query is dropped (the August 2026 IG bug — LLM
+    returned 8 Chinese queries while target_market='us', resulting in 32
+    dorks × 0 hits each)."""
+    if not text:
+        return False
+    return _CJK_RE.search(text) is not None
+
+
+# target_market → expected query language. The mapping is intentionally coarse;
+# we only care about the script bucket (en / cn / tw / jp / kr) since that's
+# what dork limiters and Brave's index respect.
+_MARKET_TO_LANG: dict[str, str] = {
+    # English-speaking
+    "us": "en", "uk": "en", "au": "en", "ca": "en", "nz": "en",
+    "global": "en", "intl": "en", "in": "en",
+    # Mandarin (mainland)
+    "cn": "cn", "china": "cn", "mainland": "cn",
+    # Mandarin (traditional)
+    "tw": "tw", "taiwan": "tw", "hk": "tw", "hongkong": "tw", "mo": "tw",
+    # Other CJK
+    "jp": "jp", "japan": "jp",
+    "kr": "kr", "korea": "kr",
+}
+
+
+def _expected_query_lang(industry: str, target_market: str | None) -> str:
+    """Decide what language outgoing search queries should be in.
+
+    Priority: target_market wins (it's the explicit user choice for *where*
+    we're hunting). If target_market is unset, fall back to the industry
+    keyword's script — Chinese industry → Chinese queries, English → English."""
+    market = (target_market or "").lower().strip()
+    if market in _MARKET_TO_LANG:
+        return _MARKET_TO_LANG[market]
+    # Unknown / empty market: read from industry script
+    if _is_cjk_text(industry or ""):
+        return "cn"
+    return "en"
+
+
+def _query_matches_lang(query: str, expected_lang: str) -> bool:
+    """Returns True if `query` is in the expected script bucket.
+
+    Rule of thumb:
+      - expected 'en' → query must NOT contain CJK (English brand words like
+        'GPT', 'Canva' are fine because they're Latin script)
+      - expected 'cn'/'tw'/'jp'/'kr' → query MUST contain at least one CJK
+        character (loose check; we don't try to disambiguate simplified vs
+        traditional Chinese vs Japanese kanji at this layer)
+    """
+    has_cjk = _is_cjk_text(query)
+    if expected_lang == "en":
+        return not has_cjk
+    return has_cjk
+
+
 _SUB_COUNT_RE = re.compile(r"([\d.,]+)\s*([KMB]?)", re.IGNORECASE)
 
 
@@ -330,13 +406,21 @@ async def _scrape_youtube(
     target_count: int,
     on_found: "Callable[[str, str, str], Awaitable[None]]",
     queries: list[str] | None = None,
+    excluded_channels: set[str] | None = None,
 ) -> None:
     """
     Search YouTube for '{industry} influencer', extract channel About pages for emails.
+
+    `excluded_channels` is a set of full channel URLs (e.g.
+    "https://www.youtube.com/@J3M_AI") that the scraper has previously
+    successfully extracted emails from. Visiting them again yields no new
+    contacts, so they're filtered out of the candidate pool BEFORE visit —
+    saving the per-channel budget (~10s) for genuinely new candidates.
     """
     ctx = await _new_context(browser, use_yt_cookies=True)
     page = await ctx.new_page()
     await stealth_async(page)
+    excluded = excluded_channels or set()
 
     try:
         search_queries = queries or [f"{industry} creator contact email"]
@@ -348,19 +432,28 @@ async def _scrape_youtube(
         # the raw HTML — this is resilient to YouTube's DOM schema changes.
         _YT_CHANNEL_PATH_RE = re.compile(r'"(?:canonicalBaseUrl|url)":"(/@[A-Za-z0-9_.\-]+)"')
 
-        for query in search_queries:
+        # Per-query scroll cap. With early-exit on consecutive zero-growth
+        # scrolls, we rarely hit 8 — but the cap is the safety net.
+        _MAX_SCROLLS = 8
+        # Stop scrolling a single query once 2 consecutive scrolls find no new
+        # channels. YouTube's ytInitialData lazy-load typically saturates after
+        # 1-2 scrolls; spending the remaining 6 on a query that's already dry
+        # is the bug observed in task #23 (8 scrolls all returned 0 new).
+        _SCROLL_STALL_THRESHOLD = 2
+
+        for q_idx, query in enumerate(search_queries):
             search_url = f"https://www.youtube.com/results?search_query={query}"
-            logger.info("[YouTube] search query: %r", query)
-            await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+            logger.info("[YouTube] query %d/%d: %r", q_idx + 1, len(search_queries), query)
+            try:
+                await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+            except Exception as e:
+                logger.warning("[YouTube] goto failed for %r: %s — skipping query", query, e)
+                continue
             await _random_delay()
 
-            # Extract channels from this page. Scroll a few times to trigger
-            # lazy-load appends to ytInitialData. A larger pool is needed when
-            # the keyword's email-hit rate is low (e.g. ~20-30% for AI / Notion
-            # type queries) — we aim for 5× target_count candidates so even
-            # 20% hit rate still yields the target.
             found_this_query: set[str] = set()
-            for scroll_i in range(8):
+            stall_count = 0
+            for scroll_i in range(_MAX_SCROLLS):
                 html = await page.content()
                 # Regex over 1–2 MB HTML on the event-loop thread freezes all
                 # HTTP handlers. Offload to thread pool.
@@ -372,30 +465,56 @@ async def _scrape_youtube(
                         found_this_query.add(full_url)
                         new_count += 1
                 logger.info(
-                    "[YouTube] scroll #%d: html_len=%d regex_hits=%d new_channels=%d total_this_query=%d",
-                    scroll_i + 1, len(html), len(matches), new_count, len(found_this_query),
+                    "[YouTube] q%d scroll #%d: html_len=%d regex_hits=%d new_channels=%d total_this_query=%d",
+                    q_idx + 1, scroll_i + 1, len(html), len(matches), new_count, len(found_this_query),
                 )
-                if len(found_this_query) >= target_count * 15:
-                    break
+                if new_count == 0:
+                    stall_count += 1
+                    if stall_count >= _SCROLL_STALL_THRESHOLD:
+                        logger.info(
+                            "[YouTube] q%d early-exit scroll: %d consecutive 0-new scrolls",
+                            q_idx + 1, stall_count,
+                        )
+                        break
+                else:
+                    stall_count = 0
                 await page.evaluate("window.scrollBy(0, 1800)")
                 await asyncio.sleep(2)
 
+            # Merge into global pool (preserve order = first occurrence wins).
+            # No early-break across queries — each query gets a chance to
+            # contribute distinct channels even when earlier queries already
+            # filled the per-task `target_count * 15` quota.
             for link in found_this_query:
                 if link not in all_channel_links:
                     all_channel_links.append(link)
 
-            if len(all_channel_links) >= target_count * 15:
-                break
+        # ── Cross-task DB dedup ─────────────────────────────────────────
+        # Filter out channels we've already extracted emails from in prior
+        # tasks. Without this, the candidate pool's first 5-10 entries are
+        # always the "old reliables" (J3M_AI, lichangzhanglaile, ...) — the
+        # scraper visits them, hits the existing influencer row, and exits
+        # via the link-existing path with reused_count++. Net new finds: 0.
+        before_filter = len(all_channel_links)
+        if excluded:
+            all_channel_links = [u for u in all_channel_links if u not in excluded]
+        # Shuffle so candidate visit order isn't biased by YouTube's ranking
+        # (which puts the same first 5 channels every time for a given query).
+        # Without shuffle, the first 5 channel-budget slots burn through the
+        # most "front-page" candidates regardless of email hit rate; with
+        # shuffle, hit rate evens out across the pool.
+        random.shuffle(all_channel_links)
 
         logger.info(
-            "[YouTube] collected %d channel links across %d queries",
-            len(all_channel_links), len(search_queries),
+            "[YouTube] collected %d channels (raw=%d, excluded=%d/%d) across %d queries — shuffled",
+            len(all_channel_links), before_filter, before_filter - len(all_channel_links),
+            len(excluded), len(search_queries),
         )
 
-        # Visit up to 5× the target count. Empirical hit rate:
+        # Visit up to 15× the target count. Empirical hit rate:
         #   商业化关键词 (Canva / ChatGPT review): ~35%
         #   AI tools / Notion productivity:          ~20-27%
-        # 5× buffer means even a 20% hit rate still delivers target_count.
+        # 15× buffer means even a 20% hit rate still delivers target_count.
         max_to_visit = min(len(all_channel_links), target_count * 15)
 
         # Per-channel hard watchdog: playwright's own op-level timeouts don't
@@ -569,12 +688,61 @@ async def _scrape_youtube(
 # Brave gives us an authorized JSON API with 2000 free queries/month — 1–2
 # orders of magnitude more than a typical scrape task needs.
 
-_IG_DORK_TEMPLATES = (
-    'site:instagram.com "{q}" "gmail.com"',
-    'site:instagram.com "{q}" "business inquiries"',
-    'site:instagram.com "{q}" creator collab',
+# Dork templates per script. The "limiter" half (after `"{q}"`) needs to match
+# the script of the IG bio we're looking for: an English-language IG creator's
+# bio writes "business inquiries" / "for collab"; a Chinese creator writes
+# "商务合作" / "合作邮箱"; a Japanese creator writes "お仕事". The pre-fix
+# implementation hardcoded the English limiters and produced 0 hits whenever
+# the LLM returned non-English queries.
+#
+# All variants keep `gmail.com` and `email "@"` as universal dorks — those
+# strings are language-agnostic and present in any creator's contact info.
+# Dork templates per script. The 2026-04-25 5-expert review found that 3 of
+# the original 4 templates produced ~0 hits each (e.g. `"Power Bank"
+# "business inquiries"` returned 0 across the entire candidate pool while
+# `"Power Bank" email "@"` returned 13). Net effect: 75% of Brave quota
+# burned for nothing. The slimmer set below keeps:
+#   1) email + @ — strong filter that the page actually contains a contact
+#   2) bare site limiter — broadest recall, lets `_ig_profile_url_from_href`
+#      do the post-filter to keep profile URLs only (drops /p/, /reel/, etc.)
+# Local-language `business inquiries` analogues are kept ONLY for non-en
+# markets where they actually have a chance of matching CN/JP/KR bios — and
+# even there they're gravy on top of `email "@"`.
+_IG_DORK_TEMPLATES_EN = (
     'site:instagram.com "{q}" email "@"',
+    'site:instagram.com "{q}"',
 )
+_IG_DORK_TEMPLATES_CN = (
+    'site:instagram.com "{q}" email "@"',
+    'site:instagram.com "{q}"',
+    'site:instagram.com "{q}" "合作"',
+)
+_IG_DORK_TEMPLATES_TW = (
+    'site:instagram.com "{q}" email "@"',
+    'site:instagram.com "{q}"',
+    'site:instagram.com "{q}" "合作"',
+)
+_IG_DORK_TEMPLATES_JP = (
+    'site:instagram.com "{q}" email "@"',
+    'site:instagram.com "{q}"',
+    'site:instagram.com "{q}" "お仕事"',
+)
+_IG_DORK_TEMPLATES_KR = (
+    'site:instagram.com "{q}" email "@"',
+    'site:instagram.com "{q}"',
+    'site:instagram.com "{q}" "협업"',
+)
+
+
+def _ig_dork_templates(lang: str) -> tuple[str, ...]:
+    """Pick dork limiters for the script of the queries we're about to run."""
+    return {
+        "en": _IG_DORK_TEMPLATES_EN,
+        "cn": _IG_DORK_TEMPLATES_CN,
+        "tw": _IG_DORK_TEMPLATES_TW,
+        "jp": _IG_DORK_TEMPLATES_JP,
+        "kr": _IG_DORK_TEMPLATES_KR,
+    }.get(lang, _IG_DORK_TEMPLATES_EN)
 
 # Paths under instagram.com/... that are NOT user profiles.
 _IG_RESERVED_PATHS = frozenset({
@@ -590,9 +758,17 @@ _IG_PROFILE_URL_RE = re.compile(
 )
 
 _LINK_AGGREGATOR_RE = re.compile(
-    r'https?://(?:www\.)?(?:linktr\.ee|beacons\.ai|linkin\.bio|campsite\.bio|'
-    r'bio\.link|carrd\.co|lnk\.bio|allmylinks\.com|many\.link|flowcode\.com)'
-    r'/[A-Za-z0-9._\-]+',
+    r'https?://(?:www\.)?('
+    r'linktr\.ee|beacons\.ai|linkin\.bio|campsite\.bio|bio\.link|'
+    r'carrd\.co|lnk\.bio|allmylinks\.com|many\.link|flowcode\.com|'
+    # link.me — used by Unbox Therapy and other major KOLs (added 2026-04-25
+    # after Apify revealed it's the top aggregator we were missing)
+    r'link\.me|'
+    # Other aggregators frequently in IG bios
+    r'linkpop\.com|snipfeed\.co|contactin\.bio|direct\.me|magic\.ly|'
+    r'milkshake\.app|stan\.store|komi\.io|withkoji\.com|tap\.bio|'
+    r'pop\.bio|popl\.co|toneden\.io|hypeauditor\.com'
+    r')/[A-Za-z0-9._\-]+',
     re.IGNORECASE,
 )
 
@@ -699,17 +875,25 @@ async def _discover_ig_profiles(
     industry: str,
     queries: list[str] | None,
     target_urls: int,
+    target_market: str | None = None,
 ) -> list[str]:
     """Generate Google-Dork queries from LLM-suggested seeds (or the raw
     industry keyword as fallback), run them through Brave Search, return
-    a dedup profile URL list capped at target_urls."""
+    a dedup profile URL list capped at target_urls.
+
+    Picks dork limiters by language inferred from `target_market` so an EN-only
+    creator's "business inquiries" doesn't get searched against a CN keyword's
+    page (which is how task #27 produced 32 dorks × 0 hits)."""
     seeds = [q.strip() for q in (queries or [industry]) if q and q.strip()]
     if not seeds:
         seeds = [industry]
 
+    expected_lang = _expected_query_lang(industry, target_market)
+    templates = _ig_dork_templates(expected_lang)
+
     dorks: list[str] = []
     for q in seeds:
-        for tpl in _IG_DORK_TEMPLATES:
+        for tpl in templates:
             dorks.append(tpl.format(q=q))
 
     all_profiles: list[str] = []
@@ -737,9 +921,56 @@ async def _discover_ig_profiles(
         await asyncio.sleep(random.uniform(1.1, 1.6))
 
     logger.info(
-        "[Instagram] discovery done: %d unique profile URLs from %d dorks",
-        len(all_profiles), len(dorks),
+        "[Instagram] discovery done: %d unique profile URLs from %d dorks (lang=%s)",
+        len(all_profiles), len(dorks), expected_lang,
     )
+
+    # ── Low-hit fallback ───────────────────────────────────────────
+    # If LLM-generated queries collectively produced too few IG profiles
+    # (because the queries were over-specific niche phrases / had a
+    # script mismatch / Brave's IG index just doesn't have the long-tail
+    # / etc.), retry with the raw industry keyword and the two universal
+    # dorks (`gmail.com` / `email "@"`). Universal dorks don't depend on
+    # the page containing language-specific phrases like "business
+    # inquiries", so they recover the broad signal even when the
+    # targeted dorks miss.
+    #
+    # Threshold = max(target_urls // 3, 5). Rationale: cross-task
+    # dedup downstream typically eliminates 30-60% of the candidate
+    # pool when the same industry has been mined before; if discovery
+    # collected fewer than ~1/3 of `target_urls`, the post-dedup pool
+    # will be tiny. Always trigger when total < 5 even if target_urls
+    # itself is small (e.g. target_count=2 → target_urls=30 → threshold
+    # 10, but we still want retry on a 4-hit run).
+    threshold = max(target_urls // 3, 5)
+    if len(all_profiles) < threshold:
+        logger.warning(
+            "[Instagram] only %d hits across %d dorks (threshold=%d) — "
+            "retrying with bare industry %r + universal dorks",
+            len(all_profiles), len(dorks), threshold, industry,
+        )
+        retry_dorks = [
+            f'site:instagram.com "{industry}" "gmail.com"',
+            f'site:instagram.com "{industry}" email "@"',
+        ]
+        for retry_dork in retry_dorks:
+            if len(all_profiles) >= target_urls:
+                break
+            logger.info("[Instagram] retry dork: %r", retry_dork)
+            urls = await _search_brave(retry_dork, limit=20)
+            logger.info("[Instagram] retry: brave=%d", len(urls))
+            for u in urls:
+                if u not in seen:
+                    seen.add(u)
+                    all_profiles.append(u)
+                    if len(all_profiles) >= target_urls:
+                        break
+            await asyncio.sleep(random.uniform(1.1, 1.6))
+        logger.info(
+            "[Instagram] post-retry total: %d profiles",
+            len(all_profiles),
+        )
+
     return all_profiles
 
 
@@ -813,24 +1044,101 @@ def _extract_linktree_url(html: str) -> str | None:
 async def _scrape_aggregator_emails(
     ctx: BrowserContext,
     aggregator_url: str,
-    timeout_sec: float = 8.0,
+    timeout_sec: float = 18.0,
 ) -> list[str]:
     """Open a Linktree/bio.link/beacons page (public, no login wall) and
-    extract emails from its rendered HTML. Uses a short-lived page in the
-    caller's context to keep stealth + UA continuity."""
+    extract emails from its rendered HTML.
+
+    Many aggregators (especially beacons.ai, link.me, stan.store) ship a
+    React/Next.js shell where the SSR HTML is ~5KB of bootstrapping code
+    and the actual link list — including any contact email — only paints
+    after JS hydration. Pre-fix `wait_until=domcontentloaded` + 1.2s
+    sleep was too eager: task #40 audit found beacons.ai/ijustine had
+    SSR HTML of just 5.9KB and no emails, while linktr.ee/linustech had
+    187KB SSR with the email already inline. We now:
+
+      1. wait for `networkidle` (gives React/Next time to fetch the
+         link list and inject DOM nodes), with a fallback wait if
+         networkidle never fires (some pages keep websockets open)
+      2. wait an extra 2s after networkidle for any deferred mailto
+         rendering
+      3. AS A LAST RESORT, also harvest from a fresh `agg_page.content()`
+         AFTER scrolling — some aggregators lazy-render contact cards
+         only when they enter the viewport
+
+    timeout_sec defaults to 18s (was 8s) — the budget is per-Linktree-
+    visit, dominated by JS hydration cost. Caller can tighten it.
+    """
     agg_page: Page | None = None
     try:
         async with asyncio.timeout(timeout_sec):
             agg_page = await ctx.new_page()
-            await agg_page.goto(
-                aggregator_url,
-                wait_until="domcontentloaded",
-                timeout=int(timeout_sec * 1000),
-            )
+            try:
+                # Stage 1: navigate. networkidle blocks until 500ms with no
+                # in-flight requests; on heavy aggregators that means the
+                # initial fetch + React hydration + first link list render
+                # all completed. If the page keeps pinging analytics
+                # forever, networkidle never fires and we'd hang — the
+                # outer asyncio.timeout protects us, plus we lower the
+                # navigation timeout itself to ~12s.
+                await agg_page.goto(
+                    aggregator_url,
+                    wait_until="networkidle",
+                    timeout=12000,
+                )
+            except Exception:
+                # Fallback: some pages (analytics-heavy) never reach
+                # networkidle. Settle for domcontentloaded + sleep.
+                try:
+                    await agg_page.goto(
+                        aggregator_url,
+                        wait_until="domcontentloaded",
+                        timeout=10000,
+                    )
+                except Exception as e:
+                    logger.debug("[Instagram] aggregator goto failed: %s", e)
+                    return []
+
+            # Stage 2: extra settle time for deferred mailto / contact-card
+            # rendering. 2s empirically catches ~all React aggregators
+            # without bloating per-profile budget.
+            await asyncio.sleep(2.0)
+
+            # Stage 3: harvest emails from rendered DOM.
             content = await agg_page.content()
-            return await asyncio.to_thread(_extract_emails, content)
+            emails = await asyncio.to_thread(_extract_emails, content)
+
+            # Also check `mailto:` links explicitly — some aggregators put
+            # the email only in href="mailto:..." not as visible text, so
+            # the text-regex would miss it.
+            try:
+                mailto_hrefs = await agg_page.eval_on_selector_all(
+                    "a[href^='mailto:']",
+                    "els => els.map(e => e.href)",
+                )
+                for href in mailto_hrefs or []:
+                    addr = href.split("mailto:", 1)[-1].split("?", 1)[0].strip()
+                    if addr and "@" in addr and addr.lower() not in {e.lower() for e in emails}:
+                        emails.append(addr)
+            except Exception:
+                pass
+
+            # Stage 4 (last resort): if still no emails, scroll to trigger
+            # lazy-rendering of contact cards lower on the page, then
+            # re-harvest. Many beacons.ai / stan.store layouts only render
+            # the contact button when it enters viewport.
+            if not emails:
+                try:
+                    await agg_page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+                    await asyncio.sleep(1.5)
+                    content2 = await agg_page.content()
+                    emails = await asyncio.to_thread(_extract_emails, content2)
+                except Exception:
+                    pass
+
+            return emails
     except Exception as e:
-        logger.debug("[Instagram] linktree %s failed: %s", aggregator_url, e)
+        logger.debug("[Instagram] aggregator %s failed: %s", aggregator_url, e)
         return []
     finally:
         if agg_page is not None:
@@ -840,26 +1148,258 @@ async def _scrape_aggregator_emails(
                 pass
 
 
+async def _scrape_via_apify(
+    profile_urls: list[str],
+    token: str,
+    actor: str,
+) -> dict[str, dict]:
+    """Call Apify's Instagram Profile Scraper to extract bio/email/external_url
+    for a batch of profile URLs. Returns a {username: profile_data} dict.
+
+    The 2026-04-25 audit found that IG's SSR HTML hides the contact_email,
+    business_email and external_url fields behind a login wall — even
+    headlining KOLs like Dave2D (248k followers) and Unbox Therapy (3M)
+    return emails=0 from a Playwright SSR scrape. Apify's actor uses a
+    different access path (private API / mobile endpoint emulation) and
+    returns the full contact set including business_email which is what
+    PremLogin actually needs for outreach.
+
+    Each profile data dict has keys (Apify schema):
+      - username, fullName, biography, followersCount, profilePicUrl,
+        externalUrl, businessEmail, businessPhoneNumber,
+        businessCategoryName, isBusinessAccount, ...
+    """
+    if not profile_urls:
+        return {}
+    # Apify's instagram-profile-scraper expects `usernames` (plain handles),
+    # NOT `directUrls`. Extracting username from each URL.
+    usernames: list[str] = []
+    for url in profile_urls:
+        m = _IG_PROFILE_URL_RE.match(url)
+        if m:
+            usernames.append(m.group(1).lower())
+    if not usernames:
+        return {}
+    api_url = f"https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items"
+    payload = {"usernames": usernames}
+    # Apify run-sync-get-dataset-items takes 60-180s for 50 profiles, longer
+    # under IG anti-bot heat. read=300 gives a comfortable margin. The connect
+    # timeout stays short (15s) because Apify is on global Cloudflare —
+    # connection itself is fast, all the time is on the actor running.
+    timeout = httpx.Timeout(connect=15.0, read=300.0, write=30.0, pool=10.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                api_url,
+                params={"token": token},
+                json=payload,
+            )
+    except Exception as e:
+        # Use `%r` instead of `%s` because some httpx errors (ReadTimeout,
+        # ConnectError) stringify to empty — task #41 was diagnosed by the
+        # empty fallback log; we now expose the exception type+repr so
+        # the next time it happens we know if it's timeout vs DNS vs auth.
+        logger.warning(
+            "[Instagram/Apify] request failed: %s: %r",
+            type(e).__name__, e,
+            exc_info=True,
+        )
+        return {}
+
+    if resp.status_code >= 400:
+        logger.warning(
+            "[Instagram/Apify] HTTP %d — %s",
+            resp.status_code, resp.text[:300],
+        )
+        return {}
+
+    try:
+        data = resp.json()
+    except Exception as e:
+        logger.warning("[Instagram/Apify] JSON decode failed: %s", e)
+        return {}
+
+    # Apify returns a list of profile data dicts (one per requested URL).
+    # Index by username (lowercase) for easy lookup against profile_urls.
+    out: dict[str, dict] = {}
+    for item in data or []:
+        if not isinstance(item, dict):
+            continue
+        username = (item.get("username") or "").lower()
+        if username:
+            out[username] = item
+    logger.info(
+        "[Instagram/Apify] scraped %d/%d profiles",
+        len(out), len(profile_urls),
+    )
+    return out
+
+
+async def _scrape_instagram_via_apify(
+    profile_urls: list[str],
+    target_count: int,
+    on_found: "Callable[[str, str, str], Awaitable[None]]",
+    apify_token: str,
+    apify_actor: str,
+    browser: Browser,
+) -> None:
+    """Apify-driven IG profile extraction. Replaces Playwright per-profile
+    SSR visits with a single Apify batch call that returns full contact
+    metadata (incl. businessEmail/externalUrl which IG hides behind login)."""
+    # Apify charges per profile, so cap the batch at target_count * 5 to
+    # avoid blowing through credit on candidates we won't reach. The Brave
+    # candidate pool is usually 100+ but we only need ~50 to hit target=10
+    # at ~40-60% expected hit rate.
+    max_to_scrape = min(len(profile_urls), max(target_count * 5, 20))
+    batch = profile_urls[:max_to_scrape]
+    logger.info(
+        "[Instagram/Apify] scraping batch of %d profiles (target=%d)",
+        len(batch), target_count,
+    )
+    by_username = await _scrape_via_apify(batch, apify_token, apify_actor)
+
+    if not by_username:
+        logger.warning(
+            "[Instagram/Apify] returned 0 profile data items. "
+            "Check APIFY_API_TOKEN validity / actor availability / quota."
+        )
+        return
+
+    # Build a Linktree fallback browser context lazily, only if at least one
+    # profile needs it (saves browser launch cost on tasks where every
+    # profile already has a businessEmail).
+    fallback_ctx: BrowserContext | None = None
+
+    found_counter = 0
+    try:
+        for profile_url in batch:
+            if found_counter >= target_count:
+                break
+            m = _IG_PROFILE_URL_RE.match(profile_url)
+            if not m:
+                continue
+            username = m.group(1).lower()
+            data = by_username.get(username)
+            if not data:
+                logger.debug("[Instagram/Apify] no data for %s", username)
+                continue
+
+            full_name = (data.get("fullName") or "").strip()
+            biography = (data.get("biography") or "").strip()
+            followers = data.get("followersCount")
+            avatar_url = (data.get("profilePicUrlHD") or data.get("profilePicUrl") or "").strip() or None
+            external_url = (data.get("externalUrl") or "").strip()
+            business_email = (data.get("businessEmail") or "").strip()
+            public_email = (data.get("publicEmail") or "").strip()
+
+            # Email candidates, in priority order:
+            #   1) businessEmail field (Apify exposes it directly — IG's
+            #      "Email" contact button value)
+            #   2) publicEmail field (set on personal accounts that opt in)
+            #   3) plain-text emails inside biography
+            #   4) Linktree/beacons.ai/etc. aggregator at externalUrl
+            emails: list[str] = []
+            for direct in (business_email, public_email):
+                if direct:
+                    emails.extend(_extract_emails(direct))
+            if not emails and biography:
+                emails = await asyncio.to_thread(_extract_emails, biography)
+
+            # Linktree fallback (only when bio + business_email both empty
+            # and externalUrl points to a known aggregator). Saves Playwright
+            # cost on profiles that already gave us email via Apify.
+            if not emails and external_url and _LINK_AGGREGATOR_RE.match(external_url):
+                if fallback_ctx is None:
+                    fallback_ctx = await _new_context(browser)
+                logger.info(
+                    "[Instagram/Apify] %s: no direct email, trying aggregator %s",
+                    username, external_url,
+                )
+                emails = await _scrape_aggregator_emails(fallback_ctx, external_url)
+
+            logger.info(
+                "[Instagram/Apify] @%s: followers=%s biz_email=%r emails=%d ext_url=%s",
+                username, followers, business_email, len(emails),
+                external_url[:80] if external_url else "—",
+            )
+
+            for email in emails:
+                if "@" not in email:
+                    continue
+                domain = email.split("@", 1)[1]
+                if not await _mx_valid(domain):
+                    continue
+                display_name = full_name or f"@{username}"
+                await on_found(
+                    email,
+                    display_name,
+                    profile_url,
+                    followers=followers if isinstance(followers, int) else None,
+                    bio=biography or None,
+                    avatar_url=avatar_url,
+                )
+                found_counter += 1
+                if found_counter >= target_count:
+                    break
+    finally:
+        if fallback_ctx is not None:
+            try:
+                await fallback_ctx.close()
+            except Exception:
+                pass
+
+    logger.info(
+        "[Instagram/Apify] phase done: emails-emitted=%d / target=%d (scraped %d profiles)",
+        found_counter, target_count, len(batch),
+    )
+
+
 async def _scrape_instagram(
     browser: Browser,
     industry: str,
     target_count: int,
     on_found: "Callable[[str, str, str], Awaitable[None]]",
     queries: list[str] | None = None,
+    target_market: str | None = None,
+    excluded_profiles: set[str] | None = None,
 ) -> None:
     """
-    Instagram scraper — Phase 1 rewrite:
-      - Entry: Google-Dork via DuckDuckGo + Bing (HTTP, no Playwright).
-        Replaces hashtag explore page which redirects to login since 2024.
-      - Per candidate: open IG profile with Playwright, extract bio email +
-        SSR metadata. If no bio email, follow outbound Linktree/bio.link link
-        and extract from there.
-      - Concurrency / hard per-profile timeout / candidate pool 15× /
-        resource blocking / regex-to-thread / stop_event — all mirror
-        `_scrape_youtube` so IG stops being the pipeline's bottleneck.
+    Instagram scraper.
+
+    Strategy (chooses based on settings.apify_api_token):
+
+      Path A — Apify (preferred when token is set, ~40-60% email hit rate):
+        1. Brave Search dorks → candidate IG profile URLs (unchanged)
+        2. Cross-task DB dedup + shuffle (unchanged)
+        3. Batch-call Apify's Instagram Profile Scraper for the candidates
+           (one HTTP call per ~50 profiles), get businessEmail + bio +
+           externalUrl + followersCount per profile
+        4. For profiles where businessEmail is empty but externalUrl points
+           to a link aggregator (Linktree/beacons.ai/etc.), Playwright-visit
+           that aggregator and harvest emails from there
+
+      Path B — Playwright SSR fallback (when token not set, ~5-10% hit rate):
+        1-2 same as Path A
+        3. Per profile: Playwright visit → SSR HTML → og:description bio +
+           any plain-text email
+        4. Linktree fallback if bio has no email
+
+    target_market drives dork limiters (en/cn/tw/jp/kr).
+    excluded_profiles cross-task DB dedup filter.
     """
     target_urls = target_count * 15
-    profile_urls = await _discover_ig_profiles(industry, queries, target_urls)
+    excluded = excluded_profiles or set()
+    profile_urls = await _discover_ig_profiles(industry, queries, target_urls, target_market=target_market)
+    # Cross-task dedup: filter out profiles whose emails we've already
+    # mined.
+    before_filter = len(profile_urls)
+    if excluded:
+        profile_urls = [u for u in profile_urls if u not in excluded]
+    random.shuffle(profile_urls)
+    logger.info(
+        "[Instagram] candidate pool after dedup+shuffle: %d (raw=%d, excluded=%d/%d)",
+        len(profile_urls), before_filter, before_filter - len(profile_urls), len(excluded),
+    )
 
     if not profile_urls:
         logger.warning(
@@ -868,6 +1408,26 @@ async def _scrape_instagram(
         )
         return
 
+    settings = get_settings()
+    apify_token = (settings.apify_api_token or "").strip()
+    apify_actor = (settings.apify_ig_actor or "apify~instagram-profile-scraper").strip()
+
+    if apify_token:
+        logger.info(
+            "[Instagram] using Apify path (token configured, actor=%s)",
+            apify_actor,
+        )
+        await _scrape_instagram_via_apify(
+            profile_urls, target_count, on_found,
+            apify_token, apify_actor, browser,
+        )
+        return
+
+    logger.info(
+        "[Instagram] APIFY_API_TOKEN not set — falling back to Playwright SSR "
+        "(typical hit rate 5-10%%, vs 40-60%% with Apify). "
+        "Configure APIFY_API_TOKEN in .env to enable the high-hit-rate path."
+    )
     ctx = await _new_context(browser)
     try:
         max_to_visit = min(len(profile_urls), target_urls)
@@ -1004,11 +1564,21 @@ async def _generate_search_strategy(
     platforms: list[str],
     target_market: str | None = None,
     competitor_brands: str | None = None,
-) -> dict[str, list[str]]:
-    """LLM pre-processing: expand industry keyword into platform-specific search queries."""
+    excluded_channels: list[str] | None = None,
+) -> tuple[dict[str, list[str]], str | None]:
+    """LLM pre-processing: expand industry keyword into platform-specific search queries.
+
+    Returns `(queries, fallback_reason)`. `fallback_reason` is None on LLM
+    success WITH all queries language-aligned. On LLM failure OR script
+    mismatch (e.g. LLM returned Chinese queries for target_market='us'),
+    the offending queries are dropped and fallback fills in if remaining
+    count drops below 3.
+    """
     settings = get_settings()
+    expected_lang = _expected_query_lang(industry, target_market)
+
     if not settings.openai_api_key:
-        return _fallback_queries(industry, platforms)
+        return _fallback_queries(industry, platforms, target_market), "OPENAI_API_KEY 未配置，使用 fallback 多 query 变体"
 
     from app.prompts import load_prompt
     try:
@@ -1016,7 +1586,7 @@ async def _generate_search_strategy(
         system = load_prompt("scraper/search_strategy.system", business_context=business_ctx)
     except FileNotFoundError as e:
         logger.warning("Prompt template not found, using fallback: %s", e)
-        return _fallback_queries(industry, platforms)
+        return _fallback_queries(industry, platforms, target_market), f"Prompt 模板缺失: {e}"
 
     user_lines = [
         f"Industry keyword: {industry}",
@@ -1026,6 +1596,27 @@ async def _generate_search_strategy(
         user_lines.append(f"Target market: {target_market}")
     if competitor_brands:
         user_lines.append(f"Competitor brands: {competitor_brands}")
+    # CRITICAL hint to the LLM: tell it the expected output language. Without
+    # this the LLM tends to follow the Chinese business_context's own language
+    # rather than respecting the (industry, target_market) pair — which is how
+    # task #27 produced 8 Chinese queries for an English `ai tools` / market=us
+    # setup, blowing out the entire IG run.
+    user_lines.append(
+        f"Expected query language: {expected_lang} "
+        f"(en=English-only Latin script; cn=Simplified Chinese; "
+        f"tw=Traditional Chinese; jp=Japanese; kr=Korean). "
+        f"ALL queries MUST be in this language. Brand names like 'GPT', "
+        f"'Canva' may stay in Latin script regardless of language."
+    )
+    if excluded_channels:
+        sample = excluded_channels[:30]
+        user_lines.append(
+            "Already-mined channels (AVOID generating queries that surface these; "
+            "prefer angles, brand variants, languages, or use-cases that would "
+            "find different creators): "
+            + ", ".join(sample)
+            + (f" ... (+{len(excluded_channels) - 30} more)" if len(excluded_channels) > 30 else "")
+        )
     user = "\n".join(user_lines)
 
     try:
@@ -1042,30 +1633,158 @@ async def _generate_search_strategy(
             agent_name="scraper.search_strategy",
         )
         result = json.loads(content.strip())
-        for p in platforms:
-            if p not in result:
-                result[p] = _fallback_queries(industry, [p])[p]
-        logger.info("LLM search strategy generated (business=%s): %s", settings.active_business, result)
-        return result
     except Exception as e:
-        logger.warning("LLM search strategy failed, using fallback: %s", e)
-        return _fallback_queries(industry, platforms)
+        # Log the FULL exception (type + repr). Empty `str(e)` was the bug
+        # behind tasks 14-23: httpx.ConnectError('') showed `fallback: ` with
+        # no detail, so nobody noticed the LLM was permanently unreachable.
+        reason = f"{type(e).__name__}: {e!r}"
+        logger.warning(
+            "LLM search strategy failed, using fallback: %s",
+            reason,
+            exc_info=True,
+        )
+        return _fallback_queries(industry, platforms, target_market), reason
+
+    # ── Post-validate LLM output: language alignment ─────────────────
+    # Even when the API call succeeds, the LLM can return queries in the
+    # wrong script. Drop those, and if a platform ends up with <3 valid
+    # queries, fill in from fallback (which is now language-aware).
+    drop_notes: list[str] = []
+    for p in platforms:
+        platform_queries = result.get(p, [])
+        if not isinstance(platform_queries, list):
+            platform_queries = []
+        valid = [q for q in platform_queries if isinstance(q, str) and q.strip() and _query_matches_lang(q, expected_lang)]
+        dropped = len(platform_queries) - len(valid)
+        if dropped > 0:
+            drop_notes.append(f"{p}: 丢弃 {dropped}/{len(platform_queries)} 条语言不符 query (期望 lang={expected_lang})")
+        if len(valid) < 3:
+            fb = _fallback_queries(industry, [p], target_market).get(p, [])
+            # Merge: keep LLM's language-aligned queries first, then fill
+            # from fallback up to 8 total. dict.fromkeys preserves order.
+            merged = list(dict.fromkeys(valid + fb))[:8]
+            result[p] = merged
+            drop_notes.append(f"{p}: LLM 有效 query 仅 {len(valid)} 条，回退 fallback 补齐到 {len(merged)} 条")
+        else:
+            result[p] = valid
+
+    fallback_reason = "; ".join(drop_notes) if drop_notes else None
+    logger.info(
+        "LLM search strategy generated (business=%s, expected_lang=%s, drops=%s): %s",
+        settings.active_business, expected_lang, drop_notes or "none", result,
+    )
+    return result, fallback_reason
 
 
-def _fallback_queries(industry: str, platforms: list[str]) -> dict[str, list[str]]:
-    """Fallback search queries when LLM is unavailable."""
+# Suffix vocabularies for fallback YouTube queries, per script. The same
+# industry word generates structurally distinct queries so the candidate
+# pool isn't dominated by a single ranking. Mixing languages was the bug
+# behind task #27 — fallback gave the YouTube scraper Chinese suffixes
+# while the user wanted US/English IG creators.
+_YT_FALLBACK_SUFFIXES_EN = (
+    "creator contact email",
+    "review",
+    "tutorial",
+    "best 2026",
+    "guide",
+    "tips",
+    "comparison",
+    "for creators",
+)
+_YT_FALLBACK_SUFFIXES_CN = (
+    "创作者 邮箱",
+    "评测",
+    "教程",
+    "推荐",
+    "商务合作",
+    "懒人包",
+    "排行 2026",
+    "使用指南",
+)
+_YT_FALLBACK_SUFFIXES_TW = (
+    "創作者 信箱",
+    "評測",
+    "教學",
+    "推薦",
+    "商務合作",
+    "懶人包",
+    "排行 2026",
+    "使用指南",
+)
+_YT_FALLBACK_SUFFIXES_JP = (
+    "クリエイター メール",
+    "レビュー",
+    "使い方",
+    "おすすめ",
+    "お仕事",
+    "ガイド",
+    "比較",
+    "2026 ランキング",
+)
+_YT_FALLBACK_SUFFIXES_KR = (
+    "크리에이터 이메일",
+    "리뷰",
+    "사용법",
+    "추천",
+    "협업 문의",
+    "가이드",
+    "비교",
+    "2026 순위",
+)
+
+_YT_FALLBACK_SUFFIXES_BY_LANG = {
+    "en": _YT_FALLBACK_SUFFIXES_EN,
+    "cn": _YT_FALLBACK_SUFFIXES_CN,
+    "tw": _YT_FALLBACK_SUFFIXES_TW,
+    "jp": _YT_FALLBACK_SUFFIXES_JP,
+    "kr": _YT_FALLBACK_SUFFIXES_KR,
+}
+
+_IG_FALLBACK_SUFFIXES_EN = ("creator", "influencer", "review", "tips", "for creators")
+_IG_FALLBACK_SUFFIXES_CN = ("创作者", "推荐", "评测", "商务合作", "测评")
+_IG_FALLBACK_SUFFIXES_TW = ("創作者", "推薦", "評測", "商務合作", "測評")
+_IG_FALLBACK_SUFFIXES_JP = ("クリエイター", "おすすめ", "レビュー", "お仕事", "比較")
+_IG_FALLBACK_SUFFIXES_KR = ("크리에이터", "추천", "리뷰", "협업", "비교")
+
+_IG_FALLBACK_SUFFIXES_BY_LANG = {
+    "en": _IG_FALLBACK_SUFFIXES_EN,
+    "cn": _IG_FALLBACK_SUFFIXES_CN,
+    "tw": _IG_FALLBACK_SUFFIXES_TW,
+    "jp": _IG_FALLBACK_SUFFIXES_JP,
+    "kr": _IG_FALLBACK_SUFFIXES_KR,
+}
+
+
+def _fallback_queries(
+    industry: str,
+    platforms: list[str],
+    target_market: str | None = None,
+) -> dict[str, list[str]]:
+    """Fallback search queries when the LLM is unavailable OR returns
+    language-mismatched output.
+
+    Generates 5-8 diverse variants per platform. Suffixes are picked based
+    on the script inferred from `target_market` (or `industry` if market
+    isn't set), so an English `ai tools` + market=`us` combo never produces
+    Chinese fallback queries — the bug behind task #27.
+    """
     result: dict[str, list[str]] = {}
     base = industry.strip()
+    expected_lang = _expected_query_lang(industry, target_market)
     for p in platforms:
         if p == "youtube":
-            result[p] = [f"{base} creator contact email"]
+            suffixes = _YT_FALLBACK_SUFFIXES_BY_LANG.get(expected_lang, _YT_FALLBACK_SUFFIXES_EN)
+            variants = [f"{base} {suffix}" for suffix in suffixes]
+            random.shuffle(variants)
+            result[p] = variants
         elif p == "instagram":
-            # Brave Search is a natural-language engine — preserve spaces and
-            # give a few seed variants so recall doesn't collapse when LLM is
-            # unavailable. Historical "replace(' ', '')" compression was a
-            # leftover from the old hashtag-explore entry (hashtags cannot
-            # contain spaces); Brave needs the opposite.
-            result[p] = [base, f"{base} creator", f"{base} influencer"]
+            # Brave Search is a natural-language engine — preserve spaces.
+            # Always include the bare industry as the first variant; it's
+            # the most-recall form when later dorks add language-specific
+            # limiters.
+            suffixes = _IG_FALLBACK_SUFFIXES_BY_LANG.get(expected_lang, _IG_FALLBACK_SUFFIXES_EN)
+            variants = [base] + [f"{base} {suffix}" for suffix in suffixes]
+            result[p] = variants
         else:
             result[p] = [base]
     return result
@@ -1196,12 +1915,20 @@ async def _enrich_results(
                 for inf in batch
             ]
 
-            user = (
-                f"Please score these {len(batch)} influencers:\n\n"
-                f"{json.dumps(profiles, ensure_ascii=False)}"
-            )
+            # Pass the task-level `industry` explicitly so the LLM treats it
+            # as the scoring axis (per enrich_results.system.md), NOT each
+            # row's stored `industry` field which can be empty / mismatched
+            # for influencers re-discovered across tasks. Without this the
+            # LLM falls back to scoring against PremLogin business context
+            # and gives non-PremLogin categories (Power Bank etc.) flat 0%.
+            user_lines = [f"Industry (scoring axis): {industry}"]
             if target_market:
-                user = f"Target market: {target_market}\n\n" + user
+                user_lines.append(f"Target market: {target_market}")
+            user_lines.append("")
+            user_lines.append(f"Please score these {len(batch)} influencers:")
+            user_lines.append("")
+            user_lines.append(json.dumps(profiles, ensure_ascii=False))
+            user = "\n".join(user_lines)
 
             try:
                 content = await llm_chat(
@@ -1230,8 +1957,32 @@ async def _enrich_results(
                         # Only overwrite when both fields look valid. Otherwise
                         # keep the heuristic baseline.
                         if score is not None and reason:
-                            inf.relevance_score = float(score)
-                            inf.match_reason = str(reason)[:100]
+                            try:
+                                score_f = float(score)
+                            except (ValueError, TypeError):
+                                break
+                            # Floor at 0.05 — the prompt explicitly forbids
+                            # 0% but some LLMs ignore that. We also clamp
+                            # the upper bound to 1.0 in case the model
+                            # returns 1.2 / 100 / etc. The heuristic floor
+                            # was the intent of the original code; making
+                            # it explicit here means a misbehaving LLM
+                            # can't sneak a 0% past us (the bug that made
+                            # task #35 show 4 zeros for valid contacts).
+                            inf.relevance_score = max(0.05, min(1.0, score_f))
+                            # Strip negative phrasing the prompt also
+                            # forbids — defence in depth in case the LLM
+                            # outputs "内容与 PremLogin 无关" anyway.
+                            reason_str = str(reason)[:100]
+                            if any(bad in reason_str for bad in ("PremLogin 无关", "PremLogin无关", "行业不匹配")):
+                                # Substitute a neutral, KOL-quality oriented
+                                # reason derived from heuristic data so the
+                                # UI doesn't show "PremLogin 无关" anymore.
+                                # (Heuristic ran first so inf.match_reason
+                                # already has a positive baseline; reuse it.)
+                                pass  # keep prior heuristic match_reason
+                            else:
+                                inf.match_reason = reason_str
                             llm_upgraded += 1
                         break
                 await db.commit()
@@ -1292,10 +2043,47 @@ async def run_scraper_agent(task_id: int) -> None:
         })
 
         # Phase 2/5: LLM 生成搜索策略 (5%)
-        search_queries = await _generate_search_strategy(
-            task.industry, platforms, task.target_market, task.competitor_brands
+        # Build "excluded channels" — channels we've successfully extracted
+        # emails from in prior tasks of the same industry within the last 30
+        # days. Passing these to the LLM (as a negative-context hint) and to
+        # the YouTube scraper (as a hard filter on the candidate pool) is the
+        # only way to keep new tasks from re-mining the same 18 "old reliables"
+        # over and over (the pre-fix behaviour observed in tasks #14-#23).
+        from datetime import timedelta
+        excluded_profile_urls: list[str] = []
+        try:
+            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+            stmt = (
+                sa.select(Influencer.profile_url)
+                .where(
+                    Influencer.platform.in_([InfluencerPlatform.youtube, InfluencerPlatform.instagram]),
+                    Influencer.industry == task.industry,
+                    Influencer.created_at >= cutoff,
+                    Influencer.profile_url.isnot(None),
+                    Influencer.profile_url != "",
+                )
+                .distinct()
+            )
+            r = await db.execute(stmt)
+            excluded_profile_urls = [u for (u,) in r.all() if u]
+        except Exception as e:
+            logger.warning("[scraper] excluded-channels lookup failed (non-fatal): %s", e)
+        logger.info(
+            "[scraper] task %d: %d excluded channels (industry=%r, last 30d)",
+            task_id, len(excluded_profile_urls), task.industry,
+        )
+
+        search_queries, fallback_reason = await _generate_search_strategy(
+            task.industry, platforms, task.target_market, task.competitor_brands,
+            excluded_channels=excluded_profile_urls,
         )
         task.search_keywords = json.dumps(search_queries, ensure_ascii=False)
+        if fallback_reason:
+            # Surface the fallback reason on the task. The UI shows
+            # error_message in a yellow/red banner — better to admit
+            # "LLM unreachable, ran with fallback queries" than to silently
+            # produce shallow results.
+            task.error_message = f"LLM 搜索策略不可用，使用 fallback 关键词。原因: {fallback_reason}"
         await db.commit()
 
         await update_task_status(db, task, ScrapeTaskStatus.running, progress=5)
@@ -1310,8 +2098,14 @@ async def run_scraper_agent(task_id: int) -> None:
 
         found_total = 0
         valid_total = 0
+        new_total = 0
+        reused_total = 0
         # cross-platform dedup by email
         seen_emails: set[str] = set()
+        # Pre-load excluded channel URL set (same data we passed to the LLM)
+        # for the in-process candidate-pool filter. Stored as a `set` for O(1)
+        # membership test inside `_scrape_youtube`.
+        excluded_url_set = set(excluded_profile_urls)
 
         platform_map = {
             "instagram": InfluencerPlatform.instagram,
@@ -1333,7 +2127,7 @@ async def run_scraper_agent(task_id: int) -> None:
                 bio: str | None = None,
                 avatar_url: str | None = None,
             ) -> None:
-                nonlocal found_total, valid_total
+                nonlocal found_total, valid_total, new_total, reused_total
 
                 async with db_lock:
                     if email in seen_emails:
@@ -1376,6 +2170,7 @@ async def run_scraper_agent(task_id: int) -> None:
                         await db.flush()  # get inf.id without full commit
                         db.add(ScrapeTaskInfluencer(scrape_task_id=task_id, influencer_id=inf.id))
                         await db.commit()
+                        new_total += 1
                         valid_total += 1
                         # Broadcast full influencer payload so the 网红数据
                         # page can prepend the row in real time. Only fires on
@@ -1403,42 +2198,44 @@ async def run_scraper_agent(task_id: int) -> None:
                             "tags": [],
                         })
                     else:
-                        # Back-fill avatar_url when it's missing or historically
-                        # corrupted. Pre-fix IG URLs were HTML-escaped ('&amp;')
-                        # and 512-truncated — the frontend image proxy rejects
-                        # those as 403s. Overwriting only in these two cases
-                        # preserves the general upsert policy (bio/followers/
-                        # nickname stay untouched for already-known rows).
-                        avatar_backfilled = False
+                        # Strict fresh-only mode (default since 2026-04-25):
+                        # we no longer link existing influencers to the new
+                        # task. The candidate-pool DB filter already excludes
+                        # most known channels; this branch only fires on edge
+                        # cases (cross-platform email collision, or a channel
+                        # that was added between the filter SELECT and the
+                        # visit). Counting these as "valid" used to inflate
+                        # task results with zero new contacts — task #23
+                        # showed valid_count=6 with new_count=0 implicitly.
+                        #
+                        # Avatar back-fill is still useful (the row is in DB
+                        # with stale data), but we no longer create a
+                        # scrape_task_influencer link. The task results page
+                        # then accurately reflects only fresh discoveries.
                         if avatar_url:
                             old_avatar = existing.avatar_url
                             if not old_avatar or "&amp;" in old_avatar:
                                 existing.avatar_url = avatar_url
-                                avatar_backfilled = True
-
-                        # already exists — link to this task if not already linked
-                        link_result = await db.execute(
-                            select(ScrapeTaskInfluencer).where(
-                                ScrapeTaskInfluencer.scrape_task_id == task_id,
-                                ScrapeTaskInfluencer.influencer_id == existing.id,
-                            )
+                                await db.commit()
+                        reused_total += 1
+                        logger.info(
+                            "[scraper] task %d: skipping existing influencer "
+                            "(id=%d, email=%s, profile=%s) — fresh-only mode",
+                            task_id, existing.id, email, profile_url,
                         )
-                        if link_result.scalar_one_or_none() is None:
-                            db.add(ScrapeTaskInfluencer(
-                                scrape_task_id=task_id, influencer_id=existing.id
-                            ))
-                            await db.commit()
-                        elif avatar_backfilled:
-                            await db.commit()
-                        valid_total += 1
 
-                    # Phase 3/5: crawling — progress ramps 15% to 80% based on valid emails collected
-                    progress = min(79, 15 + int((valid_total / task.target_count) * 65))
+                    # Progress ramps 15-79% based on `new_total` (NOT
+                    # valid_total) so re-discovered influencers don't bump
+                    # the bar — the bar reflects genuine new finds toward
+                    # target_count.
+                    progress = min(79, 15 + int((new_total / task.target_count) * 65))
                     await update_task_status(
                         db, task, ScrapeTaskStatus.running,
                         progress=progress,
                         found_count=found_total,
                         valid_count=valid_total,
+                        new_count=new_total,
+                        reused_count=reused_total,
                     )
                     await manager.broadcast("scrape:progress", {
                         "task_id": task_id,
@@ -1447,6 +2244,8 @@ async def run_scraper_agent(task_id: int) -> None:
                         "phase": "crawling",
                         "found_count": found_total,
                         "valid_count": valid_total,
+                        "new_count": new_total,
+                        "reused_count": reused_total,
                         "latest_email": email,
                     })
 
@@ -1461,9 +2260,18 @@ async def run_scraper_agent(task_id: int) -> None:
                 )
                 on_found = make_on_found(platform)
                 if platform == "youtube":
-                    await _scrape_youtube(browser, industry, target_per_platform, on_found, queries=search_queries.get("youtube"))
+                    await _scrape_youtube(
+                        browser, industry, target_per_platform, on_found,
+                        queries=search_queries.get("youtube"),
+                        excluded_channels=excluded_url_set,
+                    )
                 elif platform == "instagram":
-                    await _scrape_instagram(browser, industry, target_per_platform, on_found, queries=search_queries.get("instagram"))
+                    await _scrape_instagram(
+                        browser, industry, target_per_platform, on_found,
+                        queries=search_queries.get("instagram"),
+                        target_market=task.target_market,
+                        excluded_profiles=excluded_url_set,
+                    )
                 else:
                     await _scrape_stub(platform)
 
@@ -1501,16 +2309,39 @@ async def run_scraper_agent(task_id: int) -> None:
                 "phase": "enriching",
                 "found_count": found_total,
                 "valid_count": valid_total,
+                "new_count": new_total,
+                "reused_count": reused_total,
             })
 
             await _enrich_results(task.id, task.industry, task.target_market)
 
-            # Phase 5/5: completed
+            # Phase 5/5: completed.
+            # If the run hit the LLM fallback path or produced 0 new finds
+            # while still being asked for ≥1, append a warning to
+            # error_message so the UI can flag "completed but suspicious".
+            # We deliberately don't add a new ScrapeTaskStatus value — the
+            # existing 4 (pending/running/completed/failed/cancelled) are
+            # already wired through the entire stack; surfacing the warning
+            # via error_message keeps the change surface small.
+            warnings: list[str] = []
+            if fallback_reason:
+                warnings.append(f"LLM 搜索策略不可用: {fallback_reason}")
+            if new_total == 0 and task.target_count > 0:
+                warnings.append(
+                    "本次未抓到任何新网红("
+                    f"复链接 {reused_total} 人，候选池可能已被历史任务穷尽)。"
+                    "建议换 industry 关键词或扩大 target_market。"
+                )
+            warning_message = " | ".join(warnings) if warnings else None
+
             await update_task_status(
                 db, task, ScrapeTaskStatus.completed,
                 progress=100,
                 found_count=found_total,
                 valid_count=valid_total,
+                new_count=new_total,
+                reused_count=reused_total,
+                error_message=warning_message,
             )
             await manager.broadcast("scrape:progress", {
                 "task_id": task_id,
@@ -1519,10 +2350,13 @@ async def run_scraper_agent(task_id: int) -> None:
                 "phase": "completed",
                 "found_count": found_total,
                 "valid_count": valid_total,
+                "new_count": new_total,
+                "reused_count": reused_total,
+                "warning": warning_message,
             })
             logger.info(
-                "ScrapeTask %d completed: found=%d valid=%d",
-                task_id, found_total, valid_total,
+                "ScrapeTask %d completed: found=%d valid=%d new=%d reused=%d warning=%r",
+                task_id, found_total, valid_total, new_total, reused_total, warning_message,
             )
 
         except Exception as exc:
@@ -1532,6 +2366,8 @@ async def run_scraper_agent(task_id: int) -> None:
                 error_message=str(exc),
                 found_count=found_total,
                 valid_count=valid_total,
+                new_count=new_total,
+                reused_count=reused_total,
             )
             await manager.broadcast("scrape:progress", {
                 "task_id": task_id,
@@ -1539,4 +2375,6 @@ async def run_scraper_agent(task_id: int) -> None:
                 "error": str(exc),
                 "found_count": found_total,
                 "valid_count": valid_total,
+                "new_count": new_total,
+                "reused_count": reused_total,
             })

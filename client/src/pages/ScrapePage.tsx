@@ -761,7 +761,17 @@ export default function ScrapePage() {
                     </td>
                     <td className="px-4 py-3 text-right">
                       <div className="flex items-center justify-end gap-2">
-                        <span className="text-xs font-medium text-gray-900">{task.valid_count}</span>
+                        {/* Show new_count as the primary number now — that's
+                            the metric that actually reflects ROI. valid_count
+                            is kept available below for backwards reference. */}
+                        <span className="text-xs font-medium text-gray-900">
+                          {task.new_count ?? task.valid_count}
+                        </span>
+                        {(task.reused_count ?? 0) > 0 && (
+                          <span className="text-[10px] text-amber-600" title={`复链接 ${task.reused_count} 个老熟人`}>
+                            +{task.reused_count} 复
+                          </span>
+                        )}
                         {task.found_count > task.valid_count && (
                           <span className="text-[10px] text-gray-400">
                             {t('scrape.table.found', { count: task.found_count })}

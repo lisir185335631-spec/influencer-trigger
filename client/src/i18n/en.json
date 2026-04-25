@@ -230,11 +230,14 @@
         "target": "Target",
         "found": "Found",
         "valid": "Valid",
+        "new": "New",
+        "reused": "Re-linked",
         "platforms": "Platforms"
       },
       "recentEmails": "Recent Emails",
       "showingCount": "Showing {{count}}",
       "errorLabel": "Error",
+      "warningLabel": "Warning",
       "phases": {
         "starting": "Initializing…",
         "strategy_ready": "Search strategy generated",

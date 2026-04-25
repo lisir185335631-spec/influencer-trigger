@@ -37,6 +37,7 @@ data/
 
 # Logs
 *.log
+*.log.err
 logs/
 
 # Ralph

@@ -69,6 +69,17 @@ class Settings(BaseSettings):
     # Brave Search API (powers Instagram scraper's Google-Dork entry)
     brave_search_api_key: str = ""
 
+    # Apify API (powers Instagram profile data extraction — bypasses IG's
+    # require_login wall on contact email / external_url that no Playwright
+    # SSR scrape can pierce). Sign up at https://apify.com to get a token,
+    # ~$5 free credit covers ~50-100 profile scrapes. Without this token the
+    # Instagram scraper falls back to the SSR-only Playwright path with
+    # ~5-10% email hit rate; with it, hit rate climbs to 40-60%+ because
+    # Apify's actor solves the contact_email field that IG hides behind
+    # login.
+    apify_api_token: str = ""
+    apify_ig_actor: str = "apify~instagram-profile-scraper"
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

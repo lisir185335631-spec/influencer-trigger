@@ -52,8 +52,11 @@ type LiveProgress = {
   phase?: 'starting' | 'strategy_ready' | 'crawling' | 'enriching' | 'completed'
   found_count: number
   valid_count: number
+  new_count?: number
+  reused_count?: number
   latest_email?: string
   error?: string
+  warning?: string | null
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -237,13 +240,30 @@ export default function ScrapeTaskDetailPage() {
             </p>
           )}
 
-          {/* 4 stat cards */}
-          <div className="grid grid-cols-4 gap-3">
+          {/* 5 stat cards: target / found / NEW (highlight) / reused / platforms.
+              "新增" is the one number that actually matters for ROI — pre-fix
+              the card said "已入库" mixing fresh discoveries with re-linked
+              old channels, which is how task #23's 0-new-finds pretended to
+              be a 100% successful 6-find run. Splitting the two numbers
+              makes that case immediately legible. */}
+          <div className="grid grid-cols-5 gap-3">
             <StatCard label={t('scrapeDetail.live.stats.target')} value={task.target_count} />
             <StatCard label={t('scrapeDetail.live.stats.found')} value={live?.found_count ?? task.found_count} />
-            <StatCard label={t('scrapeDetail.live.stats.valid')} value={live?.valid_count ?? task.valid_count} highlight />
+            <StatCard label={t('scrapeDetail.live.stats.new')} value={live?.new_count ?? task.new_count ?? task.valid_count} highlight />
+            <StatCard label={t('scrapeDetail.live.stats.reused')} value={live?.reused_count ?? task.reused_count ?? 0} />
             <StatCard label={t('scrapeDetail.live.stats.platforms')} value={platforms.length} />
           </div>
+
+          {/* Completed-with-warning banner: the task ran to completion but
+              error_message was populated (LLM fallback / 0 new finds). The
+              underlying ScrapeTaskStatus is still "completed" — we surface
+              the caveat inline rather than inventing a new status. */}
+          {(live?.status === 'completed' || task.status === 'completed') && (live?.warning || task.error_message) && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
+              <strong>{t('scrapeDetail.live.warningLabel')}:</strong>{' '}
+              {live?.warning ?? task.error_message}
+            </div>
+          )}
 
           {/* Live email stream */}
           {emailStream.length > 0 && (

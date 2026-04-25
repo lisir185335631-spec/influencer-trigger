@@ -31,6 +31,8 @@ class ScrapeTaskResponse(BaseModel):
     progress: int
     found_count: int
     valid_count: int
+    new_count: int = 0
+    reused_count: int = 0
     error_message: str | None
     target_market: str | None = None
     search_keywords: str | None = None

@@ -89,6 +89,8 @@ async def update_task_status(
     progress: int | None = None,
     found_count: int | None = None,
     valid_count: int | None = None,
+    new_count: int | None = None,
+    reused_count: int | None = None,
     error_message: str | None = None,
 ) -> None:
     task.status = status
@@ -98,6 +100,10 @@ async def update_task_status(
         task.found_count = found_count
     if valid_count is not None:
         task.valid_count = valid_count
+    if new_count is not None:
+        task.new_count = new_count
+    if reused_count is not None:
+        task.reused_count = reused_count
     if error_message is not None:
         task.error_message = error_message
     if status == ScrapeTaskStatus.running and task.started_at is None:

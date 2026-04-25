@@ -230,11 +230,14 @@
         "target": "目标",
         "found": "已发现",
         "valid": "已入库",
+        "new": "本次新增",
+        "reused": "复链接(老熟人)",
         "platforms": "平台数"
       },
       "recentEmails": "最新抓到",
       "showingCount": "共 {{count}} 条",
       "errorLabel": "错误",
+      "warningLabel": "警告",
       "phases": {
         "starting": "正在启动…",
         "strategy_ready": "搜索策略已生成",

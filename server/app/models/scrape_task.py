@@ -26,6 +26,8 @@ class ScrapeTask(Base):
     progress: Mapped[int] = mapped_column(Integer, default=0, nullable=False)  # 0-100
     found_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     valid_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    new_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    reused_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_market: Mapped[str | None] = mapped_column(String(64), nullable=True)
     search_keywords: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON: LLM-expanded queries
