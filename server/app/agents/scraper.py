@@ -421,6 +421,7 @@ async def _scrape_youtube(
     on_found: "Callable[[str, str, str], Awaitable[None]]",
     queries: list[str] | None = None,
     excluded_channels: set[str] | None = None,
+    on_progress: "Callable[[str], Awaitable[None]] | None" = None,
 ) -> None:
     """
     Search YouTube for '{industry} influencer', extract channel About pages for emails.
@@ -458,6 +459,8 @@ async def _scrape_youtube(
         for q_idx, query in enumerate(search_queries):
             search_url = f"https://www.youtube.com/results?search_query={query}"
             logger.info("[YouTube] query %d/%d: %r", q_idx + 1, len(search_queries), query)
+            if on_progress:
+                await on_progress(f"搜索 query {q_idx + 1}/{len(search_queries)}: {query[:50]}")
             try:
                 await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
             except Exception as e:
@@ -524,6 +527,11 @@ async def _scrape_youtube(
             len(all_channel_links), before_filter, before_filter - len(all_channel_links),
             len(excluded), len(search_queries),
         )
+        if on_progress:
+            await on_progress(
+                f"候选池建好: {len(all_channel_links)} 个 channel "
+                f"(已过滤 {before_filter - len(all_channel_links)} 个老熟人)"
+            )
 
         # Visit up to 15× the target count. Empirical hit rate:
         #   商业化关键词 (Canva / ChatGPT review): ~35%
@@ -589,6 +597,16 @@ async def _scrape_youtube(
                             "[YouTube] [%d/%d] visiting %s",
                             ch_idx + 1, max_to_visit, about_url,
                         )
+                        # Broadcast a phase_detail every visit attempt so
+                        # the user sees the channel-level work happening.
+                        # This is the big "stuck at 15%" fix — without it,
+                        # the UI sat on "正在抓取频道并提取邮箱…" for
+                        # multiple minutes with no signal anything was alive.
+                        if on_progress:
+                            handle = ch_url.rsplit("/", 1)[-1]
+                            await on_progress(
+                                f"访问 channel {ch_idx + 1}/{max_to_visit}: {handle}"
+                            )
                         await ch_page.goto(about_url, wait_until="domcontentloaded", timeout=20000)
                         # Hydration wait: 1.2s lets client-side JS render the
                         # "View email address" button (only visible when
@@ -1362,6 +1380,7 @@ async def _scrape_instagram_via_apify(
     apify_actor: str,
     browser: Browser,
     quota_errors_out: list[dict] | None = None,
+    on_progress: "Callable[[str], Awaitable[None]] | None" = None,
 ) -> None:
     """Apify-driven IG profile extraction. Replaces Playwright per-profile
     SSR visits with a single Apify batch call that returns full contact
@@ -1442,6 +1461,11 @@ async def _scrape_instagram_via_apify(
                 username, followers, business_email, len(emails),
                 external_url[:80] if external_url else "—",
             )
+            if on_progress:
+                fol = f"{followers/1000:.0f}K" if isinstance(followers, int) and followers >= 1000 else str(followers or "?")
+                await on_progress(
+                    f"处理 IG @{username} ({fol} 粉, {len(emails)} 邮箱)"
+                )
 
             for email in emails:
                 if "@" not in email:
@@ -1483,6 +1507,7 @@ async def _scrape_instagram(
     target_market: str | None = None,
     excluded_profiles: set[str] | None = None,
     quota_errors_out: list[dict] | None = None,
+    on_progress: "Callable[[str], Awaitable[None]] | None" = None,
 ) -> None:
     """
     Instagram scraper.
@@ -1525,6 +1550,11 @@ async def _scrape_instagram(
         "[Instagram] candidate pool after dedup+shuffle: %d (raw=%d, excluded=%d/%d)",
         len(profile_urls), before_filter, before_filter - len(profile_urls), len(excluded),
     )
+    if on_progress:
+        await on_progress(
+            f"IG 候选池建好: {len(profile_urls)} 个 profile "
+            f"(过滤 {before_filter - len(profile_urls)} 个老熟人)"
+        )
 
     if not profile_urls:
         logger.warning(
@@ -1542,10 +1572,13 @@ async def _scrape_instagram(
             "[Instagram] using Apify path (token configured, actor=%s)",
             apify_actor,
         )
+        if on_progress:
+            await on_progress(f"调用 Apify 批量抓 {min(len(profile_urls), max(target_count*5, 20))} 个 IG profile…")
         await _scrape_instagram_via_apify(
             profile_urls, target_count, on_found,
             apify_token, apify_actor, browser,
             quota_errors_out=quota_errors_out,
+            on_progress=on_progress,
         )
         return
 
@@ -1685,6 +1718,36 @@ async def _scrape_stub(platform: str) -> list[dict]:
 
 # ── LLM pre/post processing ──────────────────────────────────────────────────
 
+# ── LLM search-strategy cache ───────────────────────────────────────────
+# In-memory cache for `_generate_search_strategy` results, keyed by the
+# inputs that actually shape the LLM output. Hits skip the 5-15s LLM call
+# entirely — useful during iterative development / debugging when the
+# operator runs the same task multiple times. Misses fall through to a
+# real LLM call.
+#
+# We deliberately do NOT include `excluded_channels` in the key — that
+# field changes after every successful task as new channels get mined,
+# which would invalidate the cache on every run. The LLM uses excluded
+# only as a soft hint anyway (the real dedup is downstream).
+#
+# TTL = 5 minutes: long enough to absorb burst-debug retries, short
+# enough that a real "let me try a different approach" run still gets
+# a fresh LLM response within the first refill.
+import time as _time
+
+_LLM_CACHE_TTL = 300.0
+_llm_strategy_cache: dict[tuple, tuple[float, dict[str, list[str]], str | None]] = {}
+
+
+def _llm_cache_key(industry: str, target_market: str | None, competitor_brands: str | None, platforms: list[str]) -> tuple:
+    return (
+        (industry or "").strip(),
+        (target_market or "").strip().lower(),
+        (competitor_brands or "").strip(),
+        tuple(sorted(platforms)),
+    )
+
+
 async def _generate_search_strategy(
     industry: str,
     platforms: list[str],
@@ -1702,6 +1765,24 @@ async def _generate_search_strategy(
     """
     settings = get_settings()
     expected_lang = _expected_query_lang(industry, target_market)
+
+    # ── Cache hit fast path ─────────────────────────────────────────
+    # Skip the 5-15s LLM call when the same (industry, market, competitors,
+    # platforms) tuple was queried within the TTL window. The fallback_reason
+    # is replayed from cache too so the UI's "LLM unreachable" / "drops
+    # X/12 queries" warnings stay consistent across cached invocations.
+    cache_key = _llm_cache_key(industry, target_market, competitor_brands, platforms)
+    cached = _llm_strategy_cache.get(cache_key)
+    now = _time.time()
+    if cached and now - cached[0] < _LLM_CACHE_TTL:
+        # Deep-copy the queries so caller modifications don't pollute
+        # the cache. Lightweight: usually 12-16 short strings per platform.
+        cached_queries = {k: list(v) for k, v in cached[1].items()}
+        logger.info(
+            "[scraper] LLM cache HIT (age %.1fs) for industry=%r market=%r — skipped LLM call",
+            now - cached[0], industry, target_market,
+        )
+        return cached_queries, cached[2]
 
     if not settings.openai_api_key:
         return _fallback_queries(industry, platforms, target_market), "OPENAI_API_KEY 未配置，使用 fallback 多 query 变体"
@@ -1799,6 +1880,10 @@ async def _generate_search_strategy(
         "LLM search strategy generated (business=%s, expected_lang=%s, drops=%s): %s",
         settings.active_business, expected_lang, drop_notes or "none", result,
     )
+    # Cache the LLM-derived result for 5 minutes — only the hot path
+    # gets cached. fallback_reason from drops is preserved so cached
+    # replays surface the same drop-count warning.
+    _llm_strategy_cache[cache_key] = (now, {k: list(v) for k, v in result.items()}, fallback_reason)
     return result, fallback_reason
 
 
@@ -2209,32 +2294,47 @@ async def run_scraper_agent(task_id: int) -> None:
         # the YouTube scraper (hard filter) is the only way to keep new
         # tasks from re-mining the same 18 "old reliables" (the pre-fix
         # behaviour observed in tasks #14-#23).
+        #
+        # The DB query (~100-500ms on a warm DB) used to run synchronously
+        # before the LLM call. With O2 it's a background task that overlaps
+        # with the next 50ms of broadcast / LLM-prep work — small win but
+        # composes cleanly with O1 cache hits (DB still finishes first).
         from datetime import timedelta
-        excluded_profile_urls: list[str] = []
-        try:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=30)
-            stmt = (
-                sa.select(Influencer.profile_url)
-                .where(
-                    Influencer.platform.in_([InfluencerPlatform.youtube, InfluencerPlatform.instagram]),
-                    Influencer.industry == task.industry,
-                    Influencer.created_at >= cutoff,
-                    Influencer.profile_url.isnot(None),
-                    Influencer.profile_url != "",
+
+        async def _query_excluded_urls() -> list[str]:
+            try:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+                stmt = (
+                    sa.select(Influencer.profile_url)
+                    .where(
+                        Influencer.platform.in_([InfluencerPlatform.youtube, InfluencerPlatform.instagram]),
+                        Influencer.industry == task.industry,
+                        Influencer.created_at >= cutoff,
+                        Influencer.profile_url.isnot(None),
+                        Influencer.profile_url != "",
+                    )
+                    .distinct()
                 )
-                .distinct()
-            )
-            r = await db.execute(stmt)
-            excluded_profile_urls = [u for (u,) in r.all() if u]
-        except Exception as e:
-            logger.warning("[scraper] excluded-channels lookup failed (non-fatal): %s", e)
+                r = await db.execute(stmt)
+                return [u for (u,) in r.all() if u]
+            except Exception as e:
+                logger.warning("[scraper] excluded-channels lookup failed (non-fatal): %s", e)
+                return []
+
+        excluded_db_task = asyncio.create_task(_query_excluded_urls())
+
+        # Phase 4/9: llm_thinking (3%) — LLM is about to generate queries.
+        # The phase broadcast itself happens *while* the DB excluded query
+        # is in flight, hiding its 100-500ms cost.
+        await _ph(3, "llm_thinking")
+
+        # Now block on the DB result — usually it's already done because
+        # the broadcast above took longer than the SELECT.
+        excluded_profile_urls = await excluded_db_task
         logger.info(
             "[scraper] task %d: %d excluded channels (industry=%r, last 30d)",
             task_id, len(excluded_profile_urls), task.industry,
         )
-
-        # Phase 4/9: llm_thinking (3%) — LLM is about to generate queries
-        await _ph(3, "llm_thinking")
 
         search_queries, fallback_reason = await _generate_search_strategy(
             task.industry, platforms, task.target_market, task.competitor_brands,
@@ -2276,6 +2376,29 @@ async def run_scraper_agent(task_id: int) -> None:
             "twitter": InfluencerPlatform.twitter,
             "facebook": InfluencerPlatform.facebook,
         }
+
+        # ── on_progress: phase_detail without changing progress % ───────
+        # Inner scrapers (_scrape_youtube / _scrape_instagram) call this
+        # at structural milestones — start of each query, candidate-pool
+        # ready, per-channel visit. The progress bar's % is driven only
+        # by valid emails (on_found increments new_total → progress jumps
+        # 21%, 28%, 34%...), but a long stretch with no valid email used
+        # to look frozen at 15%. Now `phase_detail` is a free-text status
+        # line that updates every 5-15 seconds during the stuck window:
+        # "搜索 query 5/12: ChatGPT" / "访问 channel 12/100: @MKBHD".
+        async def on_progress(phase_detail: str) -> None:
+            await manager.broadcast("scrape:progress", {
+                "task_id": task_id,
+                "status": "running",
+                # Don't bump the progress integer — let on_found drive it.
+                "progress": task.progress,
+                "phase": "crawling",
+                "phase_detail": phase_detail,
+                "found_count": found_total,
+                "valid_count": valid_total,
+                "new_count": new_total,
+                "reused_count": reused_total,
+            })
 
         def make_on_found(platform: str):
             """Return a platform-specific on_found callback (avoids shared mutable closure)."""
@@ -2426,6 +2549,7 @@ async def run_scraper_agent(task_id: int) -> None:
                         browser, industry, target_per_platform, on_found,
                         queries=search_queries.get("youtube"),
                         excluded_channels=excluded_url_set,
+                        on_progress=on_progress,
                     )
                 elif platform == "instagram":
                     await _scrape_instagram(
@@ -2434,6 +2558,7 @@ async def run_scraper_agent(task_id: int) -> None:
                         target_market=task.target_market,
                         excluded_profiles=excluded_url_set,
                         quota_errors_out=quota_errors,
+                        on_progress=on_progress,
                     )
                 else:
                     await _scrape_stub(platform)

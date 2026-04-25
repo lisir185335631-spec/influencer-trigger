@@ -65,6 +65,12 @@ type LiveProgress = {
     | 'crawling'
     | 'enriching'
     | 'completed'
+  // Free-text status line emitted by inner scrapers during the long
+  // crawl phase (e.g. "搜索 query 5/12: ChatGPT", "访问 channel 12/100:
+  // @MKBHD"). When non-empty, the UI shows this verbatim instead of
+  // the generic phase translation — so the user sees something moving
+  // every 5-15s during the multi-minute crawl window.
+  phase_detail?: string
   found_count: number
   valid_count: number
   new_count?: number
@@ -360,10 +366,16 @@ export default function ScrapeTaskDetailPage() {
             />
           </div>
 
-          {/* Phase text (under progress bar) */}
+          {/* Phase text (under progress bar). When the inner scraper sends
+              a phase_detail (e.g. "搜索 query 5/12: ChatGPT"), prefer it
+              over the generic phase translation so the user sees the actual
+              work happening during the long crawl phase. Without this, the
+              UI sat on "正在抓取频道并提取邮箱…" for several minutes with
+              no signal anything was alive (the task #50 "stuck at 15%"
+              complaint). */}
           {live?.phase && (live?.status === 'running' || live?.status === 'pending') && (
-            <p className="text-xs text-gray-500 -mt-2 transition-opacity">
-              {t(`scrapeDetail.live.phases.${live.phase}`)}
+            <p className="text-xs text-gray-500 -mt-2 transition-opacity truncate" title={live.phase_detail || undefined}>
+              {live.phase_detail || t(`scrapeDetail.live.phases.${live.phase}`)}
             </p>
           )}
 
