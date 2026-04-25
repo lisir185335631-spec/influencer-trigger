@@ -1,4 +1,18 @@
 import asyncio
+import sys
+
+# Windows requires ProactorEventLoop for asyncio subprocess support;
+# Playwright launches Chromium via `asyncio.create_subprocess_exec` and
+# fails with `NotImplementedError` on the Selector loop. uvicorn's
+# `--reload` mode picks Selector by default on Windows (uvicorn ≤ 0.30
+# behaviour) — task #66 2026-04-25 was killed at Playwright launch with
+# that exact stack. Setting the policy *before* uvicorn boots its loop
+# (i.e. at module import time, which runs before lifespan) guarantees
+# every subsequent `asyncio.new_event_loop()` returns a Proactor
+# instance. No-op on non-Windows.
+if sys.platform == "win32":
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
+
 import logging
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator

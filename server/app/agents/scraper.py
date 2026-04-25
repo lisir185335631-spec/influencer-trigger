@@ -211,16 +211,36 @@ def _is_valid_email_format(email: str) -> bool:
 # those channels enter the DB at relevance_score 5-15% and clutter
 # the operator's outreach list.
 #
+# 2026-04-25 relaxed (task #65 root-cause work): of the 7 channels in
+# task #65 that had emails, 5 were rejected (71% kill rate) — most were
+# real Chinese AI-tool creators whose bio used adjacent vocabulary
+# ('联系合作', '商务', '硬核知识') instead of the literal industry
+# tokens ('ai', '工具'). Fix:
+#   - lower follower bypass 50K → 5K (niche creators with verified
+#     contact intent shouldn't need 50K subs to qualify)
+#   - bypass when bio carries any business-intent signal (collab /
+#     business / contact / 合作 / 商务 / email / inquiry / 邮箱 / 联系)
+#     — these are explicit "I want to be contacted" markers and the
+#     creator has self-selected as outreach-receptive regardless of
+#     whether their bio happens to contain the literal industry word
+# Result on the #65 sample: 黑魔法 (bio: '联系方式...') would now
+# pass; only truly off-topic English vlog channels still get rejected.
+#
 # Conservative by design — `False` (reject) only fires when ALL of:
 #   - industry is non-empty AND has at least one usable token
 #   - bio + nickname together produce a non-empty searchable string
-#   - followers is below `follower_bypass` (default 50K, so verified
-#     mid/large channels always pass and let LLM enrichment grade them)
+#   - followers is below `follower_bypass` (default 5K)
+#   - bio carries no business-intent signal
 #   - none of the industry tokens appear in bio/nickname
 # When the data is incomplete (no bio, no industry, all tokens too
 # short) the gate passes, deferring the decision to LLM enrichment.
 _RELEVANCE_TOKEN_SPLIT_RE = re.compile(r"[\s　_\-/、，,/]+")
 _RELEVANCE_CJK_RE = re.compile(r"[一-鿿぀-ヿ가-힯]")
+_BUSINESS_INTENT_RE = re.compile(
+    r"collab|business|sponsor|partner|contact|inquir|brand deal|"
+    r"合作|商务|商業|聯絡|联系|邮箱|信箱|郵箱|協作|协作|お仕事|협업|문의",
+    re.IGNORECASE,
+)
 
 
 def _industry_relevance_prefilter(
@@ -229,7 +249,7 @@ def _industry_relevance_prefilter(
     nickname: str | None,
     followers: int | None,
     *,
-    follower_bypass: int = 50_000,
+    follower_bypass: int = 5_000,
 ) -> bool:
     """Return True (keep) iff this channel plausibly matches `industry`."""
     if not industry or not industry.strip():
@@ -239,6 +259,14 @@ def _industry_relevance_prefilter(
 
     text = f"{bio or ''} {nickname or ''}".lower()
     if not text.strip():
+        return True
+
+    # Business-intent bypass: a creator who explicitly invites
+    # collaboration / lists a contact email is a viable outreach target
+    # even when the bio uses adjacent vocabulary instead of the literal
+    # industry tokens. LLM enrichment downstream will score the actual
+    # topic match.
+    if _BUSINESS_INTENT_RE.search(text):
         return True
 
     raw_tokens = _RELEVANCE_TOKEN_SPLIT_RE.split(industry.lower())
@@ -510,11 +538,17 @@ async def _scrape_youtube(
         # Per-query scroll cap. With early-exit on consecutive zero-growth
         # scrolls, we rarely hit 8 — but the cap is the safety net.
         _MAX_SCROLLS = 8
-        # Stop scrolling a single query once 2 consecutive scrolls find no new
-        # channels. YouTube's ytInitialData lazy-load typically saturates after
-        # 1-2 scrolls; spending the remaining 6 on a query that's already dry
-        # is the bug observed in task #23 (8 scrolls all returned 0 new).
-        _SCROLL_STALL_THRESHOLD = 2
+        # Stop scrolling a single query once N consecutive scrolls find no
+        # new channels. YouTube's ytInitialData lazy-load is bursty —
+        # sometimes scroll #2 returns 0 new but scroll #3 picks up another
+        # batch (especially on date-desc / saturated industries where
+        # YouTube interleaves promoted+relevant blocks). Threshold raised
+        # 2 → 3 (2026-04-25) to give each query one more chance before
+        # bailing; the per-query cost grows by ~3s when the threshold
+        # actually kicks in but candidate-pool size grows ~10-15% on
+        # already-saturated industries (where every extra channel
+        # matters most).
+        _SCROLL_STALL_THRESHOLD = 3
 
         # YouTube `sp=` filter codes (URL-encoded). When DB already has many
         # known channels for this industry, the default-sort SERP keeps
@@ -2135,17 +2169,57 @@ async def _generate_search_strategy(
         )
         return _fallback_queries(industry, platforms, target_market), reason
 
-    # ── Post-validate LLM output: language alignment ─────────────────
-    # Even when the API call succeeds, the LLM can return queries in the
-    # wrong script. Drop those, and if a platform ends up with <3 valid
-    # queries, fill in from fallback (which is now language-aware).
+    # ── Post-validate LLM output: language alignment + blacklist match ─
+    # Even when the API call succeeds, the LLM can return:
+    #   - queries in the wrong script (drop)
+    #   - bare KOL/brand names that exactly match an already-mined channel
+    #     name (drop — task #65 saw 4/15 queries fall into this trap;
+    #     each wasted SERP slot returned 1-6 unique channels, mostly
+    #     the same KOL we already had)
+    # Build a normalized blacklist set from the `Already-mined channels`
+    # the caller passed via `excluded_channels` (entries are formatted as
+    # `"<nickname> (<url>)"` or just `"<url>"` when nickname is missing).
+    excluded_nick_norms: set[str] = set()
+    if excluded_channels:
+        nick_extract_re = re.compile(r"^(.+?)\s*\(https?://")
+        for entry in excluded_channels:
+            m = nick_extract_re.match(entry)
+            if m:
+                # normalize: lower + strip ascii/full-width whitespace +
+                # collapse all internal whitespace. Matches the same
+                # normalization rule used elsewhere in this module so a
+                # KOL nickname `Matt Wolfe` blocks queries `matt wolfe`,
+                # `MattWolfe`, `Matt  Wolfe`, etc.
+                norm = re.sub(r"[\s　]+", "", m.group(1).strip().lower())
+                if norm:
+                    excluded_nick_norms.add(norm)
+
+    def _is_blacklisted_query(q: str) -> bool:
+        norm = re.sub(r"[\s　]+", "", q.strip().lower())
+        return norm in excluded_nick_norms
+
     drop_notes: list[str] = []
     for p in platforms:
         platform_queries = result.get(p, [])
         if not isinstance(platform_queries, list):
             platform_queries = []
-        valid = [q for q in platform_queries if isinstance(q, str) and q.strip() and _query_matches_lang(q, expected_lang)]
-        dropped = len(platform_queries) - len(valid)
+        valid: list[str] = []
+        blacklist_hits: list[str] = []
+        for q in platform_queries:
+            if not isinstance(q, str) or not q.strip():
+                continue
+            if not _query_matches_lang(q, expected_lang):
+                continue
+            if _is_blacklisted_query(q):
+                blacklist_hits.append(q)
+                continue
+            valid.append(q)
+        if blacklist_hits:
+            drop_notes.append(
+                f"{p}: 丢弃 {len(blacklist_hits)} 条命中黑名单 KOL 的 query "
+                f"({', '.join(blacklist_hits[:3])}{'...' if len(blacklist_hits) > 3 else ''})"
+            )
+        dropped = len(platform_queries) - len(valid) - len(blacklist_hits)
         if dropped > 0:
             drop_notes.append(f"{p}: 丢弃 {dropped}/{len(platform_queries)} 条语言不符 query (期望 lang={expected_lang})")
         if len(valid) < 3:
@@ -2709,6 +2783,39 @@ async def run_scraper_agent(task_id: int) -> None:
             task_id, len(excluded_profile_urls), task.industry,
         )
 
+        # Saturation early warning: when the in-DB exclusion set has grown
+        # to >= 100 distinct profile_urls for this industry within 30 days,
+        # the candidate pool YouTube SERP can produce is largely already
+        # mined. The task will still complete but is statistically likely
+        # to return < target new contacts (task #65 root cause: 144
+        # excluded → only 2/10 new found). Push a `scrape:saturation`
+        # event NOW (before the 6-7 minute crawl) so the operator can
+        # cancel and switch keywords instead of waiting for the
+        # post-completion warning. The warning is also persisted to
+        # error_message so it survives page reload.
+        _SATURATION_THRESHOLD = 100
+        saturation_warning: str | None = None
+        if len(excluded_profile_urls) >= _SATURATION_THRESHOLD:
+            saturation_warning = (
+                f"⚠ industry={task.industry!r} 已饱和: 30 天内已抓过 "
+                f"{len(excluded_profile_urls)} 个频道，候选池命中率会显著下降 "
+                f"(实测 ≥100 时 new/target 可能 < 30%)。"
+                "建议:换 industry 关键词 / 切换 target_market / 取消任务。"
+            )
+            task.error_message = saturation_warning
+            await db.commit()
+            await manager.broadcast("scrape:saturation", {
+                "task_id": task_id,
+                "industry": task.industry,
+                "excluded_count": len(excluded_profile_urls),
+                "threshold": _SATURATION_THRESHOLD,
+                "message": saturation_warning,
+            })
+            logger.warning(
+                "[scraper] task %d: SATURATION warning broadcast (excluded=%d, threshold=%d)",
+                task_id, len(excluded_profile_urls), _SATURATION_THRESHOLD,
+            )
+
         search_queries, fallback_reason = await _generate_search_strategy(
             task.industry, platforms, task.target_market, task.competitor_brands,
             excluded_channels=excluded_for_llm,
@@ -2718,8 +2825,12 @@ async def run_scraper_agent(task_id: int) -> None:
             # Surface the fallback reason on the task. The UI shows
             # error_message in a yellow/red banner — better to admit
             # "LLM unreachable, ran with fallback queries" than to silently
-            # produce shallow results.
-            task.error_message = f"LLM 搜索策略不可用，使用 fallback 关键词。原因: {fallback_reason}"
+            # produce shallow results. Append (don't overwrite) so the
+            # earlier saturation warning survives.
+            llm_msg = f"LLM 搜索策略不可用，使用 fallback 关键词。原因: {fallback_reason}"
+            task.error_message = (
+                f"{task.error_message} | {llm_msg}" if task.error_message else llm_msg
+            )
         await db.commit()
 
         # Phase 5/9: strategy_ready (5%)
@@ -3098,6 +3209,12 @@ async def run_scraper_agent(task_id: int) -> None:
             # already wired through the entire stack; surfacing the warning
             # via error_message keeps the change surface small.
             warnings: list[str] = []
+            # Saturation warning surfaced at startup is preserved across
+            # the run — it explains the most likely reason why a low
+            # new_count happened, and the operator may not see the
+            # transient WebSocket toast if they navigated away.
+            if saturation_warning:
+                warnings.append(saturation_warning)
             # Quota errors come first because they're the most actionable —
             # the user can't do anything about "industry exhausted" except
             # try a new keyword, but they CAN top up Brave/Apify credit.
@@ -3242,11 +3359,22 @@ async def run_scraper_agent(task_id: int) -> None:
                     })
             # error_message: prepend quota messages so the most
             # actionable info is at the top, then the actual exception.
+            # Always prefix with the exception's type name. `str(exc)` is
+            # empty for several real-world exception types — most notably
+            # `NotImplementedError()` raised by `asyncio.create_subprocess_exec`
+            # when Playwright is launched on a Windows SelectorEventLoop
+            # (the original symptom of failed tasks #66/#67/#68 — UI showed
+            # "失败" with no detail because str(exc)="" was filtered out by
+            # filter(None, ...) below). Using the type name guarantees the
+            # operator always sees something actionable.
             error_lines: list[str] = []
             if failed_quota_payload:
                 for qe in failed_quota_payload:
                     error_lines.append(qe.get("message") or "")
-            error_lines.append(str(exc))
+            exc_str = str(exc).strip()
+            error_lines.append(
+                f"{type(exc).__name__}: {exc_str}" if exc_str else type(exc).__name__
+            )
             error_message = " | ".join(filter(None, error_lines))[:1000]
 
             await update_task_status(
@@ -3260,7 +3388,7 @@ async def run_scraper_agent(task_id: int) -> None:
             await manager.broadcast("scrape:progress", {
                 "task_id": task_id,
                 "status": "failed",
-                "error": str(exc),
+                "error": error_message,
                 "found_count": found_total,
                 "valid_count": valid_total,
                 "new_count": new_total,
