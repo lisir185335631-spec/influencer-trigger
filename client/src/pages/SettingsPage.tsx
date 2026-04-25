@@ -7,10 +7,19 @@ import {
   testWebhook,
   SystemSettings,
   SystemSettingsUpdate,
+  getYouTubeCookiesStatus,
+  saveYouTubeCookies,
+  deleteYouTubeCookies,
+  YouTubeCookiesStatus,
 } from '../api/settings'
 
 type SaveStatus = 'idle' | 'saving' | 'saved' | 'error'
 type TestStatus = Record<string, 'idle' | 'testing' | 'ok' | 'fail'>
+type CookieSaveState =
+  | { kind: 'idle' }
+  | { kind: 'saving' }
+  | { kind: 'saved' }
+  | { kind: 'error'; message: string }
 
 export default function SettingsPage() {
   const { t } = useTranslation()
@@ -25,6 +34,25 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
+  // YouTube cookies state — independent from the main `form` because it's
+  // a file-backed config (server/data/youtube-cookies.json), not a DB row,
+  // and has its own GET/POST/DELETE endpoints.
+  const [cookiesStatus, setCookiesStatus] = useState<YouTubeCookiesStatus | null>(null)
+  const [cookiesRaw, setCookiesRaw] = useState('')
+  const [cookieSave, setCookieSave] = useState<CookieSaveState>({ kind: 'idle' })
+  const [showInstructions, setShowInstructions] = useState(false)
+  const [cookiesDeleting, setCookiesDeleting] = useState(false)
+
+  const refreshCookiesStatus = async () => {
+    try {
+      const s = await getYouTubeCookiesStatus()
+      setCookiesStatus(s)
+    } catch {
+      // Status fetch failure is non-fatal: leave the section showing the
+      // last known state. Save/delete actions surface their own errors.
+    }
+  }
+
   useEffect(() => {
     if (role === 'operator') return
     getSettings()
@@ -33,6 +61,7 @@ export default function SettingsPage() {
       })
       .catch(() => setError(t('settings.loadFailed')))
       .finally(() => setLoading(false))
+    refreshCookiesStatus()
   }, [role])
 
   if (role === 'operator') {
@@ -72,6 +101,40 @@ export default function SettingsPage() {
     } catch {
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
+    }
+  }
+
+  const handleSaveCookies = async () => {
+    if (!cookiesRaw.trim()) return
+    setCookieSave({ kind: 'saving' })
+    try {
+      const updated = await saveYouTubeCookies(cookiesRaw)
+      setCookiesStatus(updated)
+      setCookiesRaw('')
+      setCookieSave({ kind: 'saved' })
+      setTimeout(() => setCookieSave({ kind: 'idle' }), 2500)
+    } catch (e: unknown) {
+      // FastAPI HTTPException returns {detail: "..."}; axios surfaces it
+      // at err.response.data.detail. Anything else is a network/unknown
+      // error so we fall back to the i18n string.
+      const err = e as { response?: { data?: { detail?: string } } }
+      const detail =
+        err?.response?.data?.detail || t('settings.youtubeCookies.saveError', { message: '' })
+      setCookieSave({ kind: 'error', message: detail })
+      setTimeout(() => setCookieSave({ kind: 'idle' }), 6000)
+    }
+  }
+
+  const handleDeleteCookies = async () => {
+    if (!confirm(t('settings.youtubeCookies.deleteConfirm'))) return
+    setCookiesDeleting(true)
+    try {
+      const updated = await deleteYouTubeCookies()
+      setCookiesStatus(updated)
+    } catch {
+      // ignored: status will refresh on next visit
+    } finally {
+      setCookiesDeleting(false)
     }
   }
 
@@ -243,6 +306,146 @@ export default function SettingsPage() {
             }
             className="w-20 text-right border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-gray-400"
           />
+        </div>
+      </section>
+
+      {/* YouTube cookies */}
+      <section className="mb-8">
+        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+          {t('settings.youtubeCookies.title')}
+        </h2>
+        <div className="text-xs text-gray-400 mb-4">
+          {t('settings.youtubeCookies.subtitle')}
+        </div>
+
+        {/* Status row */}
+        <div className="flex items-center justify-between py-3 border-b border-gray-50">
+          <div>
+            {cookiesStatus === null ? (
+              <div className="text-sm text-gray-400">
+                {t('settings.youtubeCookies.loading')}
+              </div>
+            ) : cookiesStatus.configured ? (
+              <div className="space-y-1">
+                <div className="flex items-center gap-2 text-sm">
+                  {cookiesStatus.auth_complete ? (
+                    <span className="inline-block w-2 h-2 rounded-full bg-green-500" />
+                  ) : (
+                    <span className="inline-block w-2 h-2 rounded-full bg-amber-500" />
+                  )}
+                  <span className="font-medium text-gray-800">
+                    {t('settings.youtubeCookies.statusConfigured')}
+                  </span>
+                  <span className="text-xs text-gray-400">
+                    {t('settings.youtubeCookies.statusCount', { count: cookiesStatus.count })}
+                  </span>
+                </div>
+                {!cookiesStatus.auth_complete && (
+                  <div className="text-xs text-amber-600">
+                    {t('settings.youtubeCookies.statusIncomplete')}
+                  </div>
+                )}
+                {cookiesStatus.updated_at && (
+                  <div className="text-xs text-gray-400">
+                    {t('settings.youtubeCookies.statusUpdatedAt', {
+                      time: new Date(cookiesStatus.updated_at).toLocaleString(),
+                    })}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-sm">
+                <span className="inline-block w-2 h-2 rounded-full bg-gray-300" />
+                <span className="text-gray-500">
+                  {t('settings.youtubeCookies.statusNotConfigured')}
+                </span>
+              </div>
+            )}
+          </div>
+          {cookiesStatus?.configured && (
+            <button
+              onClick={handleDeleteCookies}
+              disabled={cookiesDeleting}
+              className="text-xs px-3 py-1 rounded border border-gray-200 text-gray-500 hover:border-red-300 hover:text-red-600 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              {cookiesDeleting
+                ? t('settings.youtubeCookies.deleting')
+                : t('settings.youtubeCookies.delete')}
+            </button>
+          )}
+        </div>
+
+        {/* Warning */}
+        <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-100 rounded text-xs text-amber-700">
+          {t('settings.youtubeCookies.warning')}
+        </div>
+
+        {/* Instructions toggle */}
+        <button
+          type="button"
+          onClick={() => setShowInstructions((v) => !v)}
+          className="mt-3 text-xs text-gray-500 hover:text-gray-800 transition-colors flex items-center gap-1"
+        >
+          <span
+            className={`inline-block transform transition-transform ${
+              showInstructions ? 'rotate-90' : ''
+            }`}
+          >
+            ▸
+          </span>
+          {t('settings.youtubeCookies.instructionsToggle')}
+        </button>
+        {showInstructions && (
+          <div className="mt-2 px-4 py-3 bg-gray-50 rounded text-xs text-gray-600 leading-relaxed space-y-1">
+            <div>{t('settings.youtubeCookies.instructionsStep1')}</div>
+            <div>{t('settings.youtubeCookies.instructionsStep2')}</div>
+            <div>{t('settings.youtubeCookies.instructionsStep3')}</div>
+            <div>{t('settings.youtubeCookies.instructionsStep4')}</div>
+            <div>{t('settings.youtubeCookies.instructionsStep5')}</div>
+            <div>{t('settings.youtubeCookies.instructionsStep6')}</div>
+            <div>{t('settings.youtubeCookies.instructionsStep7')}</div>
+            <div className="mt-2 pt-2 border-t border-gray-200 text-gray-500">
+              {t('settings.youtubeCookies.instructionsTip')}
+            </div>
+          </div>
+        )}
+
+        {/* Paste textarea */}
+        <textarea
+          value={cookiesRaw}
+          onChange={(e) => setCookiesRaw(e.target.value)}
+          placeholder={t('settings.youtubeCookies.placeholder')}
+          rows={6}
+          spellCheck={false}
+          className="mt-3 w-full border border-gray-200 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-gray-400 placeholder-gray-300 resize-y"
+        />
+
+        {/* Save row */}
+        <div className="mt-3 flex items-center gap-3">
+          <button
+            onClick={handleSaveCookies}
+            disabled={!cookiesRaw.trim() || cookieSave.kind === 'saving'}
+            className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
+              cookieSave.kind === 'saving'
+                ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+                : cookieSave.kind === 'saved'
+                ? 'bg-green-50 text-green-700 border border-green-200'
+                : cookieSave.kind === 'error'
+                ? 'bg-red-50 text-red-700 border border-red-200'
+                : 'bg-gray-900 text-white hover:bg-gray-700 disabled:bg-gray-200 disabled:text-gray-400 disabled:cursor-not-allowed'
+            }`}
+          >
+            {cookieSave.kind === 'saving'
+              ? t('settings.youtubeCookies.saving')
+              : cookieSave.kind === 'saved'
+              ? t('settings.youtubeCookies.saved')
+              : t('settings.youtubeCookies.save')}
+          </button>
+          {cookieSave.kind === 'error' && (
+            <div className="text-xs text-red-600 flex-1">
+              {cookieSave.message}
+            </div>
+          )}
         </div>
       </section>
 

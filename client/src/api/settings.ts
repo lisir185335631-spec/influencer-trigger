@@ -33,3 +33,26 @@ export const testWebhook = (platform: 'feishu' | 'slack', url: string) =>
       url,
     })
     .then((r) => r.data)
+
+export interface YouTubeCookiesStatus {
+  configured: boolean
+  count: number
+  auth_complete: boolean
+  updated_at: string | null
+  file_size: number
+}
+
+export const getYouTubeCookiesStatus = () =>
+  apiClient
+    .get<YouTubeCookiesStatus>('/settings/youtube-cookies/status')
+    .then((r) => r.data)
+
+export const saveYouTubeCookies = (raw: string) =>
+  apiClient
+    .post<YouTubeCookiesStatus>('/settings/youtube-cookies', { raw })
+    .then((r) => r.data)
+
+export const deleteYouTubeCookies = () =>
+  apiClient
+    .delete<YouTubeCookiesStatus>('/settings/youtube-cookies')
+    .then((r) => r.data)
