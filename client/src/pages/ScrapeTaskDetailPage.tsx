@@ -361,7 +361,7 @@ export default function ScrapeTaskDetailPage() {
         </button>
         <div className="flex-1 min-w-0">
           <h1 className="text-base font-semibold text-gray-900">
-            {t('scrapeDetail.title', { id: task.id })}
+            {t('scrapeDetail.title', { id: task.display_number ?? task.id })}
           </h1>
           <p className="text-xs text-gray-400 mt-0.5">
             {t('scrapeDetail.subtitle', { platforms: platforms.join(', '), industry: task.industry, count: task.valid_count })}

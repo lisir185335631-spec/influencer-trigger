@@ -15,6 +15,8 @@ from app.services.scrape_service import (
     get_task_influencers,
     list_scrape_tasks,
 )
+from sqlalchemy import func, select
+from app.models.scrape_task import ScrapeTask
 from app.agents.supervisor import run_scraper_with_tracking
 
 logger = logging.getLogger(__name__)
@@ -60,7 +62,19 @@ async def list_tasks(
     db: AsyncSession = Depends(get_db),
     _: TokenData = Depends(get_current_user),
 ):
-    return await list_scrape_tasks(db)
+    tasks = await list_scrape_tasks(db)
+    # Map id → display_number by enumerating tasks sorted by id ascending.
+    # Earliest-created task (smallest id) is #1; deleting any task makes
+    # later tasks shift down on the next request. Cheap because list
+    # size is in the hundreds at most.
+    sorted_ids = sorted(t.id for t in tasks)
+    display_map = {tid: idx + 1 for idx, tid in enumerate(sorted_ids)}
+    out: list[ScrapeTaskResponse] = []
+    for t in tasks:
+        resp = ScrapeTaskResponse.model_validate(t)
+        resp.display_number = display_map[t.id]
+        out.append(resp)
+    return out
 
 
 @router.get("/tasks/{task_id}", response_model=ScrapeTaskResponse)
@@ -72,7 +86,13 @@ async def get_task(
     task = await get_scrape_task(db, task_id)
     if not task:
         raise HTTPException(status_code=404, detail="Scrape task not found")
-    return task
+    # display_number = count of tasks with id ≤ self.id, hits the
+    # primary-key index so it's O(log n).
+    count_stmt = select(func.count()).select_from(ScrapeTask).where(ScrapeTask.id <= task.id)
+    display_number = (await db.execute(count_stmt)).scalar_one()
+    resp = ScrapeTaskResponse.model_validate(task)
+    resp.display_number = display_number
+    return resp
 
 
 @router.get("/tasks/{task_id}/results", response_model=list[ScrapeInfluencerResult])

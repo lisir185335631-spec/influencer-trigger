@@ -4,6 +4,11 @@ export type ScrapeTaskStatus = 'pending' | 'running' | 'completed' | 'failed' | 
 
 export interface ScrapeTask {
   id: number
+  // Display-only sequence number computed by the backend (index when
+  // ALL tasks are sorted by id ascending; earliest = 1). Re-derived on
+  // every list/detail request — deleting a task auto-renumbers the
+  // rest. URLs / WS events still use `id` (stable primary key).
+  display_number?: number
   platforms: string        // JSON string e.g. '["instagram","youtube"]'
   industry: string
   target_count: number

@@ -24,6 +24,12 @@ class ScrapeTaskResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: int
+    # Display-only sequence number — index of this task when ALL tasks
+    # are sorted by id ascending (earliest = #1). Recomputed on every
+    # list/detail request, never persisted, so deleting any task
+    # automatically renumbers the rest. URLs / WS events / FK refs
+    # still use `id` (the stable primary key).
+    display_number: int | None = None
     platforms: str
     industry: str
     target_count: int

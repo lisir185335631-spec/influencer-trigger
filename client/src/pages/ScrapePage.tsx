@@ -796,7 +796,7 @@ export default function ScrapePage() {
                         <button
                           onClick={async (e) => {
                             e.stopPropagation()
-                            if (!window.confirm(t('scrape.table.deleteConfirm', { id: task.id }))) return
+                            if (!window.confirm(t('scrape.table.deleteConfirm', { id: task.display_number ?? task.id }))) return
                             try {
                               await scrapeApi.deleteTask(task.id)
                               await fetchTasks()
