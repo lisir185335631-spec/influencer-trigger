@@ -1,0 +1,66 @@
+name: Tests
+
+# Run on push to main + every pull-request. Without this, the 57 unit
+# tests checked into commit c4500d3 only run when a developer remembers
+# to invoke pytest locally — the bug they're guarding against (task #44
+# regression: short Latin proper-noun queries dropped under CJK markets)
+# would slip through on PRs.
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  backend-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+          cache: "pip"
+          cache-dependency-path: server/requirements.txt
+
+      - name: Install backend dependencies
+        working-directory: server
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run pytest
+        working-directory: server
+        env:
+          # Tests get fresh secrets via conftest.py's pytest_configure,
+          # but we need a non-empty placeholder here so the Settings
+          # validator doesn't reject the import.
+          SECRET_KEY: aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899
+          ENCRYPTION_KEY: WmQZwgfGC4sFzA3PRAlq-Tn40kq6zo9IXEXvYCjchg4=
+        run: |
+          python -m pytest tests/ -v --tb=short
+
+  frontend-typecheck:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Node 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: client/package-lock.json
+
+      - name: Install frontend dependencies
+        working-directory: client
+        run: npm ci
+
+      - name: TypeScript type-check
+        working-directory: client
+        run: npx tsc --noEmit
