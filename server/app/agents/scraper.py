@@ -102,13 +102,27 @@ def _query_matches_lang(query: str, expected_lang: str) -> bool:
       - expected 'en' → query must NOT contain CJK (English brand words like
         'GPT', 'Canva' are fine because they're Latin script)
       - expected 'cn'/'tw'/'jp'/'kr' → query MUST contain at least one CJK
-        character (loose check; we don't try to disambiguate simplified vs
-        traditional Chinese vs Japanese kanji at this layer)
+        character... EXCEPT when the query is a short proper noun (1-3 words,
+        all Latin script). The search-strategy prompt explicitly asks the
+        LLM to mix in real KOL handles (`MKBHD`, `Linus Tech Tips`,
+        `Marques Brownlee`) and brand names (`ChatGPT`, `Anker`) — these
+        are Latin-script proper nouns that work across all languages on
+        Brave/YouTube. Pre-fix task #44 (lang=tw) dropped 8/12 valid
+        queries because they were KOL names; this short-Latin allowlist
+        restores them.
+        Long English sentences (4+ words) ARE still rejected — those are
+        actual mis-translations the LLM produced when it should have used
+        the local language.
     """
     has_cjk = _is_cjk_text(query)
     if expected_lang == "en":
         return not has_cjk
-    return has_cjk
+    if has_cjk:
+        return True
+    # CJK expected, query has no CJK — allow if it looks like a proper noun
+    # (1-3 whitespace-separated tokens). 4+ tokens means the LLM tried to
+    # write a description in English and forgot to translate.
+    return len(query.split()) <= 3
 
 
 _SUB_COUNT_RE = re.compile(r"([\d.,]+)\s*([KMB]?)", re.IGNORECASE)
