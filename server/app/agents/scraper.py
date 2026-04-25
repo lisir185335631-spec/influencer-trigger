@@ -537,7 +537,15 @@ async def _scrape_youtube(
         #   商业化关键词 (Canva / ChatGPT review): ~35%
         #   AI tools / Notion productivity:          ~20-27%
         # 15× buffer means even a 20% hit rate still delivers target_count.
-        max_to_visit = min(len(all_channel_links), target_count * 15)
+        # Visit budget hard cap = 200 (was target_count * 15). When stop
+        # condition counts only NEW influencers (not duplicates), some
+        # tasks need to walk further than the old 15× cap allowed —
+        # task #52 hit target with 4 new + 6 reused under the old cap;
+        # the new cap gives ~5× more room to find genuine new contacts
+        # in industries where the same KOL/MCN reuses one email across
+        # multiple channels (cross-channel email collision).
+        _MAX_VISIT_CAP = 200
+        max_to_visit = min(len(all_channel_links), _MAX_VISIT_CAP)
 
         # Per-channel hard watchdog: playwright's own op-level timeouts don't
         # always fire (e.g. `page.content()` has no internal timeout), so we
@@ -572,13 +580,17 @@ async def _scrape_youtube(
         # /api/* endpoints lag.
         _CHANNEL_CONCURRENCY = 3
 
-        found_counter = 0
+        # NOTE: counter tracks NEW influencers only (target=10 → 10 fresh
+        # contacts), not the older "any email" semantics. Reused emails
+        # (existing DB rows hit via email-collision) no longer consume
+        # the target budget. Backed by on_found's bool return value.
+        new_counter = 0
         found_lock = asyncio.Lock()
         stop_event = asyncio.Event()
         sem = asyncio.Semaphore(_CHANNEL_CONCURRENCY)
 
         async def _process_channel(ch_idx: int, ch_url: str) -> None:
-            nonlocal found_counter
+            nonlocal new_counter
             # Fast pre-check: if target already reached before we even queue
             # for the semaphore, skip cheaply (no new_page cost).
             if stop_event.is_set():
@@ -670,11 +682,22 @@ async def _scrape_youtube(
                         for email in emails:
                             domain = email.split("@")[1]
                             if await _mx_valid(domain):
-                                await on_found(email, name, ch_url, followers=followers, bio=bio, avatar_url=avatar_url)
-                                async with found_lock:
-                                    found_counter += 1
-                                    if found_counter >= target_count:
-                                        stop_event.set()
+                                # on_found returns True only when the
+                                # influencer was actually inserted (genuinely
+                                # new). Reused / collision emails return False
+                                # and don't count toward target — visit
+                                # budget keeps walking past the cross-channel
+                                # email collisions until target real new
+                                # contacts are found OR _MAX_VISIT_CAP hits.
+                                is_new = await on_found(
+                                    email, name, ch_url,
+                                    followers=followers, bio=bio, avatar_url=avatar_url,
+                                )
+                                if is_new:
+                                    async with found_lock:
+                                        new_counter += 1
+                                        if new_counter >= target_count:
+                                            stop_event.set()
                                 break
                 except asyncio.TimeoutError:
                     logger.warning(
@@ -700,8 +723,8 @@ async def _scrape_youtube(
             return_exceptions=True,
         )
         logger.info(
-            "[YouTube] channel phase done: valid=%d / target=%d (visited up to %d)",
-            found_counter, target_count, max_to_visit,
+            "[YouTube] channel phase done: new=%d / target=%d (visited up to %d)",
+            new_counter, target_count, max_to_visit,
         )
 
     finally:
@@ -1385,11 +1408,12 @@ async def _scrape_instagram_via_apify(
     """Apify-driven IG profile extraction. Replaces Playwright per-profile
     SSR visits with a single Apify batch call that returns full contact
     metadata (incl. businessEmail/externalUrl which IG hides behind login)."""
-    # Apify charges per profile, so cap the batch at target_count * 5 to
-    # avoid blowing through credit on candidates we won't reach. The Brave
-    # candidate pool is usually 100+ but we only need ~50 to hit target=10
-    # at ~40-60% expected hit rate.
-    max_to_scrape = min(len(profile_urls), max(target_count * 5, 20))
+    # Visit budget cap = 200 (was target_count * 5). The bigger cap matches
+    # the YouTube path's _MAX_VISIT_CAP — important now that target counts
+    # only NEW influencers (not collisions). Apify still charges per
+    # profile but a 200-cap batch on FREE plan is ~$0.10, well within
+    # budget for one task.
+    max_to_scrape = min(len(profile_urls), 200)
     batch = profile_urls[:max_to_scrape]
     logger.info(
         "[Instagram/Apify] scraping batch of %d profiles (target=%d)",
@@ -1409,10 +1433,10 @@ async def _scrape_instagram_via_apify(
     # profile already has a businessEmail).
     fallback_ctx: BrowserContext | None = None
 
-    found_counter = 0
+    new_counter = 0  # NEW influencers only — see comment in _scrape_youtube
     try:
         for profile_url in batch:
-            if found_counter >= target_count:
+            if new_counter >= target_count:
                 break
             m = _IG_PROFILE_URL_RE.match(profile_url)
             if not m:
@@ -1474,7 +1498,7 @@ async def _scrape_instagram_via_apify(
                 if not await _mx_valid(domain):
                     continue
                 display_name = full_name or f"@{username}"
-                await on_found(
+                is_new = await on_found(
                     email,
                     display_name,
                     profile_url,
@@ -1482,9 +1506,10 @@ async def _scrape_instagram_via_apify(
                     bio=biography or None,
                     avatar_url=avatar_url,
                 )
-                found_counter += 1
-                if found_counter >= target_count:
-                    break
+                if is_new:
+                    new_counter += 1
+                    if new_counter >= target_count:
+                        break
     finally:
         if fallback_ctx is not None:
             try:
@@ -1493,8 +1518,8 @@ async def _scrape_instagram_via_apify(
                 pass
 
     logger.info(
-        "[Instagram/Apify] phase done: emails-emitted=%d / target=%d (scraped %d profiles)",
-        found_counter, target_count, len(batch),
+        "[Instagram/Apify] phase done: new=%d / target=%d (scraped %d profiles)",
+        new_counter, target_count, len(batch),
     )
 
 
@@ -1589,7 +1614,10 @@ async def _scrape_instagram(
     )
     ctx = await _new_context(browser)
     try:
-        max_to_visit = min(len(profile_urls), target_urls)
+        # Visit budget cap = 200 (was target_urls = target_count*15). See
+        # _scrape_youtube for the rationale — target now counts only NEW
+        # influencers so we need more headroom to walk past collisions.
+        max_to_visit = min(len(profile_urls), 200)
 
         # Slightly longer than YouTube's 15s because IG SSR occasionally stalls
         # under heavier reverse-proxy layers (Meta's edge); still short enough
@@ -1597,13 +1625,13 @@ async def _scrape_instagram(
         _IG_PROFILE_BUDGET = 18.0
         _IG_CONCURRENCY = 3
 
-        found_counter = 0
+        new_counter = 0
         found_lock = asyncio.Lock()
         stop_event = asyncio.Event()
         sem = asyncio.Semaphore(_IG_CONCURRENCY)
 
         async def _process_profile(idx: int, profile_url: str) -> None:
-            nonlocal found_counter
+            nonlocal new_counter
             if stop_event.is_set():
                 return
             async with sem:
@@ -1665,7 +1693,7 @@ async def _scrape_instagram(
                         for email in emails:
                             domain = email.split("@")[1]
                             if await _mx_valid(domain):
-                                await on_found(
+                                is_new = await on_found(
                                     email,
                                     meta["name"] or f"@{username}",
                                     profile_url,
@@ -1673,10 +1701,11 @@ async def _scrape_instagram(
                                     bio=meta["bio"],
                                     avatar_url=meta["avatar_url"],
                                 )
-                                async with found_lock:
-                                    found_counter += 1
-                                    if found_counter >= target_count:
-                                        stop_event.set()
+                                if is_new:
+                                    async with found_lock:
+                                        new_counter += 1
+                                        if new_counter >= target_count:
+                                            stop_event.set()
                                 break
                 except asyncio.TimeoutError:
                     logger.warning(
@@ -1698,8 +1727,8 @@ async def _scrape_instagram(
             return_exceptions=True,
         )
         logger.info(
-            "[Instagram] profile phase done: valid=%d / target=%d (visited up to %d)",
-            found_counter, target_count, max_to_visit,
+            "[Instagram] profile phase done: new=%d / target=%d (visited up to %d)",
+            new_counter, target_count, max_to_visit,
         )
 
     finally:
@@ -2411,12 +2440,22 @@ async def run_scraper_agent(task_id: int) -> None:
                 followers: int | None = None,
                 bio: str | None = None,
                 avatar_url: str | None = None,
-            ) -> None:
+            ) -> bool:
+                """Returns True iff this email was a NEW influencer
+                (inserted into DB). False for already-seen-this-task
+                emails, or for emails that hit a pre-existing DB row
+                (cross-channel email collision → fresh-only skip).
+
+                The return value is what platform scrapers use to
+                decide stop-on-target: only NEW finds count against
+                the target budget so that target=10 → 10 real new
+                contacts, not 4 new + 6 reused (the task #52 problem).
+                """
                 nonlocal found_total, valid_total, new_total, reused_total
 
                 async with db_lock:
                     if email in seen_emails:
-                        return
+                        return False
                     seen_emails.add(email)
                     found_total += 1
 
@@ -2533,6 +2572,12 @@ async def run_scraper_agent(task_id: int) -> None:
                         "reused_count": reused_total,
                         "latest_email": email,
                     })
+
+                # Tell the caller whether this was a fresh insert (existing
+                # was None inside the lock) or a fresh-only skip (existing
+                # had a row). The scraper uses this to advance the
+                # stop-on-target counter only on real new contacts.
+                return existing is None
 
             return on_found
 
@@ -2666,6 +2711,21 @@ async def run_scraper_agent(task_id: int) -> None:
                     "本次未抓到任何新网红("
                     f"复链接 {reused_total} 人，候选池可能已被历史任务穷尽)。"
                     "建议换 industry 关键词或扩大 target_market。"
+                )
+            elif (
+                0 < new_total < task.target_count
+                and not quota_errors
+            ):
+                # Partial completion — visit budget (max 200 candidates)
+                # exhausted before hitting target. With the 2026-04-25
+                # target-semantics change (target counts only NEW
+                # influencers), this surfaces when the candidate pool's
+                # email-collision rate is too high to find `target`
+                # genuinely new contacts within the visit cap.
+                warnings.append(
+                    f"目标 {task.target_count} 个新网红，仅找到 {new_total} 个真新人"
+                    f" + {reused_total} 个复链接（已遍历候选池上限 200 个 channel）。"
+                    "建议换 industry 关键词或扩大 target_market 拓展候选池。"
                 )
             warning_message = " | ".join(warnings) if warnings else None
 
