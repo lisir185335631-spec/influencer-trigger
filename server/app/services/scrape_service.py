@@ -95,7 +95,19 @@ async def update_task_status(
 ) -> None:
     task.status = status
     if progress is not None:
-        task.progress = progress
+        # Monotonic enforcement at function level: progress must never
+        # regress while a task is running. Multiple call sites (on_found
+        # new-based formula, _process_channel finally visit-based formula,
+        # _scrape_youtube per-scroll, _enrich_results per-batch, gap-fill
+        # walks) push progress concurrently — without this guard the
+        # smaller value would overwrite the larger and the UI would
+        # see a backward jump (the task #64 "猛地倒退" symptom).
+        # Terminal states (completed/failed/cancelled) bypass the guard
+        # so the task can land on its true final value (typically 100).
+        if status in (ScrapeTaskStatus.completed, ScrapeTaskStatus.failed, ScrapeTaskStatus.cancelled):
+            task.progress = progress
+        else:
+            task.progress = max(task.progress or 0, progress)
     if found_count is not None:
         task.found_count = found_count
     if valid_count is not None:

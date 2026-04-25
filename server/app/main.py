@@ -81,6 +81,39 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     #                   cd server && alembic upgrade head
     # See server/alembic/README.md
 
+    # Zombie ScrapeTask cleanup. When uvicorn is killed mid-task (Ctrl+C,
+    # crash, OS reboot), any task that was running at the time stays
+    # status='running' in DB forever — there's no agent left to update it.
+    # The UI then shows the task as "still running" with no progress.
+    # On every startup we promote any orphaned 'running' task to 'failed'
+    # with a clear error_message so the UI recovers automatically.
+    from datetime import datetime, timezone
+    from sqlalchemy import update, select
+    from app.models.scrape_task import ScrapeTask, ScrapeTaskStatus
+    async with AsyncSessionLocal() as db:
+        try:
+            count_stmt = select(ScrapeTask.id).where(ScrapeTask.status == ScrapeTaskStatus.running)
+            result = await db.execute(count_stmt)
+            zombie_ids = [r[0] for r in result.all()]
+            if zombie_ids:
+                stmt = (
+                    update(ScrapeTask)
+                    .where(ScrapeTask.status == ScrapeTaskStatus.running)
+                    .values(
+                        status=ScrapeTaskStatus.failed,
+                        error_message="服务重启中断，请重新发起任务",
+                        completed_at=datetime.now(timezone.utc),
+                    )
+                )
+                await db.execute(stmt)
+                await db.commit()
+                logger.warning(
+                    "Startup cleanup: marked %d zombie running task(s) as failed: %s",
+                    len(zombie_ids), zombie_ids,
+                )
+        except Exception as e:
+            logger.warning("Zombie cleanup failed (non-fatal): %s", e)
+
     scheduler.add_job(
         _reset_today_sent_job,
         CronTrigger(hour=0, minute=0, timezone="UTC"),

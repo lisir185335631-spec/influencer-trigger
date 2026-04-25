@@ -203,6 +203,66 @@ def _is_valid_email_format(email: str) -> bool:
     return len(tld) >= 2
 
 
+# Cheap relevance gate that runs at visit time, before on_found writes
+# to DB. Catches the most common failure mode the LLM-based enrichment
+# already flags: SERP returned a creator whose channel is unrelated to
+# the requested industry (travel / lifestyle / news outlet / gaming
+# bio with no AI / Notion / Power Bank signal). Without this gate
+# those channels enter the DB at relevance_score 5-15% and clutter
+# the operator's outreach list.
+#
+# Conservative by design — `False` (reject) only fires when ALL of:
+#   - industry is non-empty AND has at least one usable token
+#   - bio + nickname together produce a non-empty searchable string
+#   - followers is below `follower_bypass` (default 50K, so verified
+#     mid/large channels always pass and let LLM enrichment grade them)
+#   - none of the industry tokens appear in bio/nickname
+# When the data is incomplete (no bio, no industry, all tokens too
+# short) the gate passes, deferring the decision to LLM enrichment.
+_RELEVANCE_TOKEN_SPLIT_RE = re.compile(r"[\s　_\-/、，,/]+")
+_RELEVANCE_CJK_RE = re.compile(r"[一-鿿぀-ヿ가-힯]")
+
+
+def _industry_relevance_prefilter(
+    industry: str | None,
+    bio: str | None,
+    nickname: str | None,
+    followers: int | None,
+    *,
+    follower_bypass: int = 50_000,
+) -> bool:
+    """Return True (keep) iff this channel plausibly matches `industry`."""
+    if not industry or not industry.strip():
+        return True
+    if followers and followers >= follower_bypass:
+        return True
+
+    text = f"{bio or ''} {nickname or ''}".lower()
+    if not text.strip():
+        return True
+
+    raw_tokens = _RELEVANCE_TOKEN_SPLIT_RE.split(industry.lower())
+    has_meaningful_token = False
+    for tok in raw_tokens:
+        tok = tok.strip()
+        if not tok:
+            continue
+        if _RELEVANCE_CJK_RE.search(tok):
+            has_meaningful_token = True
+            if tok in text:
+                return True
+        elif len(tok) >= 2:
+            has_meaningful_token = True
+            if re.search(rf"\b{re.escape(tok)}\b", text):
+                return True
+
+    if not has_meaningful_token:
+        # industry tokenises to nothing usable (single-char Latin etc.) —
+        # we have no signal to filter on, so let it through.
+        return True
+    return False
+
+
 # ── MX record validation ─────────────────────────────────────────────────────
 
 _mx_cache: dict[str, bool] = {}
@@ -456,55 +516,136 @@ async def _scrape_youtube(
         # is the bug observed in task #23 (8 scrolls all returned 0 new).
         _SCROLL_STALL_THRESHOLD = 2
 
+        # YouTube `sp=` filter codes (URL-encoded). When DB already has many
+        # known channels for this industry, the default-sort SERP keeps
+        # returning the same head-of-tail. Adding "upload-date desc" gives
+        # us a different slice (recent uploads → smaller / newer channels)
+        # without doubling the LLM cost. We only run the date variant on
+        # the first 4 queries (brand category) to cap added latency at
+        # ~4 × (goto + scroll + delay) ≈ 30s extra.
+        _SP_DEFAULT = ""
+        _SP_UPLOAD_DATE_DESC = "&sp=CAI%253D"
+        _DATE_VARIANT_QUERY_COUNT = 4
+
+        # Saturation-aware variant gate: only fan out to date-desc when this
+        # industry has already saturated the default SERP (i.e. we know
+        # about ≥ 20 channels for it from prior tasks). For first-time /
+        # rare-industry runs, the candidate pool from the default sort is
+        # already plenty, and the date variant adds ~1 min of search time
+        # for marginal new channels. This makes the multi-keyword usage
+        # path (every task is a new industry) ~25% faster without hurting
+        # the saturated-industry path.
+        _SERP_SATURATION_THRESHOLD = 20
+        _serp_saturated = len(excluded) >= _SERP_SATURATION_THRESHOLD
+        logger.info(
+            "[YouTube] SERP variant mode: %s (excluded=%d, threshold=%d)",
+            "saturated → +date-desc" if _serp_saturated else "fresh → default-only",
+            len(excluded), _SERP_SATURATION_THRESHOLD,
+        )
+
+        # Estimated total SERP scrolls for the search phase. Search owns
+        # progress 0-30%, mapped to cumulative scroll count linearly.
+        # We use 3 scrolls/query (the empirical average — stall threshold
+        # cuts most queries off after the 3rd scroll) so the bar can
+        # actually reach 30 by the end of search. If a run completes
+        # fewer scrolls than estimated, the candidate-pool-ready push
+        # (smooth-walk to 30 below) fills any remaining gap.
+        _AVG_SCROLLS_PER_QUERY = 3
+        n_search_passes = len(search_queries)
+        if _serp_saturated:
+            n_search_passes += min(_DATE_VARIANT_QUERY_COUNT, len(search_queries))
+        estimated_total_scrolls = max(1, n_search_passes * _AVG_SCROLLS_PER_QUERY)
+        cumulative_scrolls = 0
+        last_pushed_search_progress = 0
+
         for q_idx, query in enumerate(search_queries):
-            search_url = f"https://www.youtube.com/results?search_query={query}"
-            logger.info("[YouTube] query %d/%d: %r", q_idx + 1, len(search_queries), query)
-            if on_progress:
-                await on_progress(f"搜索 query {q_idx + 1}/{len(search_queries)}: {query[:50]}")
-            try:
-                await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
-            except Exception as e:
-                logger.warning("[YouTube] goto failed for %r: %s — skipping query", query, e)
-                continue
-            await _random_delay()
+            # Two passes for the first 4 queries when SERP is saturated:
+            # default sort + upload-date. The rest run default-only. Both
+            # passes contribute to the cross-query global pool, so duplicate
+            # channels (same channel appears in both passes) get naturally
+            # deduped on insert.
+            if q_idx < _DATE_VARIANT_QUERY_COUNT and _serp_saturated:
+                sp_variants = [(_SP_DEFAULT, "default"), (_SP_UPLOAD_DATE_DESC, "date-desc")]
+            else:
+                sp_variants = [(_SP_DEFAULT, "default")]
 
-            found_this_query: set[str] = set()
-            stall_count = 0
-            for scroll_i in range(_MAX_SCROLLS):
-                html = await page.content()
-                # Regex over 1–2 MB HTML on the event-loop thread freezes all
-                # HTTP handlers. Offload to thread pool.
-                matches = await asyncio.to_thread(_YT_CHANNEL_PATH_RE.findall, html)
-                new_count = 0
-                for path in matches:
-                    full_url = f"https://www.youtube.com{path}"
-                    if full_url not in found_this_query:
-                        found_this_query.add(full_url)
-                        new_count += 1
+            for sp_param, sp_label in sp_variants:
+                search_url = f"https://www.youtube.com/results?search_query={query}{sp_param}"
                 logger.info(
-                    "[YouTube] q%d scroll #%d: html_len=%d regex_hits=%d new_channels=%d total_this_query=%d",
-                    q_idx + 1, scroll_i + 1, len(html), len(matches), new_count, len(found_this_query),
+                    "[YouTube] query %d/%d (%s): %r",
+                    q_idx + 1, len(search_queries), sp_label, query,
                 )
-                if new_count == 0:
-                    stall_count += 1
-                    if stall_count >= _SCROLL_STALL_THRESHOLD:
-                        logger.info(
-                            "[YouTube] q%d early-exit scroll: %d consecutive 0-new scrolls",
-                            q_idx + 1, stall_count,
-                        )
-                        break
-                else:
-                    stall_count = 0
-                await page.evaluate("window.scrollBy(0, 1800)")
-                await asyncio.sleep(2)
+                if on_progress:
+                    # Phase_detail tag for the UI's status line. Progress
+                    # is pushed per-scroll below (not per-query) so the
+                    # bar advances continuously through the SERP loop.
+                    await on_progress(
+                        f"搜索 query {q_idx + 1}/{len(search_queries)} ({sp_label}): {query[:50]}"
+                    )
+                try:
+                    await page.goto(search_url, wait_until="domcontentloaded", timeout=30000)
+                except Exception as e:
+                    logger.warning("[YouTube] goto failed for %r (%s): %s — skipping variant", query, sp_label, e)
+                    continue
+                await _random_delay()
 
-            # Merge into global pool (preserve order = first occurrence wins).
-            # No early-break across queries — each query gets a chance to
-            # contribute distinct channels even when earlier queries already
-            # filled the per-task `target_count * 15` quota.
-            for link in found_this_query:
-                if link not in all_channel_links:
-                    all_channel_links.append(link)
+                found_this_query: set[str] = set()
+                stall_count = 0
+                for scroll_i in range(_MAX_SCROLLS):
+                    html = await page.content()
+                    # Regex over 1–2 MB HTML on the event-loop thread freezes all
+                    # HTTP handlers. Offload to thread pool.
+                    matches = await asyncio.to_thread(_YT_CHANNEL_PATH_RE.findall, html)
+                    new_count = 0
+                    for path in matches:
+                        full_url = f"https://www.youtube.com{path}"
+                        if full_url not in found_this_query:
+                            found_this_query.add(full_url)
+                            new_count += 1
+                    logger.info(
+                        "[YouTube] q%d/%s scroll #%d: html_len=%d regex_hits=%d new_channels=%d total_this_query=%d",
+                        q_idx + 1, sp_label, scroll_i + 1, len(html), len(matches), new_count, len(found_this_query),
+                    )
+
+                    # Per-scroll progress push (search phase 0→30%). Each
+                    # completed scroll is a real unit of work — that's
+                    # what the user considers "actual execution" — so
+                    # progress advances strictly by completed scroll
+                    # count. Push only when the integer progress
+                    # actually changes — avoids spamming WebSocket with
+                    # redundant same-value events.
+                    cumulative_scrolls += 1
+                    target_search_progress = min(
+                        29,
+                        int(cumulative_scrolls / estimated_total_scrolls * 30),
+                    )
+                    if on_progress and target_search_progress > last_pushed_search_progress:
+                        last_pushed_search_progress = target_search_progress
+                        await on_progress(
+                            f"搜索 query {q_idx + 1}/{len(search_queries)} ({sp_label}): {query[:50]} · scroll {scroll_i + 1}",
+                            target_search_progress,
+                        )
+
+                    if new_count == 0:
+                        stall_count += 1
+                        if stall_count >= _SCROLL_STALL_THRESHOLD:
+                            logger.info(
+                                "[YouTube] q%d/%s early-exit scroll: %d consecutive 0-new scrolls",
+                                q_idx + 1, sp_label, stall_count,
+                            )
+                            break
+                    else:
+                        stall_count = 0
+                    await page.evaluate("window.scrollBy(0, 1800)")
+                    await asyncio.sleep(2)
+
+                # Merge into global pool (preserve order = first occurrence wins).
+                # No early-break across queries — each query/variant gets a
+                # chance to contribute distinct channels even when earlier
+                # ones already filled the per-task quota.
+                for link in found_this_query:
+                    if link not in all_channel_links:
+                        all_channel_links.append(link)
 
         # ── Cross-task DB dedup ─────────────────────────────────────────
         # Filter out channels we've already extracted emails from in prior
@@ -528,9 +669,24 @@ async def _scrape_youtube(
             len(excluded), len(search_queries),
         )
         if on_progress:
+            # Smooth catch-up from wherever the scroll loop got us to up
+            # to 30. Stall-driven early exits often leave us at e.g. 22
+            # (cumulative=36 / estimated=48 = 22%); jumping straight to
+            # 30 would skip 7 numbers. Walk 23,24,...,30 at 50ms/digit
+            # so every number is visible. Keep `last_pushed_search_progress`
+            # as the lower bound so we don't double-emit numbers we
+            # already broadcast during the scroll loop.
+            for _walk_p in range(last_pushed_search_progress + 1, 30):
+                await on_progress(
+                    f"搜索完成，整理候选池 ({_walk_p}%)",
+                    _walk_p,
+                )
+                await asyncio.sleep(0.05)
+            # Final commit at 30 with the real candidate-pool message.
             await on_progress(
                 f"候选池建好: {len(all_channel_links)} 个 channel "
-                f"(已过滤 {before_filter - len(all_channel_links)} 个老熟人)"
+                f"(已过滤 {before_filter - len(all_channel_links)} 个老熟人)",
+                30,
             )
 
         # Visit up to 15× the target count. Empirical hit rate:
@@ -585,12 +741,24 @@ async def _scrape_youtube(
         # (existing DB rows hit via email-collision) no longer consume
         # the target budget. Backed by on_found's bool return value.
         new_counter = 0
+        visited_counter = 0
         found_lock = asyncio.Lock()
         stop_event = asyncio.Event()
         sem = asyncio.Semaphore(_CHANNEL_CONCURRENCY)
 
+        # Hit-rate-aware early stop. When the candidate pool is mostly
+        # weak-relevance channels (LLM gave fictional KOL names → SERP
+        # returned random non-business creators), continuing to visit is
+        # marginal-return. Threshold: 8× target visits with < target/2
+        # genuine hits → bail out. For target=10, that's "after 80
+        # visits if we still have <5 new, stop and surface partial
+        # result". Beats waiting another 80 visits to maybe find one
+        # more contact.
+        _LOW_HIT_VISITS_THRESHOLD = max(80, target_count * 8)
+        _LOW_HIT_NEW_THRESHOLD = max(1, target_count // 2)
+
         async def _process_channel(ch_idx: int, ch_url: str) -> None:
-            nonlocal new_counter
+            nonlocal new_counter, visited_counter
             # Fast pre-check: if target already reached before we even queue
             # for the semaphore, skip cheaply (no new_page cost).
             if stop_event.is_set():
@@ -609,16 +777,14 @@ async def _scrape_youtube(
                             "[YouTube] [%d/%d] visiting %s",
                             ch_idx + 1, max_to_visit, about_url,
                         )
-                        # Broadcast a phase_detail every visit attempt so
-                        # the user sees the channel-level work happening.
-                        # This is the big "stuck at 15%" fix — without it,
-                        # the UI sat on "正在抓取频道并提取邮箱…" for
-                        # multiple minutes with no signal anything was alive.
-                        if on_progress:
-                            handle = ch_url.rsplit("/", 1)[-1]
-                            await on_progress(
-                                f"访问 channel {ch_idx + 1}/{max_to_visit}: {handle}"
-                            )
+                        # Note: the per-visit phase_detail push moved to
+                        # the finally block (uses visited_counter, which
+                        # is monotonic). Pushing on entry used ch_idx+1
+                        # (candidate-pool position), which doesn't agree
+                        # with finally's visited_counter under
+                        # concurrency=3 — users saw "channel 14" then
+                        # "channel 13" because two coroutines were
+                        # racing on different counters.
                         await ch_page.goto(about_url, wait_until="domcontentloaded", timeout=20000)
                         # Hydration wait: 1.2s lets client-side JS render the
                         # "View email address" button (only visible when
@@ -679,6 +845,25 @@ async def _scrape_youtube(
                         # subresource block for video URLs and bump
                         # _CHANNEL_BUDGET ≥ 60s.
 
+                        # Visit-time relevance gate. If the channel's bio +
+                        # nickname don't carry any industry token (and
+                        # followers < 50K so the size bypass doesn't apply),
+                        # skip on_found entirely so the channel never lands
+                        # in DB with a 5-15% relevance score that the user
+                        # has to clean up manually. The gate is conservative
+                        # — small-size channels with NO industry signal at
+                        # all are the only thing it rejects. LLM enrichment
+                        # still grades everything that passes.
+                        if emails and not _industry_relevance_prefilter(
+                            industry, bio, name, followers,
+                        ):
+                            logger.info(
+                                "[YouTube] [%d] prefilter REJECT (industry=%r, "
+                                "followers=%s, bio_excerpt=%r) — skip on_found",
+                                ch_idx + 1, industry, followers, (bio or "")[:80],
+                            )
+                            emails = []  # nothing to insert; visited_counter still bumps below
+
                         for email in emails:
                             domain = email.split("@")[1]
                             if await _mx_valid(domain):
@@ -712,6 +897,54 @@ async def _scrape_youtube(
                             await ch_page.close()
                         except Exception:
                             pass
+                # Hit-rate gate: every visit (success or failure) bumps
+                # visited_counter. After a low-hit-rate threshold, bail
+                # rather than keep grinding through a candidate pool the
+                # LLM filled with fictional KOL names. Task #55 walked
+                # 166/176 visits to find 10 new — a 6% hit rate. With the
+                # gate, we'd stop at ~80 visits if we still had < 5 new,
+                # surfacing the partial result fast.
+                async with found_lock:
+                    visited_counter += 1
+                    # Per-visit progress push so the bar advances even when
+                    # this channel had no email / was a reused-skip / was
+                    # prefilter-rejected. Visit phase owns 30-79% — visit
+                    # ratio fills the band roughly linearly, with new-finds
+                    # in on_found doing the same; on_progress's monotonic
+                    # gate ensures whichever is higher wins.
+                    visit_ratio = visited_counter / max(1, max_to_visit)
+                    new_ratio = new_counter / max(1, target_count)
+                    visit_progress = min(79, 30 + int(max(visit_ratio, new_ratio) * 49))
+                    if on_progress:
+                        # Include the handle so the user sees which
+                        # channel just finished. visited_counter is the
+                        # monotonic completed-count (1, 2, 3, ...) — the
+                        # handle is the channel that just produced this
+                        # completion, not the channel at slot
+                        # visited_counter in the candidate pool. Under
+                        # concurrency=3 those don't 1:1 map, but the
+                        # visual contract the user wants is "see a
+                        # number that goes up + see what just got
+                        # visited" — both satisfied here.
+                        handle = ch_url.rsplit("/", 1)[-1]
+                        await on_progress(
+                            f"访问 channel {visited_counter}/{max_to_visit}: {handle}",
+                            visit_progress,
+                        )
+                    if (
+                        not stop_event.is_set()
+                        and visited_counter >= _LOW_HIT_VISITS_THRESHOLD
+                        and new_counter < _LOW_HIT_NEW_THRESHOLD
+                    ):
+                        logger.warning(
+                            "[YouTube] hit-rate gate: visited=%d new=%d (<%d) — early-stop",
+                            visited_counter, new_counter, _LOW_HIT_NEW_THRESHOLD,
+                        )
+                        if on_progress:
+                            await on_progress(
+                                f"候选池命中率低（已查 {visited_counter} 个频道仅 {new_counter} 新人），提前结束"
+                            )
+                        stop_event.set()
                 # Each task paces itself independently before releasing the
                 # semaphore. With concurrency=3 and 2-5s delay, effective rate
                 # ~1 new channel request per ~1s, which stays within normal
@@ -1576,9 +1809,13 @@ async def _scrape_instagram(
         len(profile_urls), before_filter, before_filter - len(profile_urls), len(excluded),
     )
     if on_progress:
+        # IG search-phase done. Bump the bar to 30% to mirror YouTube's
+        # search→visit handover, so phase=searching ends and the visit
+        # band (30-79%) takes over.
         await on_progress(
             f"IG 候选池建好: {len(profile_urls)} 个 profile "
-            f"(过滤 {before_filter - len(profile_urls)} 个老熟人)"
+            f"(过滤 {before_filter - len(profile_urls)} 个老熟人)",
+            30,
         )
 
     if not profile_urls:
@@ -1754,10 +1991,13 @@ async def _scrape_stub(platform: str) -> list[dict]:
 # operator runs the same task multiple times. Misses fall through to a
 # real LLM call.
 #
-# We deliberately do NOT include `excluded_channels` in the key — that
-# field changes after every successful task as new channels get mined,
-# which would invalidate the cache on every run. The LLM uses excluded
-# only as a soft hint anyway (the real dedup is downstream).
+# 2026-04-25: `excluded_count` IS in the key now. The hard-blacklist
+# rule in the system prompt means cached query sets become invalid
+# the moment the blacklist grows (e.g. after a successful task adds
+# 9 channels to DB, the next task's blacklist is +9 longer). Replaying
+# the old query set would silently violate the blacklist and re-surface
+# just-mined KOLs. Trade-off: cache hit rate drops to "burst-retry only"
+# (same task fired twice within TTL before any new channels saved).
 #
 # TTL = 5 minutes: long enough to absorb burst-debug retries, short
 # enough that a real "let me try a different approach" run still gets
@@ -1768,12 +2008,24 @@ _LLM_CACHE_TTL = 300.0
 _llm_strategy_cache: dict[tuple, tuple[float, dict[str, list[str]], str | None]] = {}
 
 
-def _llm_cache_key(industry: str, target_market: str | None, competitor_brands: str | None, platforms: list[str]) -> tuple:
+def _llm_cache_key(
+    industry: str,
+    target_market: str | None,
+    competitor_brands: str | None,
+    platforms: list[str],
+    excluded_count: int = 0,
+) -> tuple:
+    # `excluded_count` enters the key so a task that adds new mined
+    # channels invalidates cached query sets generated under the old
+    # blacklist. Without this, the LLM's hard-blacklist rule (#8 in the
+    # system prompt) would be silently bypassed by replaying a cached
+    # set that pre-dates the latest mined channels.
     return (
         (industry or "").strip(),
         (target_market or "").strip().lower(),
         (competitor_brands or "").strip(),
         tuple(sorted(platforms)),
+        excluded_count,
     )
 
 
@@ -1800,7 +2052,10 @@ async def _generate_search_strategy(
     # platforms) tuple was queried within the TTL window. The fallback_reason
     # is replayed from cache too so the UI's "LLM unreachable" / "drops
     # X/12 queries" warnings stay consistent across cached invocations.
-    cache_key = _llm_cache_key(industry, target_market, competitor_brands, platforms)
+    cache_key = _llm_cache_key(
+        industry, target_market, competitor_brands, platforms,
+        excluded_count=len(excluded_channels) if excluded_channels else 0,
+    )
     cached = _llm_strategy_cache.get(cache_key)
     now = _time.time()
     if cached and now - cached[0] < _LLM_CACHE_TTL:
@@ -1847,9 +2102,8 @@ async def _generate_search_strategy(
     if excluded_channels:
         sample = excluded_channels[:30]
         user_lines.append(
-            "Already-mined channels (AVOID generating queries that surface these; "
-            "prefer angles, brand variants, languages, or use-cases that would "
-            "find different creators): "
+            "Already-mined channels (HARD BLACKLIST — see system prompt rule #8; "
+            "any query that would surface these is invalid): "
             + ", ".join(sample)
             + (f" ... (+{len(excluded_channels) - 30} more)" if len(excluded_channels) > 30 else "")
         )
@@ -2088,11 +2342,24 @@ async def _enrich_results(
     task_id: int,
     industry: str,
     target_market: str | None = None,
-) -> None:
+    on_progress: "Callable[[str, int | None], Awaitable[None]] | None" = None,
+) -> list[str]:
     """Two-phase scoring: always assign a heuristic score first so every
     influencer has a relevance_score / match_reason. Then, if OpenAI is
-    configured, upgrade each batch with an LLM score. LLM batch failures
-    fall through silently — the heuristic score stays."""
+    configured, upgrade each batch with an LLM score.
+
+    Returns a list of human-readable failure reasons (one per failed LLM
+    batch / blocked stage). Empty list = clean run. Caller appends these
+    to task.error_message so the UI can show "completed but X batches
+    used heuristic scoring instead of LLM" — previously these failures
+    were swallowed and only visible in server logs.
+
+    `on_progress` is the same callback used by platform scrapers; we
+    drive enrichment progress 80→85% as influencers are scored, so the
+    bar continues to advance during the LLM-grade phase rather than
+    sitting at 79 while the user waits 5-15 seconds for batch responses.
+    """
+    failures: list[str] = []
     settings = get_settings()
 
     async with AsyncSessionLocal() as db:
@@ -2106,7 +2373,7 @@ async def _enrich_results(
         influencers = list(rows.scalars().all())
 
         if not influencers:
-            return
+            return failures
 
         # Phase 1: heuristic baseline for every influencer that still lacks a
         # score (e.g. freshly inserted from this task). Pre-existing scores
@@ -2128,7 +2395,8 @@ async def _enrich_results(
         # Phase 2: LLM upgrade. Skip if no API key or prompt templates missing.
         if not settings.openai_api_key:
             logger.info("No OpenAI API key, keeping heuristic scores for task %d", task_id)
-            return
+            failures.append("评分降级：未配置 OPENAI_API_KEY，使用启发式评分")
+            return failures
 
         from app.prompts import load_prompt
         try:
@@ -2136,7 +2404,8 @@ async def _enrich_results(
             system = load_prompt("scraper/enrich_results.system", business_context=business_ctx)
         except FileNotFoundError as e:
             logger.warning("Prompt template not found, keeping heuristic scores: %s", e)
-            return
+            failures.append(f"评分降级：评分 prompt 模板缺失 ({e})")
+            return failures
 
         from app.tools.llm_client import chat as llm_chat
 
@@ -2149,7 +2418,15 @@ async def _enrich_results(
                     "id": inf.id,
                     "nickname": inf.nickname or "Unknown",
                     "platform": inf.platform.value if inf.platform else "unknown",
-                    "bio": (inf.bio or "")[:200],
+                    # 600 chars covers the partnership / business inquiry
+                    # block that mid-tier KOLs put at the END of their bio
+                    # (after intro / weekly schedule / etc.). The previous
+                    # 200-char cut frequently lopped that off, leaving the
+                    # LLM blind to the strongest collaboration signal and
+                    # producing softer scores for genuinely-business-ready
+                    # creators. 600 is still well under classifier model
+                    # context limits even with batch=10.
+                    "bio": (inf.bio or "")[:600],
                     "industry": inf.industry or "",
                 }
                 for inf in batch
@@ -2228,12 +2505,27 @@ async def _enrich_results(
                 await db.commit()
             except Exception as e:
                 logger.warning("LLM enrichment batch failed (heuristic stays): %s", e)
+                failures.append(f"评分批次 {i // batch_size + 1} 调用 LLM 失败 ({type(e).__name__}: {e})，已使用启发式分数兜底")
                 await db.rollback()
+
+            # Per-batch progress push: enrichment owns 80→85%. Each
+            # completed batch (success or failed-but-still-counts) bumps
+            # the bar one notch closer to 85, so the user sees the LLM
+            # grading is alive instead of staring at a stuck 79%.
+            if on_progress:
+                batch_idx = i // batch_size + 1
+                total_batches = max(1, (len(influencers) + batch_size - 1) // batch_size)
+                ench_progress = min(85, 80 + int((batch_idx / total_batches) * 5))
+                await on_progress(
+                    f"评分批次 {batch_idx}/{total_batches}",
+                    ench_progress,
+                )
 
         logger.info(
             "Enrichment done for task %d: %d heuristic / %d LLM-upgraded out of %d",
             task_id, heuristic_applied, llm_upgraded, len(influencers),
         )
+        return failures
 
 
 # ── main agent entry point ───────────────────────────────────────────────────
@@ -2289,6 +2581,12 @@ async def run_scraper_agent(task_id: int) -> None:
             })
 
         # Phase 1/9: starting (0%)
+        # Pre-flight phases all push progress=0 — the user considers
+        # querying_history / llm_thinking / strategy_ready / browser_starting
+        # as "preparation" not "task execution". Real progress only starts
+        # when the search SERP loop produces its first scroll worth of
+        # candidates (see _scrape_youtube). Phase_detail still updates so
+        # the UI shows what's happening behind the 0%.
         await _ph(0, "starting")
 
         # ── Background: kick off Playwright launch in parallel with the
@@ -2315,43 +2613,75 @@ async def run_scraper_agent(task_id: int) -> None:
         browser_for_cleanup: Browser | None = None
 
         # Phase 2/9: querying_history (1%) — DB excluded_channels lookup
-        await _ph(1, "querying_history")
+        await _ph(0, "querying_history")
 
-        # Phase 3/9: build "excluded channels" — every YouTube/Instagram
-        # channel whose email we've already mined, regardless of industry
-        # or how long ago. Passing this to the LLM (negative context) and
-        # the scraper (hard filter on the candidate pool) is what keeps
-        # new tasks from re-visiting already-known channels.
+        # Phase 3/9: build "excluded channels" — channels whose emails we've
+        # already mined in prior tasks of the SAME industry within the last
+        # 30 days. Passing this to the LLM (negative context) + the scraper
+        # (hard filter on the candidate pool) keeps new tasks from re-visiting
+        # the same "old reliables".
         #
-        # 2026-04-25 (task #53): widened the filter from "30 days + same
-        # industry" to all-time + all-industry. The narrow filter was
-        # producing reused=30 against new=9 — those 30 channels had
-        # profile_urls not in the 30-day-same-industry set but their
-        # emails were still in DB (cross-task / cross-industry email
-        # collisions like MCN companies sharing one partnerships@ inbox).
-        # The fix: exclude EVERY known profile_url so visits only target
-        # genuinely-new channels. We accept the trade-off that
-        # cross-industry rescans of the same KOL are no longer possible —
-        # the DB already has scoring for those, so re-evaluating is rarely
-        # worth the visit cost.
+        # 2026-04-25 reverted from "all-time + all-industry" back to this
+        # narrow window. The wider filter was reactive over-correction for
+        # task #53's reused=30: by excluding every known channel across all
+        # industries, the candidate pool shrank to the URL-fresh tail of
+        # SERP — which on saturated industry/market combos (AI 工具/tw after
+        # 13 runs) is mostly non-business channels with 0 emails. Net effect
+        # was new=0 + reused=39 (when the SQLAlchemy race below let the
+        # filter run no-op anyway). Narrow filter accepts some reused as
+        # the price for keeping cross-industry rescans + a wider candidate
+        # pool that still surfaces fresh contacts on the long tail.
         #
-        # The DB query (~100-500ms on a warm DB) is a background task that
-        # overlaps with the next 50ms of broadcast / LLM-prep work — small
-        # win but composes cleanly with O1 cache hits (DB still finishes
-        # first when LLM is cached).
-        async def _query_excluded_urls() -> list[str]:
+        # Race fix (paired): _query_excluded_urls runs in a *separate*
+        # AsyncSession (AsyncSessionLocal()), not the main `db` session.
+        # The previous code shared `db` between this background task and
+        # the concurrent _ph(...) → update_task_status → db.commit() path,
+        # which SQLAlchemy AsyncSession rejects as
+        # "concurrent operations are not permitted". The except branch
+        # silently returned [], so URL filtering became a no-op. With
+        # a private side session there's no contention.
+        # Normalize industry name: lower + strip whitespace.
+        # Without this, 'AI 工具' / 'AI工具' / 'ai工具' / 'AI TOOLS' / 'AI tools'
+        # are treated as 4 different industries by SQL `=`, so a user
+        # running 'AI 工具' would not see channels mined under 'ai工具'
+        # in the excluded set — and re-visit them on every task.
+        # Task #55 produced 7 such "false-fresh" reused channels purely
+        # from this string-mismatch.
+        def _norm_industry(s: str | None) -> str:
+            return (s or "").lower().replace(" ", "").replace("　", "")
+
+        normalized_target_industry = _norm_industry(task.industry)
+
+        async def _query_excluded_urls() -> list[tuple[str, str | None]]:
+            from datetime import timedelta
             try:
+                cutoff = datetime.now(timezone.utc) - timedelta(days=30)
+                # SQLite's lower() handles ASCII case fold; non-ASCII
+                # (CJK) compares byte-equal anyway. Strip only ASCII
+                # spaces here — full-width whitespace handled in Python
+                # post-filter below.
                 stmt = (
-                    sa.select(Influencer.profile_url)
+                    sa.select(Influencer.profile_url, Influencer.nickname, Influencer.industry)
                     .where(
                         Influencer.platform.in_([InfluencerPlatform.youtube, InfluencerPlatform.instagram]),
+                        Influencer.created_at >= cutoff,
                         Influencer.profile_url.isnot(None),
                         Influencer.profile_url != "",
                     )
                     .distinct()
                 )
-                r = await db.execute(stmt)
-                return [u for (u,) in r.all() if u]
+                async with AsyncSessionLocal() as side_db:
+                    r = await side_db.execute(stmt)
+                    rows = r.all()
+                # Apply normalized industry filter in Python so the same
+                # rule (lower + strip) covers all the unicode whitespace
+                # variants we've seen in user input ('AI 工具' with space,
+                # 'AI　工具' with full-width, 'AI工具' no space, 'ai工具'
+                # all-lower, 'AI TOOLS' all-upper).
+                return [
+                    (u, n) for (u, n, ind) in rows
+                    if u and _norm_industry(ind) == normalized_target_industry
+                ]
             except Exception as e:
                 logger.warning("[scraper] excluded-channels lookup failed (non-fatal): %s", e)
                 return []
@@ -2361,19 +2691,27 @@ async def run_scraper_agent(task_id: int) -> None:
         # Phase 4/9: llm_thinking (3%) — LLM is about to generate queries.
         # The phase broadcast itself happens *while* the DB excluded query
         # is in flight, hiding its 100-500ms cost.
-        await _ph(3, "llm_thinking")
+        await _ph(0, "llm_thinking")
 
         # Now block on the DB result — usually it's already done because
         # the broadcast above took longer than the SELECT.
-        excluded_profile_urls = await excluded_db_task
+        excluded_pairs: list[tuple[str, str | None]] = await excluded_db_task
+        excluded_profile_urls = [u for (u, _) in excluded_pairs]
+        # Pass (nickname, url) pairs to the LLM so it can recognise and
+        # avoid known KOLs by name (the URL alone is harder to map back
+        # to the creator the LLM is being asked to skip).
+        excluded_for_llm = [
+            f"{n} ({u})" if n else u
+            for (u, n) in excluded_pairs
+        ]
         logger.info(
-            "[scraper] task %d: %d excluded channels (all-time, all-industry; current task industry=%r)",
+            "[scraper] task %d: %d excluded channels (industry=%r, last 30d)",
             task_id, len(excluded_profile_urls), task.industry,
         )
 
         search_queries, fallback_reason = await _generate_search_strategy(
             task.industry, platforms, task.target_market, task.competitor_brands,
-            excluded_channels=excluded_profile_urls,
+            excluded_channels=excluded_for_llm,
         )
         task.search_keywords = json.dumps(search_queries, ensure_ascii=False)
         if fallback_reason:
@@ -2385,7 +2723,7 @@ async def run_scraper_agent(task_id: int) -> None:
         await db.commit()
 
         # Phase 5/9: strategy_ready (5%)
-        await _ph(5, "strategy_ready")
+        await _ph(0, "strategy_ready")
 
         found_total = 0
         valid_total = 0
@@ -2412,22 +2750,39 @@ async def run_scraper_agent(task_id: int) -> None:
             "facebook": InfluencerPlatform.facebook,
         }
 
-        # ── on_progress: phase_detail without changing progress % ───────
-        # Inner scrapers (_scrape_youtube / _scrape_instagram) call this
-        # at structural milestones — start of each query, candidate-pool
-        # ready, per-channel visit. The progress bar's % is driven only
-        # by valid emails (on_found increments new_total → progress jumps
-        # 21%, 28%, 34%...), but a long stretch with no valid email used
-        # to look frozen at 15%. Now `phase_detail` is a free-text status
-        # line that updates every 5-15 seconds during the stuck window:
-        # "搜索 query 5/12: ChatGPT" / "访问 channel 12/100: @MKBHD".
-        async def on_progress(phase_detail: str) -> None:
+        # ── on_progress: phase_detail + optional progress override ──────
+        # Inner scrapers (_scrape_youtube / _scrape_instagram) call this at
+        # structural milestones — per query, candidate pool ready, per
+        # channel visit. Two responsibilities:
+        #
+        # 1. Push a free-text `phase_detail` so the UI shows "搜索 query
+        #    5/12: ChatGPT" / "访问 channel 12/100: @MKBHD" instead of
+        #    sitting silent.
+        # 2. Optionally override the progress %. Search-phase calls pass
+        #    the SERP-walk percentage (15-30%); visit-phase calls leave
+        #    it None and let on_found drive the bar via new-finds.
+        #
+        # The previous implementation always used task.progress, which
+        # froze the bar at 15% during the entire search SERP loop (3-4
+        # min on a 12-query run) — users saw 15% / phase=crawling and
+        # thought the task was stuck.
+        async def on_progress(phase_detail: str, progress: int | None = None) -> None:
+            # Monotonic: never let the bar go backward. visit-phase pushes
+            # come from two sources (per-visit count + per-new-found),
+            # whichever is higher wins. We update DB inside db_lock so
+            # concurrent on_found writes don't race.
+            if progress is not None and progress > (task.progress or 0):
+                async with db_lock:
+                    if progress > (task.progress or 0):
+                        await update_task_status(
+                            db, task, ScrapeTaskStatus.running, progress=progress,
+                        )
+            phase_label = "searching" if (task.progress < 30) else "crawling"
             await manager.broadcast("scrape:progress", {
                 "task_id": task_id,
                 "status": "running",
-                # Don't bump the progress integer — let on_found drive it.
                 "progress": task.progress,
-                "phase": "crawling",
+                "phase": phase_label,
                 "phase_detail": phase_detail,
                 "found_count": found_total,
                 "valid_count": valid_total,
@@ -2558,7 +2913,22 @@ async def run_scraper_agent(task_id: int) -> None:
                     # valid_total) so re-discovered influencers don't bump
                     # the bar — the bar reflects genuine new finds toward
                     # target_count.
-                    progress = min(79, 15 + int((new_total / task.target_count) * 65))
+                    # Visit phase owns 30-79%. Each NEW influencer bumps
+                    # the bar by 49 / target_count percentage points so a
+                    # 10-target task fills 30→79 in 10 hits.
+                    #
+                    # Monotonic guard: take max with task.progress so this
+                    # call site never regresses the bar even if visited
+                    # counter has already pushed progress past the
+                    # new-based estimate. Without this max(), a task with
+                    # visited=50/108 (progress=52 from finally) would
+                    # see progress jump back to 34 here on the first
+                    # email find (30 + 1/10*49 = 34) — the task #64
+                    # "猛地倒退" symptom. update_task_status also
+                    # enforces monotonic at the function level as a
+                    # second line of defense.
+                    new_based_progress = min(79, 30 + int((new_total / task.target_count) * 49))
+                    progress = max(task.progress or 0, new_based_progress)
                     await update_task_status(
                         db, task, ScrapeTaskStatus.running,
                         progress=progress,
@@ -2570,7 +2940,7 @@ async def run_scraper_agent(task_id: int) -> None:
                     await manager.broadcast("scrape:progress", {
                         "task_id": task_id,
                         "status": "running",
-                        "progress": progress,
+                        "progress": task.progress,
                         "phase": "crawling",
                         "found_count": found_total,
                         "valid_count": valid_total,
@@ -2622,7 +2992,7 @@ async def run_scraper_agent(task_id: int) -> None:
             # returns immediately. Worst case we still need to wait the
             # remaining ~1-2s of browser startup, but that's overlapped
             # with the LLM cost we already paid.
-            await _ph(7, "browser_starting")
+            await _ph(0, "browser_starting")
             try:
                 pw, browser = await playwright_task
                 pw_for_cleanup = pw
@@ -2635,22 +3005,10 @@ async def run_scraper_agent(task_id: int) -> None:
                 raise
 
             try:
-                # Phase 7/9: searching (10%) — scrapers are about to make
-                # their first HTTP call (YouTube search / Brave dork).
-                await _ph(10, "searching")
-
-                # Phase 8/9: crawling (15%) — channel/profile visits start
-                await manager.broadcast("scrape:progress", {
-                    "task_id": task_id,
-                    "status": "running",
-                    "progress": 15,
-                    "phase": "crawling",
-                    "found_count": 0,
-                    "valid_count": 0,
-                    "new_count": 0,
-                    "reused_count": 0,
-                })
-                await update_task_status(db, task, ScrapeTaskStatus.running, progress=15)
+                # Phase searching: still 0% — the actual progress 1→30
+                # comes from inner _scrape_youtube, which pushes
+                # progress as each SERP scroll completes (real work).
+                await _ph(0, "searching")
 
                 # Run all platforms concurrently, limited by scrape_concurrency semaphore.
                 await asyncio.gather(
@@ -2674,12 +3032,34 @@ async def run_scraper_agent(task_id: int) -> None:
                 pw_for_cleanup = None
                 browser_for_cleanup = None
 
-            # Phase 4/5: LLM enrichment (relevance scoring)
-            await update_task_status(db, task, ScrapeTaskStatus.running, progress=85)
+            # Smooth catch-up from wherever per-visit pushes left us to
+            # 79 (visit phase ceiling). If new=target hit early or hit-rate
+            # gate fired, task.progress can be anywhere from 30 to 79.
+            # Walk one digit per 50ms so the visit band finishes cleanly
+            # before enrichment takes over at 80.
+            for _walk_p in range(int(task.progress or 0) + 1, 80):
+                await manager.broadcast("scrape:progress", {
+                    "task_id": task_id,
+                    "status": "running",
+                    "progress": _walk_p,
+                    "phase": "crawling",
+                    "found_count": found_total,
+                    "valid_count": valid_total,
+                    "new_count": new_total,
+                    "reused_count": reused_total,
+                })
+                await asyncio.sleep(0.05)
+            await update_task_status(db, task, ScrapeTaskStatus.running, progress=79)
+
+            # Phase 4/5: LLM enrichment (relevance scoring) — owns 80→85%.
+            # Visit phase tops out at 79; this 80 bump signals "we're done
+            # finding contacts, now grading them". _enrich_results pushes
+            # one progress notch per LLM batch.
+            await update_task_status(db, task, ScrapeTaskStatus.running, progress=80)
             await manager.broadcast("scrape:progress", {
                 "task_id": task_id,
                 "status": "running",
-                "progress": 85,
+                "progress": 80,
                 "phase": "enriching",
                 "found_count": found_total,
                 "valid_count": valid_total,
@@ -2687,7 +3067,27 @@ async def run_scraper_agent(task_id: int) -> None:
                 "reused_count": reused_total,
             })
 
-            await _enrich_results(task.id, task.industry, task.target_market)
+            enrich_failures = await _enrich_results(
+                task.id, task.industry, task.target_market,
+                on_progress=on_progress,
+            )
+
+            # Smooth catch-up from wherever enrichment batches left us to
+            # 85. With 1-3 batches and integer rounding, the last batch
+            # often lands at 83 or 84, leaving a 1-2 digit gap to 85.
+            for _walk_p in range(int(task.progress or 0) + 1, 86):
+                await manager.broadcast("scrape:progress", {
+                    "task_id": task_id,
+                    "status": "running",
+                    "progress": _walk_p,
+                    "phase": "enriching",
+                    "found_count": found_total,
+                    "valid_count": valid_total,
+                    "new_count": new_total,
+                    "reused_count": reused_total,
+                })
+                await asyncio.sleep(0.05)
+            await update_task_status(db, task, ScrapeTaskStatus.running, progress=85)
 
             # Phase 5/5: completed.
             # If the run hit the LLM fallback path or produced 0 new finds
@@ -2712,12 +3112,35 @@ async def run_scraper_agent(task_id: int) -> None:
                 warnings.append(qe.get("message") or f"{qe.get('service')} 配额异常")
             if fallback_reason:
                 warnings.append(f"LLM 搜索策略不可用: {fallback_reason}")
+            # Surface LLM enrichment failures (one per failed batch / blocked
+            # stage) so the user can tell why scores look heuristic instead
+            # of LLM-graded. Dedup duplicates so 5 batches all hitting the
+            # same 429 only show once.
+            if enrich_failures:
+                seen_enrich: set[str] = set()
+                for ef in enrich_failures:
+                    key = ef[:80]
+                    if key in seen_enrich:
+                        continue
+                    seen_enrich.add(key)
+                    warnings.append(ef)
             if new_total == 0 and task.target_count > 0 and not quota_errors:
-                warnings.append(
+                msg = (
                     "本次未抓到任何新网红("
                     f"复链接 {reused_total} 人，候选池可能已被历史任务穷尽)。"
                     "建议换 industry 关键词或扩大 target_market。"
                 )
+                # Cookies hint: anonymous YouTube scraping misses the
+                # "View email" captcha-gated emails. If the task ran
+                # YouTube without cookies AND found 0, configuring
+                # youtube-cookies.json is the cheapest 30-50% recovery.
+                if "youtube" in platforms and _load_youtube_cookies() is None:
+                    msg += (
+                        " 另外：未检测到 youtube-cookies.json，YouTube 命中率"
+                        "受限（约 35%，配置后可达 70-85%）。"
+                        "参考 server/data/README-youtube-cookies.md。"
+                    )
+                warnings.append(msg)
             elif (
                 0 < new_total < task.target_count
                 and not quota_errors
@@ -2747,6 +3170,26 @@ async def run_scraper_agent(task_id: int) -> None:
                 for qe in quota_errors
                 if f"{qe.get('service')}:{qe.get('http_code')}" in seen_services
             ] if quota_exceeded else None
+
+            # Walk the final 86→99 numbers so the bar fills smoothly to
+            # 100 instead of jumping from 85 (post-enrichment) straight
+            # to terminal. The actual wrap-up work (warning_message
+            # build, quota_payload compute, final DB write) takes ~50ms,
+            # but the user-visible bar gets paced ~80ms per number so
+            # all 14 numbers are visible — total ~1.1s, fast enough not
+            # to feel like a stall, slow enough each digit registers.
+            for _walk_p in range(86, 100):
+                await manager.broadcast("scrape:progress", {
+                    "task_id": task_id,
+                    "status": "running",
+                    "progress": _walk_p,
+                    "phase": "completing",
+                    "found_count": found_total,
+                    "valid_count": valid_total,
+                    "new_count": new_total,
+                    "reused_count": reused_total,
+                })
+                await asyncio.sleep(0.08)
 
             await update_task_status(
                 db, task, ScrapeTaskStatus.completed,

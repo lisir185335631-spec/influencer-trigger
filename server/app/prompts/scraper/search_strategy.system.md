@@ -62,14 +62,25 @@
 
    KOL 名字以**裸名字**形式输出（不带 review/tutorial 后缀）。**只列你确定真实存在的人**——不知道就少列几个，**宁少勿编造**（编造的 KOL 名字 dork 0 命中浪费配额）。Brave dork `site:instagram.com "Marques Brownlee" email "@"` 会直接命中该 KOL 的 IG 账号。
 
+   ⚠️ **上面的示例 KOL 名字仅作"该 industry 有哪些类型 KOL"的参考**。如果用户上下文里 `Already-mined channels` 已经包含了示例里的某个名字（如 `Matt Wolfe (https://www.youtube.com/@mreflow)`），**绝对不能再用 `Matt Wolfe`**——必须从该 industry 的**其他真实 KOL**里挑（小一档的、不同语种的、不同细分领域的、不同地区的）。
+
+   **如果 industry 已经被反复抓过、你能想到的 KOL 都在黑名单**：
+   - 优先尝试**腰部 KOL**（5 万 - 20 万订阅，常年被忽略但留邮箱率高）
+   - 优先尝试**当地语种 KOL**（lang=tw 时找台湾、香港的 AI 工具评测博主，不找美国的）
+   - 优先尝试**相邻 niche**（AI 工具 → AI 视频生成 / AI 写作 / AI 编程 / AI PPT / AI 配音）的头部 KOL
+   - 最后才退到"全部 4 个 KOL slot 用泛词替代"
+
    **类别 C — 泛词角度（每个平台 4 个）**
 
    用组合词（按 lang）+ industry 拼短词组：`<industry> review` / `<industry> tutorial` / `<industry> tips` / `<industry> recommendation`。
 
-   **铁律**：
-   - query 数组**至少 4 个品牌（A）+ 4 个 KOL 名字（B）+ 4 个泛词（C）**，总共 12-16 条
-   - **类别 B 是命中率最高的一类**，宁愿 B 多 A 少
-   - 全是泛词的 query 会被认为质量低、命中率差
+   **铁律**（2026-04-25 修订，避免 LLM 在黑名单约束下虚构 KOL）：
+   - query 数组总共 12-16 条
+   - 品牌 A：**4-6 个**，必须是真实存在的品牌
+   - KOL B：**0-4 个**，**只列你 100% 确定真实存在 + 该频道做该 industry 内容 + 大概率留商务邮箱的人**。**没把握就一个也不列**——LLM 编造或半编造的 KOL 名字（如 "AI Doodler" "Tech Talk AI" "Lily's AI Lab"）搜出来的频道几乎全部跟该 industry 弱关联（实测 task #55 q5-q8 共贡献 68 个候选，绝大部分是 AI 工具弱关联频道，hit rate 拉低 → 用户体感"重复多 + 速度慢"）
+   - 泛词 C：**至少 4 个，最多 8 个**（B 不够时用 C 补位）
+   - **首选品牌 A 而不是编 KOL B**：宁愿 6 个真品牌 + 6 个泛词 + 0 个虚构 KOL，也不要 4 个真品牌 + 4 个虚构 KOL + 4 个泛词
+   - 全是泛词的 query 也好过虚构 KOL：YouTube 搜虚构名字会随机给一些不相关频道，是对 visit budget 的最大浪费
 
 3. 扩展品牌名变体（例：GPT → GPT / ChatGPT / ChatGPT Plus / OpenAI）
 
@@ -86,7 +97,16 @@
 
 7. **多样性优先**：query 之间彼此结构不同；不同切入角度（品牌名 vs 评测 vs 教程 vs 用户场景）
 
-8. **AVOID already-mined channels（如有）**：用户上下文若列出 `Already-mined channels: ...`，说明这些频道历史已被反复抓过，**生成的 query 要刻意避开会再次命中它们的关键词**——优先尝试**没列出来的品牌名**、长尾关键词、niche 用例描述。
+8. **🛑 HARD BLACKLIST: already-mined channels（同 industry 30 天内已抓过）**
+
+   用户上下文若有 `Already-mined channels: <name1> (<url1>), <name2> (<url2>), ...`，**禁止生成会再次拉回这些 channel 的 query**。具体硬约束：
+
+   - **类别 B（KOL 名字）**：黑名单里出现过的人名/handle **一个都不能再用**。例如黑名单里有 `Matt Wolfe`，你输出 query `Matt Wolfe` 就是违规——YouTube 搜 `Matt Wolfe` 必返回他本人频道，**100% 浪费一条 query**。改用**该 industry 黑名单里没有的同类 KOL**。
+   - **类别 A（品牌名）**：如果黑名单里多个 channel 名都包含某品牌词（例：`ChatGPT Tutorials`、`ChatGPT for Beginners`），说明该品牌词的 SERP 头部已被穷尽，**优先用更小众/更新出现的品牌名**。
+   - **如果你列不出新人 / 新品牌**：宁可用泛词角度（C 类）填位，不要硬填会撞黑名单的项。
+   - **目标**：12-16 条 query 全部都是"这个 industry 黑名单里从来没见过的关键词"。
+
+   **检验**：你输出后自查——任何一条 query 如果它的字面量（去除大小写空格后）出现在某个 already-mined channel 的 nickname 里，**这条 query 是错的**，必须替换。
 
 ## Output Format
 
@@ -97,8 +117,10 @@
 ```
 
 只输出代码里传入的那些平台的 key，不要多不要少。**每个平台 12-16 条 query**：
-- 前 4 条 = **品牌名**（类别 A）
-- 中间 4-6 条 = **KOL/创作者名字**（类别 B，**最关键，命中率最高**）
-- 后 4 条 = **泛词角度**（类别 C）
+- **类别 A（品牌名）4-6 条** —— 真实存在的品牌
+- **类别 B（KOL/创作者名字）0-4 条** —— **只列 100% 确定真实存在 + 该频道做该 industry 合作的人，没把握一个也不列**
+- **类别 C（泛词角度）4-8 条** —— B 不够时用 C 补位
 
 **全部用 Expected query language 指定的语言**（KOL/品牌名是英文专有名词时保留 Latin script）。
+
+⚠️ 反例（task #55 教训）：在被黑名单约束下，LLM 给了 q5='Michele Wong' / q6='AI Doodler' / q7='Tech Talk AI' / q8="Lily's AI Lab" —— 后面 3 个是 LLM 虚构 / 半虚构的 KOL 名字。YouTube 搜出来的是 Lily AI（动画）/ Michelle Wong Music（音乐）/ Doodle and Arkey（Roblox）等弱关联频道，**全部进入 visit 阶段浪费 budget**。如果改成"4 真品牌 + 0 虚构 KOL + 8 泛词"，候选池更精准，hit rate 更高，用户体感"速度更快、相关度更高"。

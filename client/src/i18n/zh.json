@@ -207,6 +207,8 @@
     "totalInfluencers": "共 {{count}} 个达人",
     "sortMost": "粉丝数 ↑ 最多",
     "sortLeast": "粉丝数 ↑ 最少",
+    "sortByRelevance": "按相关度",
+    "sortByFollowers": "按粉丝数",
     "table": {
       "name": "名称",
       "platform": "平台",

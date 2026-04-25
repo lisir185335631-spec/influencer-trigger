@@ -207,6 +207,8 @@
     "totalInfluencers": "{{count}} influencer(s)",
     "sortMost": "Followers ↑ Most",
     "sortLeast": "Followers ↑ Least",
+    "sortByRelevance": "By Relevance",
+    "sortByFollowers": "By Followers",
     "table": {
       "name": "Name",
       "platform": "Platform",

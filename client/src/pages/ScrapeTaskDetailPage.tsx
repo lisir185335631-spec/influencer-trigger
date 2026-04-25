@@ -42,6 +42,7 @@ function PlatformBadge({ platform }: { platform: string | null }) {
 }
 
 type SortDir = 'desc' | 'asc'
+type SortField = 'relevance_score' | 'followers'
 
 // ── Live Progress Types & Helpers ─────────────────────────────────────────────
 
@@ -86,13 +87,17 @@ function StatusPill({ status }: { status: string }) {
   const { t } = useTranslation()
   const styles: Record<string, string> = {
     pending: 'bg-gray-100 text-gray-600',
-    running: 'bg-blue-50 text-blue-700 animate-pulse',
+    // running: solid blue + white text + ring + pulse so the badge is
+    // obvious on white page background. Previous bg-blue-50/text-blue-700
+    // had so little contrast the user couldn't tell the task was alive.
+    running: 'bg-blue-600 text-white ring-2 ring-blue-300 ring-offset-1 shadow-sm animate-pulse',
     completed: 'bg-emerald-50 text-emerald-700',
     failed: 'bg-red-50 text-red-700',
     cancelled: 'bg-gray-100 text-gray-500',
   }
   return (
-    <span className={`inline-flex items-center px-3 py-1 text-xs font-medium rounded-full ${styles[status] ?? styles.pending}`}>
+    <span className={`inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full ${styles[status] ?? styles.pending}`}>
+      {status === 'running' && <Loader2 size={12} className="animate-spin mr-1.5" />}
       {t(`scrape.status.${status === 'completed' ? 'done' : status}`)}
     </span>
   )
@@ -120,6 +125,9 @@ export default function ScrapeTaskDetailPage() {
   const [task, setTask] = useState<ScrapeTask | null>(null)
   const [results, setResults] = useState<ScrapeInfluencerResult[]>([])
   const [loading, setLoading] = useState(true)
+  // Default to relevance_score so the user immediately sees high-quality
+  // matches at the top of the list. Followers stays as a one-click toggle.
+  const [sortField, setSortField] = useState<SortField>('relevance_score')
   const [sortDir, setSortDir] = useState<SortDir>('desc')
   const [live, setLive] = useState<LiveProgress | null>(null)
   const [emailStream, setEmailStream] = useState<{ email: string; at: number }[]>([])
@@ -242,12 +250,34 @@ export default function ScrapeTaskDetailPage() {
     }
   }, [live?.status, fetchData])
 
-  // ── Sort client-side for asc/desc toggle ───────────────────────────────────
+
+  // ── Sort client-side: by relevance_score (default) or followers ────────────
+  // For relevance_score sorting, ties (e.g. two channels both at 0.85) are
+  // broken by followers DESC so the more impactful KOL wins the tiebreak.
   const sorted = [...results].sort((a, b) => {
+    if (sortField === 'relevance_score') {
+      const sa = a.relevance_score ?? -1
+      const sb = b.relevance_score ?? -1
+      if (sa !== sb) return sortDir === 'desc' ? sb - sa : sa - sb
+      const fa = a.followers ?? -1
+      const fb = b.followers ?? -1
+      return fb - fa
+    }
     const fa = a.followers ?? -1
     const fb = b.followers ?? -1
     return sortDir === 'desc' ? fb - fa : fa - fb
   })
+
+  // Helper: toggle direction if same field clicked again, else switch field
+  // (and reset to desc for the new field — desc is what users want by default).
+  const handleSortClick = (field: SortField) => {
+    if (sortField === field) {
+      setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))
+    } else {
+      setSortField(field)
+      setSortDir('desc')
+    }
+  }
 
   // ── Render ─────────────────────────────────────────────────────────────────
   if (loading) {
@@ -463,14 +493,34 @@ export default function ScrapeTaskDetailPage() {
             <p className="text-xs text-gray-500">
               {t('scrapeDetail.totalInfluencers', { count: results.length })}
             </p>
-            <button
-              onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}
-              className="flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 transition-colors px-2 py-1 rounded hover:bg-gray-100"
-            >
-              {sortDir === 'desc' ? <ArrowDown size={12} /> : <ArrowUp size={12} />}
-              {sortDir === 'desc' ? t('scrapeDetail.sortMost') : t('scrapeDetail.sortLeast')}
-              <ArrowUpDown size={10} className="opacity-40" />
-            </button>
+            <div className="flex items-center gap-1">
+              <button
+                onClick={() => handleSortClick('relevance_score')}
+                className={`flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors ${
+                  sortField === 'relevance_score'
+                    ? 'text-gray-900 bg-gray-100'
+                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {t('scrapeDetail.sortByRelevance') || '相关度'}
+                {sortField === 'relevance_score' && (
+                  sortDir === 'desc' ? <ArrowDown size={11} /> : <ArrowUp size={11} />
+                )}
+              </button>
+              <button
+                onClick={() => handleSortClick('followers')}
+                className={`flex items-center gap-1 text-xs px-2 py-1 rounded transition-colors ${
+                  sortField === 'followers'
+                    ? 'text-gray-900 bg-gray-100'
+                    : 'text-gray-400 hover:text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                {t('scrapeDetail.sortByFollowers') || '粉丝数'}
+                {sortField === 'followers' && (
+                  sortDir === 'desc' ? <ArrowDown size={11} /> : <ArrowUp size={11} />
+                )}
+              </button>
+            </div>
           </div>
 
           <div className="bg-white rounded-xl border border-gray-100 overflow-hidden">
@@ -480,24 +530,43 @@ export default function ScrapeTaskDetailPage() {
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.name')}</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.platform')}</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.email')}</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 cursor-pointer select-none"
-                      onClick={() => setSortDir((d) => (d === 'desc' ? 'asc' : 'desc'))}>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 cursor-pointer select-none hover:text-gray-800"
+                      onClick={() => handleSortClick('followers')}>
                     <span className="flex items-center justify-end gap-1">
                       {t('scrapeDetail.table.followers')}
-                      {sortDir === 'desc' ? <ArrowDown size={11} /> : <ArrowUp size={11} />}
+                      {sortField === 'followers' && (
+                        sortDir === 'desc' ? <ArrowDown size={11} /> : <ArrowUp size={11} />
+                      )}
                     </span>
                   </th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('scrapeDetail.table.bio')}</th>
-                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('scrapeDetail.table.relevance')}</th>
+                  <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase cursor-pointer select-none hover:text-gray-800"
+                      onClick={() => handleSortClick('relevance_score')}>
+                    <span className="flex items-center gap-1">
+                      {t('scrapeDetail.table.relevance')}
+                      {sortField === 'relevance_score' && (
+                        sortDir === 'desc' ? <ArrowDown size={11} /> : <ArrowUp size={11} />
+                      )}
+                    </span>
+                  </th>
                   <th className="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase">{t('scrapeDetail.table.matchReason')}</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {sorted.map((inf) => {
                   const isExpanded = expandedId === inf.id
+                  // Visual de-emphasis for low-relevance rows: lighter
+                  // background tint and dimmed text so the user's eye
+                  // naturally lands on the high-relevance rows up top.
+                  // Threshold 0.5 matches the prefilter's intent — below
+                  // it = low business signal, may not be worth outreach.
+                  const isLowRelevance = inf.relevance_score != null && inf.relevance_score < 0.5
+                  const rowClass = isLowRelevance
+                    ? 'transition-colors bg-gray-50/40 hover:bg-gray-100/60 opacity-70'
+                    : 'transition-colors bg-white hover:bg-gray-50/60'
                   return (
                     <Fragment key={inf.id}>
-                      <tr className="transition-colors bg-white hover:bg-gray-50/60">
+                      <tr className={rowClass}>
                         <td className="px-4 py-3 align-middle">
                           <div className="flex items-center gap-1.5">
                             <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={24} />
