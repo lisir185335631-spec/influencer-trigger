@@ -45,6 +45,12 @@ type SortDir = 'desc' | 'asc'
 
 // ── Live Progress Types & Helpers ─────────────────────────────────────────────
 
+type QuotaError = {
+  service: 'brave' | 'apify' | string
+  http_code: number
+  message: string
+}
+
 type LiveProgress = {
   task_id: number
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled'
@@ -57,6 +63,8 @@ type LiveProgress = {
   latest_email?: string
   error?: string
   warning?: string | null
+  quota_exceeded?: boolean
+  quota_errors?: QuotaError[] | null
 }
 
 function StatusPill({ status }: { status: string }) {
@@ -101,6 +109,12 @@ export default function ScrapeTaskDetailPage() {
   const [live, setLive] = useState<LiveProgress | null>(null)
   const [emailStream, setEmailStream] = useState<{ email: string; at: number }[]>([])
   const [expandedId, setExpandedId] = useState<number | null>(null)
+  // Quota-exceeded modal: when Brave/Apify run out of credit mid-task we
+  // pop up a clear "go top up" dialog instead of leaving the user staring
+  // at a found=0 result wondering what went wrong. Tracked per task so
+  // the modal doesn't re-open on every WebSocket event.
+  const [quotaModal, setQuotaModal] = useState<QuotaError[] | null>(null)
+  const [quotaModalDismissed, setQuotaModalDismissed] = useState(false)
 
   const fetchData = useCallback(async (silent = false) => {
     if (!id) return
@@ -134,6 +148,13 @@ export default function ScrapeTaskDetailPage() {
     const evt = msg.data as LiveProgress
     if (evt.task_id !== id) return
     setLive(evt)
+    // Trigger quota modal once per task. We check `quotaModalDismissed`
+    // inside the setter via setQuotaModal — actually simplest is to just
+    // open the modal whenever quota_exceeded is freshly seen and the user
+    // hasn't dismissed it yet for this task.
+    if (evt.quota_exceeded && evt.quota_errors && evt.quota_errors.length > 0) {
+      setQuotaModal((prev) => prev ?? evt.quota_errors!)
+    }
     if (evt.latest_email) {
       setEmailStream((prev) => {
         if (prev.some((e) => e.email === evt.latest_email)) return prev
@@ -186,8 +207,58 @@ export default function ScrapeTaskDetailPage() {
 
   const platforms = parsePlatforms(task.platforms)
 
+  // Quota-exceeded modal: shown when Brave or Apify ran out of credit
+  // during this task. We set `quotaModalDismissed` after first close so
+  // re-arriving WebSocket events for the same task don't re-pop the modal,
+  // but the user can still see the persistent amber warning banner below.
+  const quotaModalVisible = quotaModal !== null && !quotaModalDismissed
+
   return (
     <div className="p-6 space-y-5">
+      {/* Quota-exceeded modal — pops once per task when Brave/Apify auth
+          or quota fails mid-run. Dismissable, after which the persistent
+          amber banner below the progress dashboard keeps the warning
+          visible without nagging. */}
+      {quotaModalVisible && quotaModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+          <div className="bg-white rounded-xl shadow-2xl max-w-lg w-full mx-4 p-6 space-y-4">
+            <div className="flex items-start gap-3">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                <span className="text-xl">⚠</span>
+              </div>
+              <div className="flex-1 min-w-0">
+                <h2 className="text-base font-semibold text-gray-900">
+                  {t('scrapeDetail.live.quotaModal.title')}
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  {t('scrapeDetail.live.quotaModal.subtitle')}
+                </p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {quotaModal.map((qe, i) => (
+                <div key={i} className="bg-red-50 border border-red-200 rounded-lg p-3">
+                  <div className="text-xs font-mono text-red-700 mb-1">
+                    {qe.service.toUpperCase()} · HTTP {qe.http_code}
+                  </div>
+                  <div className="text-sm text-gray-800 leading-relaxed">
+                    {qe.message}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 pt-2">
+              <button
+                onClick={() => setQuotaModalDismissed(true)}
+                className="px-4 py-2 text-sm font-medium text-white bg-gray-900 rounded-lg hover:bg-gray-700 transition-colors"
+              >
+                {t('scrapeDetail.live.quotaModal.dismiss')}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Back + header */}
       <div className="flex items-start gap-4">
         <button

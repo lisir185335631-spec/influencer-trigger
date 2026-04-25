@@ -802,11 +802,23 @@ def _ig_profile_url_from_href(href: str) -> str | None:
     return f"https://www.instagram.com/{username}/"
 
 
-async def _search_brave(query: str, limit: int = 20) -> list[str]:
+async def _search_brave(
+    query: str,
+    limit: int = 20,
+    quota_errors_out: list[dict] | None = None,
+) -> list[str]:
     """Brave Search Web API → dedup Instagram profile URL list.
-    Requires BRAVE_SEARCH_API_KEY in env. Returns [] and logs a warning
-    when the key is absent or the API returns non-200 — the task completes
-    with 0 results rather than crashing so ops can diagnose from the log.
+
+    Requires BRAVE_SEARCH_API_KEY in env. Returns [] when key absent or API
+    returns non-200 — the task completes with 0 results rather than
+    crashing so ops can diagnose from the log.
+
+    quota_errors_out: when provided, classified errors (auth/quota/rate
+    limit) are appended as dicts so the task-level coordinator can surface
+    them to the UI as a quota-exhaustion banner. Each entry shape:
+      {"service": "brave", "http_code": int, "message": str, "remaining": str | None}
+    Non-quota errors (timeout / 5xx / JSON decode) are NOT appended — those
+    are transient network issues, not actionable for the user.
     """
     settings = get_settings()
     api_key = (settings.brave_search_api_key or "").strip()
@@ -815,6 +827,15 @@ async def _search_brave(query: str, limit: int = 20) -> list[str]:
             "[Instagram] BRAVE_SEARCH_API_KEY not configured — IG scraper cannot "
             "discover profiles. Add the key to server/.env and restart."
         )
+        if quota_errors_out is not None:
+            # Treat missing key as a config-level "quota" issue too — same UX
+            # signal: user has to do something before scraping works again.
+            quota_errors_out.append({
+                "service": "brave",
+                "http_code": 0,
+                "message": "BRAVE_SEARCH_API_KEY 未配置，IG 抓取无法发现 profile。请到 https://api.search.brave.com 注册并把 token 配到 server/.env",
+                "remaining": None,
+            })
         return []
 
     profiles: list[str] = []
@@ -841,12 +862,41 @@ async def _search_brave(query: str, limit: int = 20) -> list[str]:
         return profiles
 
     if resp.status_code == 429:
+        remaining = resp.headers.get("X-RateLimit-Remaining", "?")
+        reset = resp.headers.get("X-RateLimit-Reset", "?")
         logger.warning(
             "[Instagram] Brave rate limit hit (monthly quota or QPS). "
             "Remaining=%s Reset=%s",
-            resp.headers.get("X-RateLimit-Remaining", "?"),
-            resp.headers.get("X-RateLimit-Reset", "?"),
+            remaining, reset,
         )
+        if quota_errors_out is not None:
+            quota_errors_out.append({
+                "service": "brave",
+                "http_code": 429,
+                "message": (
+                    f"Brave Search 配额或速率限制触发（remaining={remaining}, reset={reset}）。"
+                    f"如果 remaining=0 → 月配额（2000 query/月）耗尽，到 "
+                    f"https://api.search.brave.com 升级套餐；否则等几分钟自动恢复。"
+                ),
+                "remaining": remaining,
+            })
+        return profiles
+    if resp.status_code in (401, 403):
+        logger.warning(
+            "[Instagram] Brave auth failed (HTTP %d): %s",
+            resp.status_code, resp.text[:200],
+        )
+        if quota_errors_out is not None:
+            quota_errors_out.append({
+                "service": "brave",
+                "http_code": resp.status_code,
+                "message": (
+                    f"Brave Search API 鉴权失败（HTTP {resp.status_code}）。"
+                    f"BRAVE_SEARCH_API_KEY 可能已失效或被吊销，到 "
+                    f"https://api.search.brave.com 重新签发 token 后更新 .env。"
+                ),
+                "remaining": None,
+            })
         return profiles
     if resp.status_code != 200:
         logger.warning(
@@ -876,6 +926,7 @@ async def _discover_ig_profiles(
     queries: list[str] | None,
     target_urls: int,
     target_market: str | None = None,
+    quota_errors_out: list[dict] | None = None,
 ) -> list[str]:
     """Generate Google-Dork queries from LLM-suggested seeds (or the raw
     industry keyword as fallback), run them through Brave Search, return
@@ -883,7 +934,11 @@ async def _discover_ig_profiles(
 
     Picks dork limiters by language inferred from `target_market` so an EN-only
     creator's "business inquiries" doesn't get searched against a CN keyword's
-    page (which is how task #27 produced 32 dorks × 0 hits)."""
+    page (which is how task #27 produced 32 dorks × 0 hits).
+
+    quota_errors_out: shared list passed down from the task coordinator so
+    Brave 429/401/403 errors bubble up to the UI instead of being silently
+    swallowed."""
     seeds = [q.strip() for q in (queries or [industry]) if q and q.strip()]
     if not seeds:
         seeds = [industry]
@@ -904,11 +959,20 @@ async def _discover_ig_profiles(
             break
         logger.info("[Instagram] search #%d/%d dork=%r", i + 1, len(dorks), dork)
 
-        urls = await _search_brave(dork, limit=20)
+        urls = await _search_brave(dork, limit=20, quota_errors_out=quota_errors_out)
         logger.info(
             "[Instagram] dork #%d: brave=%d total_so_far=%d",
             i + 1, len(urls), len(all_profiles) + sum(1 for u in urls if u not in seen),
         )
+        # Early-exit on quota exhaustion: every subsequent dork will hit
+        # the same wall, so don't burn the per-task time budget OR get
+        # the user another 24 redundant warning entries.
+        if quota_errors_out:
+            logger.warning(
+                "[Instagram] quota error detected (%s) — aborting remaining %d dorks",
+                quota_errors_out[-1].get("service"), len(dorks) - i - 1,
+            )
+            break
 
         for u in urls:
             if u not in seen:
@@ -956,8 +1020,11 @@ async def _discover_ig_profiles(
         for retry_dork in retry_dorks:
             if len(all_profiles) >= target_urls:
                 break
+            if quota_errors_out:
+                # Already hit quota on initial dorks — no point retrying.
+                break
             logger.info("[Instagram] retry dork: %r", retry_dork)
-            urls = await _search_brave(retry_dork, limit=20)
+            urls = await _search_brave(retry_dork, limit=20, quota_errors_out=quota_errors_out)
             logger.info("[Instagram] retry: brave=%d", len(urls))
             for u in urls:
                 if u not in seen:
@@ -1152,6 +1219,7 @@ async def _scrape_via_apify(
     profile_urls: list[str],
     token: str,
     actor: str,
+    quota_errors_out: list[dict] | None = None,
 ) -> dict[str, dict]:
     """Call Apify's Instagram Profile Scraper to extract bio/email/external_url
     for a batch of profile URLs. Returns a {username: profile_data} dict.
@@ -1211,6 +1279,43 @@ async def _scrape_via_apify(
             "[Instagram/Apify] HTTP %d — %s",
             resp.status_code, resp.text[:300],
         )
+        # Classify quota / auth errors so the task coordinator can surface
+        # them to the UI. Apify error codes (per official docs):
+        #   401: token-not-found / invalid signature
+        #   402: payment-required (FREE plan $5 monthly credit exhausted,
+        #        or paid plan card declined)
+        #   403: forbidden (token lacks scope for this actor)
+        #   429: rate-limit (concurrent run cap or QPS)
+        # Anything else is a transient network / actor-internal error,
+        # not user-actionable — those get logged but not bubbled up.
+        if quota_errors_out is not None and resp.status_code in (401, 402, 403, 429):
+            messages = {
+                401: (
+                    f"Apify API token 无效或未找到（HTTP 401）。"
+                    f"到 https://console.apify.com/account/integrations 重新签发 token，"
+                    f"更新 server/.env 的 APIFY_API_TOKEN 后重启 backend。"
+                ),
+                402: (
+                    f"Apify 月度配额已耗尽（HTTP 402）。"
+                    f"FREE plan 是 $5/月，约 100 次 IG 任务的额度。"
+                    f"到 https://console.apify.com/billing 查看用量并升级套餐，"
+                    f"或者等下个月 1 号自动重置。"
+                ),
+                403: (
+                    f"Apify token 权限不足（HTTP 403），无法调用 actor {actor!r}。"
+                    f"检查 token 的 scope，或换一个 actor。"
+                ),
+                429: (
+                    f"Apify 并发或速率限制触发（HTTP 429）。"
+                    f"FREE plan 最多 25 个并发 actor run，等几分钟后重试。"
+                ),
+            }
+            quota_errors_out.append({
+                "service": "apify",
+                "http_code": resp.status_code,
+                "message": messages.get(resp.status_code, f"Apify HTTP {resp.status_code}: {resp.text[:200]}"),
+                "remaining": None,
+            })
         return {}
 
     try:
@@ -1242,6 +1347,7 @@ async def _scrape_instagram_via_apify(
     apify_token: str,
     apify_actor: str,
     browser: Browser,
+    quota_errors_out: list[dict] | None = None,
 ) -> None:
     """Apify-driven IG profile extraction. Replaces Playwright per-profile
     SSR visits with a single Apify batch call that returns full contact
@@ -1256,7 +1362,7 @@ async def _scrape_instagram_via_apify(
         "[Instagram/Apify] scraping batch of %d profiles (target=%d)",
         len(batch), target_count,
     )
-    by_username = await _scrape_via_apify(batch, apify_token, apify_actor)
+    by_username = await _scrape_via_apify(batch, apify_token, apify_actor, quota_errors_out=quota_errors_out)
 
     if not by_username:
         logger.warning(
@@ -1362,6 +1468,7 @@ async def _scrape_instagram(
     queries: list[str] | None = None,
     target_market: str | None = None,
     excluded_profiles: set[str] | None = None,
+    quota_errors_out: list[dict] | None = None,
 ) -> None:
     """
     Instagram scraper.
@@ -1389,7 +1496,11 @@ async def _scrape_instagram(
     """
     target_urls = target_count * 15
     excluded = excluded_profiles or set()
-    profile_urls = await _discover_ig_profiles(industry, queries, target_urls, target_market=target_market)
+    profile_urls = await _discover_ig_profiles(
+        industry, queries, target_urls,
+        target_market=target_market,
+        quota_errors_out=quota_errors_out,
+    )
     # Cross-task dedup: filter out profiles whose emails we've already
     # mined.
     before_filter = len(profile_urls)
@@ -1420,6 +1531,7 @@ async def _scrape_instagram(
         await _scrape_instagram_via_apify(
             profile_urls, target_count, on_found,
             apify_token, apify_actor, browser,
+            quota_errors_out=quota_errors_out,
         )
         return
 
@@ -2106,6 +2218,12 @@ async def run_scraper_agent(task_id: int) -> None:
         # for the in-process candidate-pool filter. Stored as a `set` for O(1)
         # membership test inside `_scrape_youtube`.
         excluded_url_set = set(excluded_profile_urls)
+        # Quota / auth errors from Brave + Apify get appended here by the
+        # platform scrapers. We surface them to the UI at task completion
+        # so the user knows whether 0 results = "industry exhausted" or
+        # "quota ran out, need to refill credit". An empty list means
+        # everything ran with no quota issues.
+        quota_errors: list[dict] = []
 
         platform_map = {
             "instagram": InfluencerPlatform.instagram,
@@ -2271,6 +2389,7 @@ async def run_scraper_agent(task_id: int) -> None:
                         queries=search_queries.get("instagram"),
                         target_market=task.target_market,
                         excluded_profiles=excluded_url_set,
+                        quota_errors_out=quota_errors,
                     )
                 else:
                     await _scrape_stub(platform)
@@ -2324,15 +2443,40 @@ async def run_scraper_agent(task_id: int) -> None:
             # already wired through the entire stack; surfacing the warning
             # via error_message keeps the change surface small.
             warnings: list[str] = []
+            # Quota errors come first because they're the most actionable —
+            # the user can't do anything about "industry exhausted" except
+            # try a new keyword, but they CAN top up Brave/Apify credit.
+            # Dedup by service so we don't emit 24 entries when 24 dorks
+            # all hit the same 429.
+            seen_services: set[str] = set()
+            for qe in quota_errors:
+                key = f"{qe.get('service')}:{qe.get('http_code')}"
+                if key in seen_services:
+                    continue
+                seen_services.add(key)
+                warnings.append(qe.get("message") or f"{qe.get('service')} 配额异常")
             if fallback_reason:
                 warnings.append(f"LLM 搜索策略不可用: {fallback_reason}")
-            if new_total == 0 and task.target_count > 0:
+            if new_total == 0 and task.target_count > 0 and not quota_errors:
                 warnings.append(
                     "本次未抓到任何新网红("
                     f"复链接 {reused_total} 人，候选池可能已被历史任务穷尽)。"
                     "建议换 industry 关键词或扩大 target_market。"
                 )
             warning_message = " | ".join(warnings) if warnings else None
+
+            # Quota-exceeded flag drives the frontend modal popup. Only
+            # set when quota_errors is non-empty so a normal-completion
+            # task with 0 new finds doesn't trigger the modal — that
+            # case uses the existing yellow warning banner.
+            quota_exceeded = bool(quota_errors)
+            quota_payload = [
+                {"service": qe.get("service"),
+                 "http_code": qe.get("http_code"),
+                 "message": qe.get("message")}
+                for qe in quota_errors
+                if f"{qe.get('service')}:{qe.get('http_code')}" in seen_services
+            ] if quota_exceeded else None
 
             await update_task_status(
                 db, task, ScrapeTaskStatus.completed,
@@ -2353,10 +2497,13 @@ async def run_scraper_agent(task_id: int) -> None:
                 "new_count": new_total,
                 "reused_count": reused_total,
                 "warning": warning_message,
+                "quota_exceeded": quota_exceeded,
+                "quota_errors": quota_payload,
             })
             logger.info(
-                "ScrapeTask %d completed: found=%d valid=%d new=%d reused=%d warning=%r",
-                task_id, found_total, valid_total, new_total, reused_total, warning_message,
+                "ScrapeTask %d completed: found=%d valid=%d new=%d reused=%d quota_errors=%d warning=%r",
+                task_id, found_total, valid_total, new_total, reused_total,
+                len(quota_errors), warning_message,
             )
 
         except Exception as exc:

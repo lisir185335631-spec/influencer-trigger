@@ -238,6 +238,11 @@
       "showingCount": "Showing {{count}}",
       "errorLabel": "Error",
       "warningLabel": "Warning",
+      "quotaModal": {
+        "title": "API Quota Exhausted",
+        "subtitle": "This run was interrupted because an upstream service ran out of credit or its token was rejected. Top up / refresh the token and retry.",
+        "dismiss": "Got it"
+      },
       "phases": {
         "starting": "Initializing…",
         "strategy_ready": "Search strategy generated",

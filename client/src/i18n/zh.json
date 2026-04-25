@@ -238,6 +238,11 @@
       "showingCount": "共 {{count}} 条",
       "errorLabel": "错误",
       "warningLabel": "警告",
+      "quotaModal": {
+        "title": "API 配额耗尽",
+        "subtitle": "本次抓取因外部服务配额或鉴权问题中断。请按下方提示充值或更新 token 后重试。",
+        "dismiss": "我知道了"
+      },
       "phases": {
         "starting": "正在启动…",
         "strategy_ready": "搜索策略已生成",
