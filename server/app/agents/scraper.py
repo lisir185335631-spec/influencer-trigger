@@ -2317,28 +2317,34 @@ async def run_scraper_agent(task_id: int) -> None:
         # Phase 2/9: querying_history (1%) — DB excluded_channels lookup
         await _ph(1, "querying_history")
 
-        # Phase 3/9: build "excluded channels" — channels we've successfully
-        # extracted emails from in prior tasks of the same industry within
-        # the last 30 days. Passing these to the LLM (negative context) +
-        # the YouTube scraper (hard filter) is the only way to keep new
-        # tasks from re-mining the same 18 "old reliables" (the pre-fix
-        # behaviour observed in tasks #14-#23).
+        # Phase 3/9: build "excluded channels" — every YouTube/Instagram
+        # channel whose email we've already mined, regardless of industry
+        # or how long ago. Passing this to the LLM (negative context) and
+        # the scraper (hard filter on the candidate pool) is what keeps
+        # new tasks from re-visiting already-known channels.
         #
-        # The DB query (~100-500ms on a warm DB) used to run synchronously
-        # before the LLM call. With O2 it's a background task that overlaps
-        # with the next 50ms of broadcast / LLM-prep work — small win but
-        # composes cleanly with O1 cache hits (DB still finishes first).
-        from datetime import timedelta
-
+        # 2026-04-25 (task #53): widened the filter from "30 days + same
+        # industry" to all-time + all-industry. The narrow filter was
+        # producing reused=30 against new=9 — those 30 channels had
+        # profile_urls not in the 30-day-same-industry set but their
+        # emails were still in DB (cross-task / cross-industry email
+        # collisions like MCN companies sharing one partnerships@ inbox).
+        # The fix: exclude EVERY known profile_url so visits only target
+        # genuinely-new channels. We accept the trade-off that
+        # cross-industry rescans of the same KOL are no longer possible —
+        # the DB already has scoring for those, so re-evaluating is rarely
+        # worth the visit cost.
+        #
+        # The DB query (~100-500ms on a warm DB) is a background task that
+        # overlaps with the next 50ms of broadcast / LLM-prep work — small
+        # win but composes cleanly with O1 cache hits (DB still finishes
+        # first when LLM is cached).
         async def _query_excluded_urls() -> list[str]:
             try:
-                cutoff = datetime.now(timezone.utc) - timedelta(days=30)
                 stmt = (
                     sa.select(Influencer.profile_url)
                     .where(
                         Influencer.platform.in_([InfluencerPlatform.youtube, InfluencerPlatform.instagram]),
-                        Influencer.industry == task.industry,
-                        Influencer.created_at >= cutoff,
                         Influencer.profile_url.isnot(None),
                         Influencer.profile_url != "",
                     )
@@ -2361,7 +2367,7 @@ async def run_scraper_agent(task_id: int) -> None:
         # the broadcast above took longer than the SELECT.
         excluded_profile_urls = await excluded_db_task
         logger.info(
-            "[scraper] task %d: %d excluded channels (industry=%r, last 30d)",
+            "[scraper] task %d: %d excluded channels (all-time, all-industry; current task industry=%r)",
             task_id, len(excluded_profile_urls), task.industry,
         )
 
