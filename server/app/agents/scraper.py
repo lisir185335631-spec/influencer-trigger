@@ -336,7 +336,14 @@ def _load_youtube_cookies() -> list[dict] | None:
     misses creators who hide email behind the sign-in wall).
     """
     from pathlib import Path
-    cookie_path = Path(__file__).resolve().parents[3] / "data" / "youtube-cookies.json"
+    # parents[2] takes us from server/app/agents/scraper.py to server/, then
+    # /data/youtube-cookies.json. Was parents[3] (project root) — a silent
+    # off-by-one that made every prior cookie save (CLI script and the new
+    # settings UI both write to server/data/) invisible to the scraper.
+    # The whole "configure cookies → unlock View-email button" flow was
+    # therefore non-functional; hit-rate stayed at ~35% even when operators
+    # thought they had configured login-state cookies.
+    cookie_path = Path(__file__).resolve().parents[2] / "data" / "youtube-cookies.json"
     if not cookie_path.exists():
         return None
     try:
