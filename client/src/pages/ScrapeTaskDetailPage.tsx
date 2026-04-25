@@ -141,6 +141,53 @@ export default function ScrapeTaskDetailPage() {
 
   useEffect(() => { fetchData() }, [fetchData])
 
+  // ── Re-derive quota errors from a refreshed task ──────────────────
+  // Modal previously only triggered from WebSocket events. If the user
+  // navigates away and back, the task is already `completed` and no new
+  // WebSocket event will arrive — but task.error_message still contains
+  // the quota messages we wrote at completion time. Parse it back into
+  // QuotaError[] so the modal pops on refresh too.
+  useEffect(() => {
+    if (!task?.error_message) return
+    if (quotaModal !== null) return  // already populated (e.g. by live event)
+    if (quotaModalDismissed) return  // user already saw it this session
+
+    const msg = task.error_message
+    const errors: QuotaError[] = []
+
+    // Brave segment — recognise auth/quota messages we wrote in scraper.py.
+    if (msg.includes("Brave")) {
+      const codeMatch = msg.match(/Brave[^|]*?HTTP\s*(\d{3})/) ||
+                        msg.match(/Brave[^|]*?(429|401|403)/)
+      const code = codeMatch ? Number(codeMatch[1]) : 429
+      const start = msg.indexOf("Brave")
+      const end = msg.indexOf(" | ", start)
+      errors.push({
+        service: "brave",
+        http_code: code,
+        message: end === -1 ? msg.slice(start) : msg.slice(start, end),
+      })
+    }
+
+    // Apify segment — same pattern.
+    if (msg.includes("Apify")) {
+      const codeMatch = msg.match(/Apify[^|]*?HTTP\s*(\d{3})/) ||
+                        msg.match(/Apify[^|]*?(429|401|402|403)/)
+      const code = codeMatch ? Number(codeMatch[1]) : 402
+      const start = msg.indexOf("Apify")
+      const end = msg.indexOf(" | ", start)
+      errors.push({
+        service: "apify",
+        http_code: code,
+        message: end === -1 ? msg.slice(start) : msg.slice(start, end),
+      })
+    }
+
+    if (errors.length > 0) {
+      setQuotaModal(errors)
+    }
+  }, [task, quotaModal, quotaModalDismissed])
+
   // ── WebSocket: subscribe to scrape:progress for this task ──────────────────
   const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
   useWebSocket(wsUrl, useCallback((msg: WsMessage) => {

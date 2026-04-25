@@ -2152,6 +2152,8 @@ async def run_scraper_agent(task_id: int) -> None:
             "phase": "starting",
             "found_count": 0,
             "valid_count": 0,
+            "new_count": 0,
+            "reused_count": 0,
         })
 
         # Phase 2/5: LLM 生成搜索策略 (5%)
@@ -2206,6 +2208,8 @@ async def run_scraper_agent(task_id: int) -> None:
             "phase": "strategy_ready",
             "found_count": 0,
             "valid_count": 0,
+            "new_count": 0,
+            "reused_count": 0,
         })
 
         found_total = 0
@@ -2403,6 +2407,8 @@ async def run_scraper_agent(task_id: int) -> None:
                 "phase": "crawling",
                 "found_count": 0,
                 "valid_count": 0,
+                "new_count": 0,
+                "reused_count": 0,
             })
 
             async with async_playwright() as pw:
@@ -2508,9 +2514,37 @@ async def run_scraper_agent(task_id: int) -> None:
 
         except Exception as exc:
             logger.exception("ScrapeTask %d failed: %s", task_id, exc)
+            # Even on hard failure, surface any quota errors that
+            # accumulated before the crash — they're often the actual
+            # root cause (e.g. Apify auth failure → empty result →
+            # downstream code crashes on missing data). Frontend then
+            # shows the modal even on failed tasks.
+            failed_seen: set[str] = set()
+            failed_quota_payload: list[dict] | None = None
+            if quota_errors:
+                failed_quota_payload = []
+                for qe in quota_errors:
+                    key = f"{qe.get('service')}:{qe.get('http_code')}"
+                    if key in failed_seen:
+                        continue
+                    failed_seen.add(key)
+                    failed_quota_payload.append({
+                        "service": qe.get("service"),
+                        "http_code": qe.get("http_code"),
+                        "message": qe.get("message"),
+                    })
+            # error_message: prepend quota messages so the most
+            # actionable info is at the top, then the actual exception.
+            error_lines: list[str] = []
+            if failed_quota_payload:
+                for qe in failed_quota_payload:
+                    error_lines.append(qe.get("message") or "")
+            error_lines.append(str(exc))
+            error_message = " | ".join(filter(None, error_lines))[:1000]
+
             await update_task_status(
                 db, task, ScrapeTaskStatus.failed,
-                error_message=str(exc),
+                error_message=error_message,
                 found_count=found_total,
                 valid_count=valid_total,
                 new_count=new_total,
@@ -2524,4 +2558,6 @@ async def run_scraper_agent(task_id: int) -> None:
                 "valid_count": valid_total,
                 "new_count": new_total,
                 "reused_count": reused_total,
+                "quota_exceeded": bool(failed_quota_payload),
+                "quota_errors": failed_quota_payload,
             })
