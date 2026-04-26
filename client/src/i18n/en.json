@@ -181,7 +181,7 @@
       "platforms": "Platforms",
       "csvOnly": "CSV only",
       "notSupported": "Coming soon",
-      "platformHint": "One platform per task. Twitter / Facebook auto-scraping not yet available — use CSV import for those.",
+      "platformHint": "One platform per task. Facebook auto-scraping not yet available — use CSV import for it.",
       "targetMarketHint": "All overseas regions. Selecting a specific market significantly sharpens query precision and hit rate.",
       "marketGroup": {
         "english": "English markets",
@@ -202,6 +202,21 @@
         "dedup": {
           "label": "Smart dedup",
           "value": "Skips channels visited in last 30d"
+        }
+      },
+      "twitterInfo": {
+        "title": "About Twitter / X scraping",
+        "cost": {
+          "label": "Cost per task",
+          "value": "≈ $0.05"
+        },
+        "extract": {
+          "label": "Email source",
+          "value": "bio + bio-link cascade"
+        },
+        "walltime": {
+          "label": "Wall time",
+          "value": "≈ 1-3 min"
         }
       },
       "industryLabel": "Industry keyword *",
@@ -801,9 +816,10 @@
     },
     "apify": {
       "title": "Apify Actor Configuration",
-      "subtitle": "TikTok / Instagram scraping runs on Apify. Each platform has its own Token + Actor, isolated from each other. Leave blank to fall back to server/.env env vars.",
+      "subtitle": "TikTok / Instagram / Twitter scraping runs on Apify. Each platform has its own Token + Actor, isolated from each other. Leave blank to fall back to server/.env env vars.",
       "tiktok": "TikTok",
       "instagram": "Instagram",
+      "twitter": "Twitter / X",
       "tokenLabel": "API Token",
       "tokenPlaceholder": "Paste Apify API Token (apify_api_…)",
       "tokenMasked": "Configured (type to overwrite)",

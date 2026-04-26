@@ -53,7 +53,7 @@ const PLATFORMS: PlatformDef[] = [
   { id: 'instagram', labelKey: 'common.platform.instagram' },
   { id: 'youtube', labelKey: 'common.platform.youtube' },
   { id: 'tiktok', labelKey: 'common.platform.tiktok' },
-  { id: 'twitter', labelKey: 'common.platform.twitter', stub: true },
+  { id: 'twitter', labelKey: 'common.platform.twitter' },
   { id: 'facebook', labelKey: 'common.platform.facebook', stub: true },
 ]
 
@@ -309,6 +309,33 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
                 <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
                   <p className="text-[10px] text-gray-400">{t('scrape.modal.tiktokInfo.dedup.label')}</p>
                   <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.tiktokInfo.dedup.value')}</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Twitter-specific info cards — same pattern as TikTok but reflects
+              Twitter's different cost profile and the fact that bio email
+              rate is ~1% so we cascade to bio-link page for the real
+              extraction (slower wall time, but full hit rate). */}
+          {selectedPlatform === 'twitter' && (
+            <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
+              <p className="text-[11px] font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                <Info size={11} className="text-gray-500" />
+                {t('scrape.modal.twitterInfo.title')}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
+                  <p className="text-[10px] text-gray-400">{t('scrape.modal.twitterInfo.cost.label')}</p>
+                  <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.twitterInfo.cost.value')}</p>
+                </div>
+                <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
+                  <p className="text-[10px] text-gray-400">{t('scrape.modal.twitterInfo.extract.label')}</p>
+                  <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.twitterInfo.extract.value')}</p>
+                </div>
+                <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
+                  <p className="text-[10px] text-gray-400">{t('scrape.modal.twitterInfo.walltime.label')}</p>
+                  <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.twitterInfo.walltime.value')}</p>
                 </div>
               </div>
             </div>

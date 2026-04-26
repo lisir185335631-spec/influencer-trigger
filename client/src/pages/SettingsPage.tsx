@@ -31,9 +31,9 @@ type ApifyTestState = {
 const APIFY_PLATFORMS: {
   key: ApifyPlatform
   labelKey: string
-  tokenField: 'apify_tiktok_token' | 'apify_ig_token'
-  tokenSetField: 'apify_tiktok_token_set' | 'apify_ig_token_set'
-  actorField: 'apify_tiktok_actor' | 'apify_ig_actor'
+  tokenField: 'apify_tiktok_token' | 'apify_ig_token' | 'apify_twitter_token'
+  tokenSetField: 'apify_tiktok_token_set' | 'apify_ig_token_set' | 'apify_twitter_token_set'
+  actorField: 'apify_tiktok_actor' | 'apify_ig_actor' | 'apify_twitter_actor'
   actorPlaceholder: string
 }[] = [
   {
@@ -42,7 +42,7 @@ const APIFY_PLATFORMS: {
     tokenField: 'apify_tiktok_token',
     tokenSetField: 'apify_tiktok_token_set',
     actorField: 'apify_tiktok_actor',
-    actorPlaceholder: 'jurassic_jove~tiktok-email-scraper',
+    actorPlaceholder: 'clockworks~tiktok-scraper',
   },
   {
     key: 'instagram',
@@ -51,6 +51,14 @@ const APIFY_PLATFORMS: {
     tokenSetField: 'apify_ig_token_set',
     actorField: 'apify_ig_actor',
     actorPlaceholder: 'apify~instagram-profile-scraper',
+  },
+  {
+    key: 'twitter',
+    labelKey: 'settings.apify.twitter',
+    tokenField: 'apify_twitter_token',
+    tokenSetField: 'apify_twitter_token_set',
+    actorField: 'apify_twitter_actor',
+    actorPlaceholder: 'kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest',
   },
 ]
 
@@ -76,6 +84,7 @@ export default function SettingsPage() {
   const [apifyTest, setApifyTest] = useState<Record<ApifyPlatform, ApifyTestState>>({
     tiktok: { status: 'idle' },
     instagram: { status: 'idle' },
+    twitter: { status: 'idle' },
   })
 
   // YouTube cookies state — independent from the main `form` because it's
@@ -141,6 +150,7 @@ export default function SettingsPage() {
         // round-trip correctly.
         apify_tiktok_actor: form.apify_tiktok_actor,
         apify_ig_actor: form.apify_ig_actor,
+        apify_twitter_actor: form.apify_twitter_actor,
       }
       // Tokens: only send fields the user actually touched (otherwise we'd
       // overwrite real tokens with masked placeholders).
@@ -149,6 +159,9 @@ export default function SettingsPage() {
       }
       if (apifyTokenDirty.current.has('instagram')) {
         patch.apify_ig_token = form.apify_ig_token
+      }
+      if (apifyTokenDirty.current.has('twitter')) {
+        patch.apify_twitter_token = form.apify_twitter_token
       }
       const updated = await updateSettings(patch)
       setForm(updated)
@@ -165,8 +178,10 @@ export default function SettingsPage() {
     apifyTokenDirty.current.add(platform)
     if (platform === 'tiktok') {
       handleChange('apify_tiktok_token', value)
-    } else {
+    } else if (platform === 'instagram') {
       handleChange('apify_ig_token', value)
+    } else {
+      handleChange('apify_twitter_token', value)
     }
     // Reset test state when user edits the token.
     setApifyTest((prev) => ({ ...prev, [platform]: { status: 'idle' } }))
@@ -179,11 +194,20 @@ export default function SettingsPage() {
       // Send the in-memory token only if user has edited it (otherwise the
       // server-side resolver uses the saved DB value). Always send the actor
       // since it's not secret and the user may be testing an unsaved actor.
-      const token = apifyTokenDirty.current.has(platform)
-        ? form[platform === 'tiktok' ? 'apify_tiktok_token' : 'apify_ig_token']
-        : undefined
-      const actor =
-        platform === 'tiktok' ? form.apify_tiktok_actor : form.apify_ig_actor
+      const tokenField =
+        platform === 'tiktok'
+          ? 'apify_tiktok_token'
+          : platform === 'instagram'
+          ? 'apify_ig_token'
+          : 'apify_twitter_token'
+      const actorField =
+        platform === 'tiktok'
+          ? 'apify_tiktok_actor'
+          : platform === 'instagram'
+          ? 'apify_ig_actor'
+          : 'apify_twitter_actor'
+      const token = apifyTokenDirty.current.has(platform) ? form[tokenField] : undefined
+      const actor = form[actorField]
       const result = await testApifyActor(platform, token, actor || undefined)
       setApifyTest((prev) => ({
         ...prev,

@@ -181,7 +181,7 @@
       "platforms": "平台",
       "csvOnly": "仅CSV",
       "notSupported": "暂不支持",
-      "platformHint": "每个任务只跑一个平台。Twitter / Facebook 暂不支持自动抓取，请使用 CSV 导入。",
+      "platformHint": "每个任务只跑一个平台。Facebook 暂不支持自动抓取，请使用 CSV 导入。",
       "industryLabel": "行业关键词 *",
       "industryPlaceholder": "如：fitness, beauty, gaming",
       "targetLabel": "目标邮箱数量 — {{count}}",
@@ -210,6 +210,21 @@
         "dedup": {
           "label": "智能去重",
           "value": "已抓 channel 30 天不重访"
+        }
+      },
+      "twitterInfo": {
+        "title": "Twitter / X 抓取说明",
+        "cost": {
+          "label": "单次成本",
+          "value": "约 $0.05 / 任务"
+        },
+        "extract": {
+          "label": "邮箱提取",
+          "value": "bio + 外链页 cascade"
+        },
+        "walltime": {
+          "label": "耗时",
+          "value": "约 1-3 分钟"
         }
       },
       "competitorBrands": "竞品品牌（可选）",
@@ -801,9 +816,10 @@
     },
     "apify": {
       "title": "Apify Actor 配置",
-      "subtitle": "TikTok / Instagram 抓取依赖 Apify。每个平台独立配置 Token 与 Actor，互不影响。留空则回退到 server/.env 的环境变量值。",
+      "subtitle": "TikTok / Instagram / Twitter 抓取依赖 Apify。每个平台独立配置 Token 与 Actor，互不影响。留空则回退到 server/.env 的环境变量值。",
       "tiktok": "TikTok",
       "instagram": "Instagram",
+      "twitter": "Twitter / X",
       "tokenLabel": "API Token",
       "tokenPlaceholder": "粘贴 Apify API Token（apify_api_…）",
       "tokenMasked": "已配置（输入新值即覆盖）",

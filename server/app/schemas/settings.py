@@ -30,6 +30,9 @@ class SettingsOut(BaseModel):
     apify_ig_token: str
     apify_ig_token_set: bool
     apify_ig_actor: str
+    apify_twitter_token: str
+    apify_twitter_token_set: bool
+    apify_twitter_actor: str
 
 
 class SettingsUpdate(BaseModel):
@@ -50,10 +53,12 @@ class SettingsUpdate(BaseModel):
     apify_tiktok_actor: Optional[str] = Field(None, max_length=255)
     apify_ig_token: Optional[str] = None
     apify_ig_actor: Optional[str] = Field(None, max_length=255)
+    apify_twitter_token: Optional[str] = None
+    apify_twitter_actor: Optional[str] = Field(None, max_length=255)
 
 
 class TestApifyActorRequest(BaseModel):
-    platform: str = Field(..., description="tiktok | instagram")
+    platform: str = Field(..., description="tiktok | instagram | twitter")
     token: Optional[str] = Field(
         None,
         description=(

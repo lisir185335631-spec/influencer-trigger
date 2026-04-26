@@ -33,6 +33,8 @@ async def update_system_settings(
     apify_tiktok_actor: Optional[str] = None,
     apify_ig_token: Optional[str] = None,
     apify_ig_actor: Optional[str] = None,
+    apify_twitter_token: Optional[str] = None,
+    apify_twitter_actor: Optional[str] = None,
 ) -> SystemSettings:
     """Partial update of system settings.
 
@@ -57,6 +59,10 @@ async def update_system_settings(
         settings.apify_ig_token = apify_ig_token.strip()
     if apify_ig_actor is not None:
         settings.apify_ig_actor = _normalize_actor_id(apify_ig_actor)
+    if apify_twitter_token is not None:
+        settings.apify_twitter_token = apify_twitter_token.strip()
+    if apify_twitter_actor is not None:
+        settings.apify_twitter_actor = _normalize_actor_id(apify_twitter_actor)
 
     await db.commit()
     await db.refresh(settings)
@@ -132,6 +138,14 @@ async def resolve_apify_credentials(
             _normalize_actor_id(settings.apify_ig_actor)
             or _normalize_actor_id(env.apify_ig_actor)
             or "apify~instagram-profile-scraper"
+        )
+        return token, actor
+
+    if platform in ("twitter", "x"):
+        token = (settings.apify_twitter_token or "").strip() or (env.apify_api_token or "").strip()
+        actor = (
+            _normalize_actor_id(settings.apify_twitter_actor)
+            or "kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest"
         )
         return token, actor
 

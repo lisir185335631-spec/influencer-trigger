@@ -2327,6 +2327,361 @@ async def _scrape_tiktok_via_clockworks(
     return new_counter, seen_usernames
 
 
+async def _scrape_twitter_via_apify(
+    queries: list[str],
+    target_count: int,
+    on_found: "Callable[..., Awaitable[bool]]",
+    apify_token: str,
+    apify_actor: str = "kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest",
+    browser: "Browser | None" = None,
+    excluded_profiles: set[str] | None = None,
+    excluded_usernames: set[str] | None = None,
+    max_tweets: int = 80,
+    round_label: str = "R1",
+    quota_errors_out: list[dict] | None = None,
+    on_progress: "Callable[[str, int | None], Awaitable[None]] | None" = None,
+) -> "tuple[int, set[str]]":
+    """Twitter / X scraper — `kaitoeasyapi~twitter-x-data-tweet-scraper-pay-
+    per-result-cheapest` (cheap list actor, ~$0.00025/tweet) +
+    bio-regex AND bio-URL-cascade (Playwright visits the bio external
+    link to harvest emails from Linktree / personal site / Substack).
+
+    Why URL cascade is mandatory here (not optional like TikTok):
+      Twitter bio-only email rate measured 2026-04-26 across 4 niches:
+      0-3% (vs TikTok's 27%). Twitter culture is "DM me" instead of
+      "email me", and 160-char bio limit pushes biz contact to the bio
+      URL. Without cascade, target=10 yields 0-1 emails — useless.
+      With cascade, expected 5-8 emails per task at <$0.05 actor cost.
+
+    The cascade reuses `_scrape_aggregator_emails` (the same Linktree/
+    beacons/personal-site visitor IG already uses for its bio-URL fallback)
+    so we get for free: networkidle wait, mailto: harvest, scroll-and-
+    re-extract for lazy-rendered contact cards, 18s per-page timeout cap.
+
+    Returns (new_counter, seen_usernames). seen_usernames lets the
+    caller pass into a follow-up call's excluded_usernames so R2 doesn't
+    re-process authors R1 already proved empty.
+    """
+    if not queries:
+        logger.warning("[Twitter] no search queries provided, skipping")
+        return 0, set()
+    if not apify_token:
+        logger.warning("[Twitter] APIFY_API_TOKEN not set, skipping")
+        return 0, set()
+
+    excluded = excluded_profiles or set()
+    excluded_users = {u.lower() for u in (excluded_usernames or set())}
+
+    # `/` -> `~` defensive — same trick TikTok uses; users paste console URLs.
+    actor = (apify_actor or "").strip().replace("/", "~") or (
+        "kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest"
+    )
+    api_url = f"https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items"
+    # kaitoeasyapi takes `twitterContent` as a single string; we issue one
+    # call per query and merge. `maxItems` is per-call; budget is split
+    # across queries to keep total under target.
+    per_query = max(5, max_tweets // max(1, len(queries)))
+
+    # Progress strategy (real, not fake): each query completion emits a
+    # `Twitter query i/N` event with the running tweet count, mapped onto
+    # 5%-28% linearly. Between queries (waiting on Apify's HTTP response
+    # for the current one), a low-frequency filler heartbeat shows the
+    # in-flight elapsed seconds so the user never wonders if it's stuck.
+    # Dropping the old "fake heartbeat that pretends bar is moving" ⇒
+    # bar actually advances on real progress.
+    PROGRESS_START = 5
+    PROGRESS_PHASE_A_END = 28  # End of Apify-call phase, before cascade
+    PROGRESS_PHASE_A_SPAN = PROGRESS_PHASE_A_END - PROGRESS_START
+
+    if on_progress:
+        await on_progress(
+            f"调用 Twitter actor [{round_label}]: {len(queries)} 个搜索词 × {per_query}/词，预计 1-3 分钟…",
+            PROGRESS_START,
+        )
+
+    # In-flight heartbeat — shows seconds elapsed while waiting on the
+    # current query's HTTP response. Reset between queries via shared dict.
+    inflight = {"query_idx": 0, "query": "", "started_at": 0.0}
+
+    async def _inflight_heartbeat() -> None:
+        try:
+            while True:
+                await asyncio.sleep(8)
+                if not inflight["query"]:
+                    continue
+                elapsed_s = max(0, int(_time.time() - inflight["started_at"]))
+                if on_progress and elapsed_s >= 10:
+                    pct_done = inflight["query_idx"] / max(1, len(queries))
+                    pct = PROGRESS_START + int(PROGRESS_PHASE_A_SPAN * pct_done)
+                    await on_progress(
+                        f"Twitter query {inflight['query_idx']+1}/{len(queries)} 调用中"
+                        f"（已等 {elapsed_s}s）: {inflight['query'][:30]}",
+                        pct,
+                    )
+        except asyncio.CancelledError:
+            return
+
+    heartbeat_task: asyncio.Task | None = None
+    if on_progress:
+        heartbeat_task = asyncio.create_task(_inflight_heartbeat())
+
+    # Issue one actor call per query — kaitoeasyapi takes a single string
+    # per request, not a list. Merge results client-side. Per-query
+    # completion emits a real progress event so the bar advances on
+    # facts, not on time elapsed.
+    all_items: list[dict] = []
+    timeout = httpx.Timeout(connect=15.0, read=180.0, write=30.0, pool=10.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            for i, q in enumerate(queries):
+                inflight["query_idx"] = i
+                inflight["query"] = q
+                inflight["started_at"] = _time.time()
+                payload = {"twitterContent": q, "maxItems": per_query}
+                got_count = 0
+                try:
+                    resp = await client.post(api_url, params={"token": apify_token}, json=payload)
+                except Exception as e:
+                    logger.warning(
+                        "[Twitter %s] request failed for query=%r: %s: %r",
+                        round_label, q, type(e).__name__, e,
+                    )
+                else:
+                    if resp.status_code not in (200, 201):
+                        logger.warning(
+                            "[Twitter %s] HTTP %d for query=%r — %s",
+                            round_label, resp.status_code, q, resp.text[:200],
+                        )
+                        if quota_errors_out is not None and resp.status_code in (401, 402, 403, 429):
+                            messages = {
+                                401: "Apify Token 无效或未找到（HTTP 401）",
+                                402: "Apify 月度配额耗尽（HTTP 402）",
+                                403: "Apify 权限受限（HTTP 403）",
+                                429: "Apify 速率限制（HTTP 429）",
+                            }
+                            quota_errors_out.append({
+                                "service": "apify",
+                                "http_code": resp.status_code,
+                                "message": messages.get(
+                                    resp.status_code,
+                                    f"Twitter actor HTTP {resp.status_code}",
+                                ),
+                                "remaining": None,
+                            })
+                    else:
+                        try:
+                            items = resp.json()
+                        except Exception as e:
+                            logger.warning("[Twitter %s] JSON decode failed: %s", round_label, e)
+                            items = None
+                        if isinstance(items, list):
+                            all_items.extend(items)
+                            got_count = len(items)
+
+                # Real progress: bar advances on (i+1)/N regardless of
+                # whether this query succeeded — failed queries still mean
+                # we're 1 step closer to the end of phase A.
+                if on_progress:
+                    pct_done = (i + 1) / max(1, len(queries))
+                    pct = PROGRESS_START + int(PROGRESS_PHASE_A_SPAN * pct_done)
+                    await on_progress(
+                        f"Twitter query {i+1}/{len(queries)} 完成 "
+                        f"(+{got_count} tweets, 累计 {len(all_items)})",
+                        pct,
+                    )
+    finally:
+        if heartbeat_task is not None and not heartbeat_task.done():
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    # Dedup by author.userName. Each tweet carries the FULL author snapshot;
+    # we keep the first occurrence and drop subsequent tweets by the same
+    # creator. Costs stay flat — actor charges per tweet regardless.
+    profiles: dict[str, dict] = {}
+    for it in all_items:
+        if not isinstance(it, dict):
+            continue
+        a = it.get("author") or {}
+        if not isinstance(a, dict):
+            continue
+        u = (a.get("userName") or "").strip().lower()
+        if not u:
+            continue
+        if u in excluded_users or u in profiles:
+            continue
+        purl = (a.get("url") or a.get("twitterUrl") or "").strip()
+        if purl and purl in excluded:
+            continue
+        profiles[u] = a
+
+    logger.info(
+        "[Twitter %s] got %d tweet records → %d unique authors "
+        "(excluded %d already-seen, est cost $%.4f)",
+        round_label, len(all_items), len(profiles), len(excluded_users),
+        len(all_items) * 0.00025,
+    )
+
+    if on_progress:
+        await on_progress(
+            f"Twitter 候选池建好 [{round_label}]: {len(profiles)} 个 profile，开始本地外链 cascade…",
+            30,
+        )
+
+    new_counter = 0
+    junk_skipped = 0
+    no_email_skipped = 0
+    cascade_visits = 0
+    cascade_hits = 0
+    seen_usernames: set[str] = set()
+
+    profile_list = list(profiles.values())
+    random.shuffle(profile_list)
+    total_profiles = len(profile_list)
+
+    # Phase B progress band: 30% (cascade start) → 79% (cascade end);
+    # the remaining 80-100% is reserved for finalisation by the caller.
+    PROGRESS_PHASE_B_START = 30
+    PROGRESS_PHASE_B_END = 79
+    PROGRESS_PHASE_B_SPAN = PROGRESS_PHASE_B_END - PROGRESS_PHASE_B_START
+
+    # Lazy-create the Playwright context so we only pay the cost when at
+    # least one author needs URL cascade. If `browser` is None (caller
+    # didn't provide one), cascade is silently skipped — caller will see
+    # a degraded hit rate but no crashes.
+    cascade_ctx: BrowserContext | None = None
+
+    try:
+        for processed_idx, a in enumerate(profile_list):
+            if new_counter >= target_count:
+                break
+            uname = (a.get("userName") or "").strip()
+            if not uname:
+                continue
+            seen_usernames.add(uname.lower())
+            display_name = (a.get("name") or "").strip()
+            followers = a.get("followers")
+            if not isinstance(followers, int):
+                followers = None
+            profile_url = (a.get("url") or a.get("twitterUrl") or "").strip()
+            avatar_url = (a.get("profilePicture") or "").strip() or None
+
+            # Twitter bio is in the nested `profile_bio.description`, NOT
+            # `description` (which is empty / legacy). The actor returns
+            # both fields but only profile_bio has data.
+            bio_obj = a.get("profile_bio") or {}
+            bio = (bio_obj.get("description") or "").strip()
+
+            # Stage 1: bio regex (cheap path)
+            email = None
+            email_source = None
+            bio_emails = _PLAIN_EMAIL_RE.findall(bio)
+            if bio_emails:
+                email = bio_emails[0]
+                email_source = "bio"
+
+            # Stage 2: cascade — visit the bio's external URL with
+            # Playwright + harvest. Only fires when bio had no email AND
+            # we have a usable URL AND a browser context.
+            external_urls: list[str] = []
+            if not email and browser is not None:
+                # The actor stores expanded URLs under
+                # profile_bio.entities.url.urls[*].expanded_url
+                ents = (bio_obj.get("entities") or {}).get("url") or {}
+                for u_obj in (ents.get("urls") or []):
+                    if not isinstance(u_obj, dict):
+                        continue
+                    eu = (u_obj.get("expanded_url") or u_obj.get("url") or "").strip()
+                    if eu and eu.startswith(("http://", "https://")):
+                        external_urls.append(eu)
+
+            if on_progress:
+                fol = (
+                    f"{followers / 1000:.0f}K"
+                    if isinstance(followers, int) and followers >= 1000
+                    else str(followers or "?")
+                )
+                stage = email_source or ("bio→url" if external_urls else "无")
+                # Real per-profile counter + running new-email tally so
+                # the user sees the bar advance with concrete numbers
+                # (not just elapsed-seconds) during the 1-3 min cascade.
+                pct_done = (processed_idx + 1) / max(1, total_profiles)
+                pct = PROGRESS_PHASE_B_START + int(PROGRESS_PHASE_B_SPAN * pct_done)
+                await on_progress(
+                    f"处理 Twitter @{uname} "
+                    f"({processed_idx + 1}/{total_profiles}, {fol} 粉, "
+                    f"{stage}, 已抓 {new_counter}/{target_count})",
+                    pct,
+                )
+
+            if not email and external_urls:
+                if cascade_ctx is None:
+                    try:
+                        cascade_ctx = await _new_context(browser)
+                    except Exception as e:
+                        logger.warning("[Twitter %s] failed to create Playwright context: %s", round_label, e)
+                        cascade_ctx = None
+                if cascade_ctx is not None:
+                    for eu in external_urls[:2]:  # try up to 2 URLs per profile
+                        cascade_visits += 1
+                        try:
+                            url_emails = await _scrape_aggregator_emails(cascade_ctx, eu)
+                        except Exception as e:
+                            logger.debug("[Twitter %s] cascade visit failed for %s: %s", round_label, eu, e)
+                            continue
+                        if url_emails:
+                            email = url_emails[0]
+                            email_source = "url"
+                            cascade_hits += 1
+                            break
+
+            if not email:
+                no_email_skipped += 1
+                continue
+
+            is_junk, reason = is_junk_email(email)
+            if is_junk:
+                logger.info(
+                    "[Twitter %s] dropped junk email %r from @%s: %s",
+                    round_label, email, uname, reason,
+                )
+                junk_skipped += 1
+                continue
+
+            domain = email.split("@", 1)[1]
+            if not await _mx_valid(domain):
+                continue
+
+            display = display_name or f"@{uname}"
+            is_new = await on_found(
+                email,
+                display,
+                profile_url,
+                followers=followers,
+                bio=bio or None,
+                avatar_url=avatar_url,
+            )
+            if is_new:
+                new_counter += 1
+    finally:
+        if cascade_ctx is not None:
+            try:
+                await cascade_ctx.close()
+            except Exception:
+                pass
+
+    logger.info(
+        "[Twitter %s] phase done: new=%d / target=%d "
+        "(processed %d profiles, %d no-email, %d junk, "
+        "cascade %d/%d hit)",
+        round_label, new_counter, target_count, len(profiles),
+        no_email_skipped, junk_skipped, cascade_hits, cascade_visits,
+    )
+    return new_counter, seen_usernames
+
+
 async def _scrape_stub(platform: str) -> list[dict]:
     """Platforms not yet fully implemented return empty list with a log notice."""
     logger.info(
@@ -2745,6 +3100,39 @@ _TT_FALLBACK_SUFFIXES_BY_LANG = {
     "kr": _TT_FALLBACK_SUFFIXES_KR,
 }
 
+# Twitter / X fallback suffixes — share the structure with TikTok since
+# both want short keyword phrases (1-3 words) for native search. Twitter's
+# search is more text-heavy (tweets contain prose), so we lean slightly
+# toward content-style phrases ("expert", "tips", "guide") + creator-y
+# tags ("creator", "official"). Used only when LLM is unavailable.
+_TW_FALLBACK_SUFFIXES_EN = (
+    "creator", "official", "expert", "tips", "guide",
+    "advice", "tutorial", "review", "best", "top", "popular",
+)
+_TW_FALLBACK_SUFFIXES_CN = (
+    "创作者", "官方", "专家", "技巧", "指南",
+    "建议", "教程", "评测", "最佳", "热门", "推荐",
+)
+_TW_FALLBACK_SUFFIXES_TW = (
+    "創作者", "官方", "專家", "技巧", "指南",
+    "建議", "教學", "評測", "最佳", "熱門", "推薦",
+)
+_TW_FALLBACK_SUFFIXES_JP = (
+    "クリエイター", "公式", "専門家", "コツ", "ガイド",
+    "アドバイス", "使い方", "レビュー", "ベスト", "人気", "おすすめ",
+)
+_TW_FALLBACK_SUFFIXES_KR = (
+    "크리에이터", "공식", "전문가", "팁", "가이드",
+    "조언", "사용법", "리뷰", "베스트", "인기", "추천",
+)
+_TW_FALLBACK_SUFFIXES_BY_LANG = {
+    "en": _TW_FALLBACK_SUFFIXES_EN,
+    "cn": _TW_FALLBACK_SUFFIXES_CN,
+    "tw": _TW_FALLBACK_SUFFIXES_TW,
+    "jp": _TW_FALLBACK_SUFFIXES_JP,
+    "kr": _TW_FALLBACK_SUFFIXES_KR,
+}
+
 
 def _fallback_queries(
     industry: str,
@@ -2781,6 +3169,13 @@ def _fallback_queries(
             # phrases — same shape as IG. Bare industry first, then suffixed
             # variants for diversity.
             suffixes = _TT_FALLBACK_SUFFIXES_BY_LANG.get(expected_lang, _TT_FALLBACK_SUFFIXES_EN)
+            variants = [base] + [f"{base} {suffix}" for suffix in suffixes]
+            result[p] = variants
+        elif p == "twitter":
+            # Twitter actor takes a single `twitterContent` string per call;
+            # caller issues one request per query. Same short-phrase shape
+            # as IG/TikTok works well against Twitter's native search.
+            suffixes = _TW_FALLBACK_SUFFIXES_BY_LANG.get(expected_lang, _TW_FALLBACK_SUFFIXES_EN)
             variants = [base] + [f"{base} {suffix}" for suffix in suffixes]
             result[p] = variants
         else:
@@ -3695,6 +4090,129 @@ async def run_scraper_agent(task_id: int) -> None:
                                     "[TikTok] R1 hit %d/%d but no fresh queries "
                                     "available for R2 (fallback overlapped)",
                                     new_r1, target_per_platform,
+                                )
+                elif platform == "twitter":
+                    # Twitter / X scraping: kaitoeasyapi tweet-scraper
+                    # ($0.00025/tweet) + bio-regex + Playwright URL cascade.
+                    # The cascade is mandatory because Twitter bio email
+                    # rate is ~1% (creators put email behind their bio's
+                    # external link, not in bio text). See _scrape_twitter
+                    # _via_apify docstring for the niche measurements.
+                    from app.services.settings_service import (
+                        resolve_apify_credentials,
+                    )
+                    from app.services.apify_usage import check_budget
+                    async with AsyncSessionLocal() as _tw_cfg_db:
+                        tw_token, tw_actor = await resolve_apify_credentials(
+                            _tw_cfg_db, "twitter",
+                        )
+
+                    if tw_token:
+                        verdict = await check_budget(tw_token)
+                        if not verdict.ok:
+                            logger.warning("[Twitter] budget abort: %s", verdict.message)
+                            quota_errors.append({
+                                "service": "apify",
+                                "http_code": 0,
+                                "message": verdict.message or "Apify 预算已用尽",
+                                "remaining": None,
+                            })
+                            await _scrape_stub("twitter")
+                            return
+                        if verdict.message:
+                            quota_errors.append({
+                                "service": "apify",
+                                "http_code": 0,
+                                "message": verdict.message,
+                                "remaining": max(
+                                    0.0, verdict.hard_cap - verdict.spent_usd,
+                                ),
+                            })
+
+                    if not tw_token:
+                        logger.warning(
+                            "[Twitter] APIFY_API_TOKEN not set; skipping. "
+                            "Configure in system settings."
+                        )
+                        quota_errors.append({
+                            "service": "apify",
+                            "http_code": 0,
+                            "message": (
+                                "APIFY_API_TOKEN 未配置，Twitter 抓取无法启动。"
+                                "到系统设置粘贴 token。"
+                            ),
+                            "remaining": None,
+                        })
+                        await _scrape_stub("twitter")
+                    else:
+                        # Two-round retry, same shape as TikTok but tuned
+                        # for Twitter's lower bio-email rate. R1 max=80
+                        # tweets ≈ $0.02; R2 max=50 ≈ $0.0125. Bio cascade
+                        # is the rate-determining hop, not actor cost —
+                        # so be generous on tweet volume.
+                        tw_queries_r1 = (
+                            search_queries.get("twitter")
+                            or _fallback_queries(
+                                industry, ["twitter"], task.target_market,
+                            ).get("twitter")
+                            or [industry]
+                        )
+                        r1_max = min(max(target_per_platform * 8, 30), 80)
+                        new_r1, seen_r1 = await _scrape_twitter_via_apify(
+                            queries=tw_queries_r1,
+                            target_count=target_per_platform,
+                            on_found=on_found,
+                            apify_token=tw_token,
+                            apify_actor=tw_actor,
+                            browser=browser,
+                            excluded_profiles=excluded_url_set,
+                            max_tweets=r1_max,
+                            round_label="R1",
+                            quota_errors_out=quota_errors,
+                            on_progress=on_progress,
+                        )
+                        had_quota_error = any(
+                            qe.get("service") == "apify" for qe in quota_errors
+                        )
+                        if (
+                            not had_quota_error
+                            and new_r1 < target_per_platform * 0.7
+                        ):
+                            remaining = target_per_platform - new_r1
+                            r2_max = min(max(remaining * 8, 25), 50)
+                            fb = _fallback_queries(
+                                industry, ["twitter"], task.target_market,
+                            ).get("twitter") or []
+                            r1_set = {q.strip().lower() for q in tw_queries_r1}
+                            tw_queries_r2 = [
+                                q for q in fb
+                                if q.strip().lower() not in r1_set
+                            ][:6]
+                            if tw_queries_r2:
+                                logger.info(
+                                    "[Twitter] R1 hit %d/%d (<70%%), launching "
+                                    "R2 with %d fresh queries, max=%d",
+                                    new_r1, target_per_platform,
+                                    len(tw_queries_r2), r2_max,
+                                )
+                                if on_progress:
+                                    await on_progress(
+                                        f"Twitter R1 命中 {new_r1}/{target_per_platform}，"
+                                        f"启动 R2 补抓 ({len(tw_queries_r2)} 个新 query)…"
+                                    )
+                                await _scrape_twitter_via_apify(
+                                    queries=tw_queries_r2,
+                                    target_count=remaining,
+                                    on_found=on_found,
+                                    apify_token=tw_token,
+                                    apify_actor=tw_actor,
+                                    browser=browser,
+                                    excluded_profiles=excluded_url_set,
+                                    excluded_usernames=seen_r1,
+                                    max_tweets=r2_max,
+                                    round_label="R2",
+                                    quota_errors_out=quota_errors,
+                                    on_progress=on_progress,
                                 )
                 else:
                     await _scrape_stub(platform)
