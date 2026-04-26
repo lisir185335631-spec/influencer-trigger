@@ -548,8 +548,8 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
         </div>
 
         <div className="mb-4">
-          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">
-            {t('emails.batch.campaignName')} <span className="text-gray-300 font-normal normal-case">{t('emails.batch.optional')}</span>
+          <label className="block text-base font-semibold text-gray-900 mb-1">
+            {t('emails.batch.campaignName')} <span className="text-gray-300 font-normal text-sm">{t('emails.batch.optional')}</span>
           </label>
           <input
             type="text"
@@ -561,7 +561,7 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
         </div>
 
         <div className="mb-6">
-          <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">
+          <label className="block text-base font-semibold text-gray-900 mb-1">
             {t('emails.batch.emailTemplate')} <span className="text-red-400">*</span>
           </label>
           {loadingTemplates ? (
