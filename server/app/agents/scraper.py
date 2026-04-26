@@ -294,12 +294,25 @@ def _industry_relevance_prefilter(
 
 # ── MX record validation ─────────────────────────────────────────────────────
 
-_mx_cache: dict[str, bool] = {}
+# DNS records rarely change, so we cache MX validity. Bounded by TTL + size to
+# prevent unbounded growth on long-running backends — pre-fix, the dict was
+# module-level and never evicted, so a backend hosting many tasks across a
+# wide range of email domains would accumulate one entry per unique domain
+# forever (a memory-pressure risk on production).
+_MX_CACHE_TTL_SEC = 86400.0  # 24 hours
+_MX_CACHE_MAX_SIZE = 5000    # safety cap; well above realistic working set
+
+# domain -> (timestamp, valid)
+_mx_cache: dict[str, tuple[float, bool]] = {}
 
 
 async def _mx_valid(domain: str) -> bool:
-    if domain in _mx_cache:
-        return _mx_cache[domain]
+    now = _time.time()
+    cached = _mx_cache.get(domain)
+    if cached is not None:
+        ts, valid = cached
+        if now - ts < _MX_CACHE_TTL_SEC:
+            return valid
     try:
         loop = asyncio.get_event_loop()
         records = await loop.run_in_executor(
@@ -308,7 +321,13 @@ async def _mx_valid(domain: str) -> bool:
         result = len(records) > 0
     except Exception:
         result = False
-    _mx_cache[domain] = result
+    # When the cap is hit, evict the oldest half in one batch pass — cheaper
+    # than popping one entry per insert and amortises cleanly across calls.
+    if len(_mx_cache) >= _MX_CACHE_MAX_SIZE:
+        sorted_items = sorted(_mx_cache.items(), key=lambda kv: kv[1][0])
+        for k, _ in sorted_items[: _MX_CACHE_MAX_SIZE // 2]:
+            _mx_cache.pop(k, None)
+    _mx_cache[domain] = (now, result)
     return result
 
 
@@ -2293,6 +2312,9 @@ async def _scrape_tiktok_via_clockworks(
         "[TikTok/v2 %s] got %d video records → %d unique authors "
         "(excluded %d already-seen, est cost $%.3f)",
         round_label, len(items), len(profiles), len(excluded_users),
+        # 0.0037 = clockworks per-video unit price; +0.001 = Apify actor
+        # run start fee (charged once per actor invocation regardless of
+        # result count, FREE tier fixed-rate component).
         len(items) * 0.0037 + 0.001,
     )
 
@@ -2953,6 +2975,8 @@ async def _scrape_facebook_via_apify(
     logger.info(
         "[Facebook %s] pages-scraper returned %d items, %d usable "
         "(est cost $%.3f)",
+        # 0.012 = facebook-pages-scraper per-page unit price; +0.001 =
+        # Apify actor run start fee (one-time per invocation).
         round_label, len(items), len(pages), len(items) * 0.012 + 0.001,
     )
 
