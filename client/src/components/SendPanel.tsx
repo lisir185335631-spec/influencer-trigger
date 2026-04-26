@@ -115,7 +115,11 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col"
+        // max-w-[90vw] matches the wide content area used by the
+        // mailbox-pool table on the sibling tab — the user wants the
+        // picker to feel as roomy as that surface rather than the
+        // half-width modal it was at max-w-4xl.
+        className="bg-white rounded-xl shadow-xl w-full max-w-[90vw] max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
