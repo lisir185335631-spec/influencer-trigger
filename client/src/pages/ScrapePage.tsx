@@ -54,7 +54,7 @@ const PLATFORMS: PlatformDef[] = [
   { id: 'youtube', labelKey: 'common.platform.youtube' },
   { id: 'tiktok', labelKey: 'common.platform.tiktok' },
   { id: 'twitter', labelKey: 'common.platform.twitter' },
-  { id: 'facebook', labelKey: 'common.platform.facebook', stub: true },
+  { id: 'facebook', labelKey: 'common.platform.facebook' },
 ]
 
 /**
@@ -337,6 +337,37 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
                   <p className="text-[10px] text-gray-400">{t('scrape.modal.twitterInfo.walltime.label')}</p>
                   <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.twitterInfo.walltime.value')}</p>
                 </div>
+              </div>
+            </div>
+          )}
+
+          {/* Facebook-specific info cards. Facebook's anti-scrape +
+              shrinking creator ecosystem makes hit rate the lowest of
+              the four supported platforms — we surface this honestly
+              up-front so the user calibrates their target_count and
+              isn't disappointed when target=10 returns 3-5. */}
+          {selectedPlatform === 'facebook' && (
+            <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
+              <p className="text-[11px] font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                <Info size={11} className="text-gray-500" />
+                {t('scrape.modal.facebookInfo.title')}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
+                  <p className="text-[10px] text-gray-400">{t('scrape.modal.facebookInfo.cost.label')}</p>
+                  <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.facebookInfo.cost.value')}</p>
+                </div>
+                <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
+                  <p className="text-[10px] text-gray-400">{t('scrape.modal.facebookInfo.hitRate.label')}</p>
+                  <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.facebookInfo.hitRate.value')}</p>
+                </div>
+                <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
+                  <p className="text-[10px] text-gray-400">{t('scrape.modal.facebookInfo.extract.label')}</p>
+                  <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.facebookInfo.extract.value')}</p>
+                </div>
+              </div>
+              <div className="mt-2 px-2.5 py-1.5 bg-amber-50 border border-amber-100 rounded text-[10px] text-amber-700">
+                {t('scrape.modal.facebookInfo.warning')}
               </div>
             </div>
           )}

@@ -80,6 +80,9 @@ def _build_settings_out(sys, fu) -> SettingsOut:
         apify_twitter_token=mask_token(sys.apify_twitter_token or ""),
         apify_twitter_token_set=bool(sys.apify_twitter_token),
         apify_twitter_actor=sys.apify_twitter_actor or "",
+        apify_facebook_token=mask_token(sys.apify_facebook_token or ""),
+        apify_facebook_token_set=bool(sys.apify_facebook_token),
+        apify_facebook_actor=sys.apify_facebook_actor or "",
     )
 
 
@@ -113,6 +116,8 @@ async def update_settings(
         apify_ig_actor=body.apify_ig_actor,
         apify_twitter_token=body.apify_twitter_token,
         apify_twitter_actor=body.apify_twitter_actor,
+        apify_facebook_token=body.apify_facebook_token,
+        apify_facebook_actor=body.apify_facebook_actor,
     )
 
     # Update FollowUpSettings
@@ -158,10 +163,10 @@ async def test_apify_actor(
         "[settings] test_apify_actor: platform=%s actor=%r token_provided=%s user=%s",
         platform, body.actor, bool(body.token), current_user.user_id,
     )
-    if platform not in ("tiktok", "instagram", "ig", "twitter", "x"):
+    if platform not in ("tiktok", "instagram", "ig", "twitter", "x", "facebook"):
         raise HTTPException(
             status_code=400,
-            detail="platform 必须是 tiktok / instagram / twitter",
+            detail="platform 必须是 tiktok / instagram / twitter / facebook",
         )
 
     # Resolve effective credentials. If body provides token/actor, use those;

@@ -31,9 +31,9 @@ type ApifyTestState = {
 const APIFY_PLATFORMS: {
   key: ApifyPlatform
   labelKey: string
-  tokenField: 'apify_tiktok_token' | 'apify_ig_token' | 'apify_twitter_token'
-  tokenSetField: 'apify_tiktok_token_set' | 'apify_ig_token_set' | 'apify_twitter_token_set'
-  actorField: 'apify_tiktok_actor' | 'apify_ig_actor' | 'apify_twitter_actor'
+  tokenField: 'apify_tiktok_token' | 'apify_ig_token' | 'apify_twitter_token' | 'apify_facebook_token'
+  tokenSetField: 'apify_tiktok_token_set' | 'apify_ig_token_set' | 'apify_twitter_token_set' | 'apify_facebook_token_set'
+  actorField: 'apify_tiktok_actor' | 'apify_ig_actor' | 'apify_twitter_actor' | 'apify_facebook_actor'
   actorPlaceholder: string
 }[] = [
   {
@@ -60,6 +60,14 @@ const APIFY_PLATFORMS: {
     actorField: 'apify_twitter_actor',
     actorPlaceholder: 'kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest',
   },
+  {
+    key: 'facebook',
+    labelKey: 'settings.apify.facebook',
+    tokenField: 'apify_facebook_token',
+    tokenSetField: 'apify_facebook_token_set',
+    actorField: 'apify_facebook_actor',
+    actorPlaceholder: 'apify~facebook-pages-scraper',
+  },
 ]
 
 export default function SettingsPage() {
@@ -85,6 +93,7 @@ export default function SettingsPage() {
     tiktok: { status: 'idle' },
     instagram: { status: 'idle' },
     twitter: { status: 'idle' },
+    facebook: { status: 'idle' },
   })
 
   // YouTube cookies state — independent from the main `form` because it's
@@ -151,6 +160,7 @@ export default function SettingsPage() {
         apify_tiktok_actor: form.apify_tiktok_actor,
         apify_ig_actor: form.apify_ig_actor,
         apify_twitter_actor: form.apify_twitter_actor,
+        apify_facebook_actor: form.apify_facebook_actor,
       }
       // Tokens: only send fields the user actually touched (otherwise we'd
       // overwrite real tokens with masked placeholders).
@@ -162,6 +172,9 @@ export default function SettingsPage() {
       }
       if (apifyTokenDirty.current.has('twitter')) {
         patch.apify_twitter_token = form.apify_twitter_token
+      }
+      if (apifyTokenDirty.current.has('facebook')) {
+        patch.apify_facebook_token = form.apify_facebook_token
       }
       const updated = await updateSettings(patch)
       setForm(updated)
@@ -180,8 +193,10 @@ export default function SettingsPage() {
       handleChange('apify_tiktok_token', value)
     } else if (platform === 'instagram') {
       handleChange('apify_ig_token', value)
-    } else {
+    } else if (platform === 'twitter') {
       handleChange('apify_twitter_token', value)
+    } else {
+      handleChange('apify_facebook_token', value)
     }
     // Reset test state when user edits the token.
     setApifyTest((prev) => ({ ...prev, [platform]: { status: 'idle' } }))
@@ -199,13 +214,17 @@ export default function SettingsPage() {
           ? 'apify_tiktok_token'
           : platform === 'instagram'
           ? 'apify_ig_token'
-          : 'apify_twitter_token'
+          : platform === 'twitter'
+          ? 'apify_twitter_token'
+          : 'apify_facebook_token'
       const actorField =
         platform === 'tiktok'
           ? 'apify_tiktok_actor'
           : platform === 'instagram'
           ? 'apify_ig_actor'
-          : 'apify_twitter_actor'
+          : platform === 'twitter'
+          ? 'apify_twitter_actor'
+          : 'apify_facebook_actor'
       const token = apifyTokenDirty.current.has(platform) ? form[tokenField] : undefined
       const actor = form[actorField]
       const result = await testApifyActor(platform, token, actor || undefined)

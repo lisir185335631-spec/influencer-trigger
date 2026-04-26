@@ -35,6 +35,8 @@ async def update_system_settings(
     apify_ig_actor: Optional[str] = None,
     apify_twitter_token: Optional[str] = None,
     apify_twitter_actor: Optional[str] = None,
+    apify_facebook_token: Optional[str] = None,
+    apify_facebook_actor: Optional[str] = None,
 ) -> SystemSettings:
     """Partial update of system settings.
 
@@ -63,6 +65,10 @@ async def update_system_settings(
         settings.apify_twitter_token = apify_twitter_token.strip()
     if apify_twitter_actor is not None:
         settings.apify_twitter_actor = _normalize_actor_id(apify_twitter_actor)
+    if apify_facebook_token is not None:
+        settings.apify_facebook_token = apify_facebook_token.strip()
+    if apify_facebook_actor is not None:
+        settings.apify_facebook_actor = _normalize_actor_id(apify_facebook_actor)
 
     await db.commit()
     await db.refresh(settings)
@@ -146,6 +152,14 @@ async def resolve_apify_credentials(
         actor = (
             _normalize_actor_id(settings.apify_twitter_actor)
             or "kaitoeasyapi~twitter-x-data-tweet-scraper-pay-per-result-cheapest"
+        )
+        return token, actor
+
+    if platform == "facebook":
+        token = (settings.apify_facebook_token or "").strip() or (env.apify_api_token or "").strip()
+        actor = (
+            _normalize_actor_id(settings.apify_facebook_actor)
+            or "apify~facebook-pages-scraper"
         )
         return token, actor
 

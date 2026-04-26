@@ -1139,12 +1139,75 @@ def _ig_profile_url_from_href(href: str) -> str | None:
     return f"https://www.instagram.com/{username}/"
 
 
+# Reserved path segments that look like a Page URL but are actually
+# subsections (groups / events / specific posts / login walls / etc).
+# Used by the Facebook URL normalizer below.
+_FB_RESERVED_PATH_SEGMENTS = (
+    "/groups/", "/events/", "/watch/", "/photo/", "/posts/",
+    "/videos/", "/login", "/help/", "/marketplace/", "/business/",
+    "/notes/", "/story.php", "/sharer/",
+)
+
+
+def _facebook_page_url_from_href(href: str) -> str | None:
+    """Return canonical `https://www.facebook.com/<page>` if href matches a
+    Facebook Page URL (not a reserved subsection), else None.
+
+    Brave SERP for `site:facebook.com "{query}"` returns a mix:
+      * Real Page URLs:        https://www.facebook.com/SomePage/
+      * `/p/Name-12345/` form: https://www.facebook.com/p/Some-Page-Name-100069...
+      * Subsection links:      https://www.facebook.com/SomePage/posts/...
+                               https://www.facebook.com/groups/...
+                               https://www.facebook.com/watch/?v=...
+    We accept the first two (both work as input to facebook-pages-scraper)
+    and reject the third by checking for reserved path segments.
+    """
+    if not href:
+        return None
+    # Strip query/fragment but KEEP a trailing slash for the reserved-path
+    # check — without it `/watch/` segments fail to match URLs of the form
+    # `https://facebook.com/watch/?v=...` (the `?` strip + rstrip leaves
+    # `.../watch` and `/watch/` won't substring-match).
+    h_no_qf = href.strip().split("?", 1)[0].split("#", 1)[0]
+    h_low = h_no_qf.lower()
+    if not h_low.startswith((
+        "http://www.facebook.com/", "https://www.facebook.com/",
+        "http://facebook.com/", "https://facebook.com/",
+    )):
+        return None
+    # Reject reserved subsections — these are NOT page-level URLs.
+    # Use the form WITH trailing-slash style segments before path normalisation.
+    if not h_low.endswith("/"):
+        h_low_for_check = h_low + "/"
+    else:
+        h_low_for_check = h_low
+    for seg in _FB_RESERVED_PATH_SEGMENTS:
+        if seg in h_low_for_check:
+            return None
+    # Now normalise: strip trailing slash, force www. host so dedup matches.
+    h = h_no_qf.rstrip("/")
+    after_host = h.split("facebook.com/", 1)[1] if "facebook.com/" in h else ""
+    if not after_host:
+        return None
+    canonical = "https://www.facebook.com/" + after_host
+    return canonical
+
+
 async def _search_brave(
     query: str,
     limit: int = 20,
     quota_errors_out: list[dict] | None = None,
+    url_filter: "Callable[[str], str | None] | None" = None,
 ) -> list[str]:
-    """Brave Search Web API → dedup Instagram profile URL list.
+    """Brave Search Web API → dedup canonical URL list.
+
+    `url_filter`: function that takes a raw Brave result URL and returns
+    either a canonical form (for inclusion) or None (to drop). Defaults
+    to the IG-profile filter so existing IG callers behave unchanged.
+    Facebook / future-platform callers pass their own filter; e.g.
+    `_facebook_page_url_from_href`. This decoupling fixed a 100%-zero-hit
+    bug where the Facebook scraper called `_search_brave` and got back
+    [] for every query — the IG filter rejected every facebook.com URL.
 
     Requires BRAVE_SEARCH_API_KEY in env. Returns [] when key absent or API
     returns non-200 — the task completes with 0 results rather than
@@ -1157,6 +1220,8 @@ async def _search_brave(
     Non-quota errors (timeout / 5xx / JSON decode) are NOT appended — those
     are transient network issues, not actionable for the user.
     """
+    if url_filter is None:
+        url_filter = _ig_profile_url_from_href
     settings = get_settings()
     api_key = (settings.brave_search_api_key or "").strip()
     if not api_key:
@@ -1250,7 +1315,7 @@ async def _search_brave(
 
     for item in data.get("web", {}).get("results", []) or []:
         url = item.get("url") or ""
-        canonical = _ig_profile_url_from_href(url)
+        canonical = url_filter(url)
         if canonical and canonical not in profiles:
             profiles.append(canonical)
             if len(profiles) >= limit:
@@ -2682,6 +2747,423 @@ async def _scrape_twitter_via_apify(
     return new_counter, seen_usernames
 
 
+async def _scrape_facebook_via_apify(
+    queries: list[str],
+    target_count: int,
+    on_found: "Callable[..., Awaitable[bool]]",
+    apify_token: str,
+    apify_actor: str = "apify~facebook-pages-scraper",
+    browser: "Browser | None" = None,
+    excluded_profiles: set[str] | None = None,
+    excluded_usernames: set[str] | None = None,
+    max_pages: int = 50,
+    round_label: str = "R1",
+    quota_errors_out: list[dict] | None = None,
+    on_progress: "Callable[[str, int | None], Awaitable[None]] | None" = None,
+) -> "tuple[int, set[str]]":
+    """Facebook scraper — Brave SERP `site:facebook.com "{q}"` → page URL list
+    → `apify/facebook-pages-scraper` ($0.012/page) → email + intro + websites
+    → optional Playwright cascade for the page's external website.
+
+    Why this architecture (and why hit rate is intrinsically lower than
+    other platforms):
+
+      * Facebook search by keyword is impossible via the Apify
+        facebook-search-scraper (input shape is undocumented and the
+        actor returns "no_items" for every shape we tried 2026-04-26).
+        We pivot to Brave SERP for discovery, mirroring the IG pattern.
+
+      * Facebook KOL ecosystem is much smaller than TikTok/IG (most
+        creators left for younger platforms). Brave SERP returns a mix
+        of Pages, Profiles, Groups, Events — we filter for Page URLs
+        only.
+
+      * Page email fields exist (~25-40% of business pages publish a
+        public email; tested on real data). When present, no cascade
+        needed. When missing but `websites` is set, fall through to
+        Playwright visit (same cascade as Twitter's bio-link).
+
+      * Meta's anti-scrape is aggressive: ~20% of Brave-discovered
+        page URLs come back as `error: not_available` (private /
+        deleted / restricted) — we silently skip those.
+
+    Returns (new_counter, seen_usernames). seen_usernames lets the
+    caller pass into a follow-up call's excluded_usernames so R2
+    doesn't re-process the same pages.
+    """
+    if not queries:
+        logger.warning("[Facebook] no search queries provided, skipping")
+        return 0, set()
+    if not apify_token:
+        logger.warning("[Facebook] APIFY_API_TOKEN not set, skipping")
+        return 0, set()
+
+    excluded = excluded_profiles or set()
+    excluded_users = {u.lower() for u in (excluded_usernames or set())}
+
+    actor = (apify_actor or "").strip().replace("/", "~") or "apify~facebook-pages-scraper"
+
+    # Phase A — discover Facebook Page URLs via Brave SERP. Same pattern
+    # as IG, just `site:facebook.com` instead of `site:instagram.com`.
+    PROGRESS_START = 5
+    PROGRESS_PHASE_A_END = 25
+    PROGRESS_PHASE_B_START = 25
+    PROGRESS_PHASE_B_END = 30
+    PROGRESS_PHASE_C_START = 30
+    PROGRESS_PHASE_C_END = 79
+
+    if on_progress:
+        await on_progress(
+            f"Facebook 探索中 [{round_label}]: Brave 搜索 {len(queries)} 个关键词…",
+            PROGRESS_START,
+        )
+
+    discovered_urls: list[str] = []
+    seen_url_set: set[str] = set()
+    for i, q in enumerate(queries):
+        # Two dorks per query: "industry email" (high signal, low recall)
+        # and bare industry. The first prefers pages with email already
+        # in their about/intro snippet — those are the easy wins.
+        # `url_filter=_facebook_page_url_from_href` does Page-URL
+        # canonicalisation (rejects /groups//events/posts subsections,
+        # normalises host) — same single source of truth as IG.
+        for dork in (
+            f'site:facebook.com "{q}" "@" email',
+            f'site:facebook.com "{q}"',
+        ):
+            try:
+                urls = await _search_brave(
+                    dork,
+                    limit=15,
+                    quota_errors_out=quota_errors_out,
+                    url_filter=_facebook_page_url_from_href,
+                )
+            except Exception as e:
+                logger.warning(
+                    "[Facebook %s] Brave search failed for %r: %s",
+                    round_label, dork, e,
+                )
+                continue
+            for clean in urls:
+                if clean in seen_url_set:
+                    continue
+                seen_url_set.add(clean)
+                # Cross-task DB blacklist
+                if clean in excluded:
+                    continue
+                discovered_urls.append(clean)
+                if len(discovered_urls) >= max_pages:
+                    break
+            if len(discovered_urls) >= max_pages:
+                break
+        if on_progress:
+            pct_done = (i + 1) / max(1, len(queries))
+            pct = PROGRESS_START + int((PROGRESS_PHASE_A_END - PROGRESS_START) * pct_done)
+            await on_progress(
+                f"Facebook 探索中 {i+1}/{len(queries)}: 累计 {len(discovered_urls)} 个 Page URL",
+                pct,
+            )
+        if len(discovered_urls) >= max_pages:
+            break
+
+    logger.info(
+        "[Facebook %s] Brave SERP discovered %d Page URLs from %d queries",
+        round_label, len(discovered_urls), len(queries),
+    )
+
+    if not discovered_urls:
+        logger.warning("[Facebook %s] no Page URLs found via Brave SERP", round_label)
+        return 0, set()
+
+    # Filter usernames already seen this task (R1's seen set when we're R2).
+    def _username_from_url(u: str) -> str:
+        # https://www.facebook.com/username -> "username"
+        tail = u.rstrip("/").split("/")[-1]
+        return tail.lower()
+
+    discovered_urls = [
+        u for u in discovered_urls
+        if _username_from_url(u) not in excluded_users
+    ]
+
+    # Phase B — batch-call facebook-pages-scraper with all discovered URLs.
+    # The actor accepts a startUrls array, so one HTTP call covers all
+    # pages. Cost ≈ count × $0.012; not_available errors don't reduce cost.
+    if on_progress:
+        await on_progress(
+            f"Facebook 抓取 {len(discovered_urls)} 个 Page 元数据中（约 ${len(discovered_urls)*0.012:.2f}）…",
+            PROGRESS_PHASE_B_START,
+        )
+
+    api_url = f"https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items"
+    payload = {"startUrls": [{"url": u} for u in discovered_urls]}
+    timeout = httpx.Timeout(connect=15.0, read=300.0, write=30.0, pool=10.0)
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(api_url, params={"token": apify_token}, json=payload)
+    except Exception as e:
+        logger.warning(
+            "[Facebook %s] pages-scraper request failed: %s: %r",
+            round_label, type(e).__name__, e,
+        )
+        return 0, set()
+
+    if resp.status_code not in (200, 201):
+        logger.warning(
+            "[Facebook %s] HTTP %d — %s",
+            round_label, resp.status_code, resp.text[:300],
+        )
+        if quota_errors_out is not None and resp.status_code in (401, 402, 403, 429):
+            messages = {
+                401: "Apify Token 无效（HTTP 401）",
+                402: "Apify 月度配额耗尽（HTTP 402）",
+                403: "Apify 权限受限（HTTP 403）",
+                429: "Apify 速率限制（HTTP 429）",
+            }
+            quota_errors_out.append({
+                "service": "apify",
+                "http_code": resp.status_code,
+                "message": messages.get(resp.status_code, f"Facebook actor HTTP {resp.status_code}"),
+                "remaining": None,
+            })
+        return 0, set()
+
+    try:
+        items = resp.json()
+    except Exception as e:
+        logger.warning("[Facebook %s] JSON decode failed: %s", round_label, e)
+        return 0, set()
+
+    if not isinstance(items, list):
+        return 0, set()
+
+    # Filter out the not_available errors (private/deleted pages) so they
+    # don't pollute the candidate pool. Keep only items with pageName +
+    # at least one of email/intro/websites — anything else is unusable.
+    pages: list[dict] = []
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        if it.get("error") == "not_available":
+            continue
+        if not it.get("pageName"):
+            continue
+        pages.append(it)
+
+    logger.info(
+        "[Facebook %s] pages-scraper returned %d items, %d usable "
+        "(est cost $%.3f)",
+        round_label, len(items), len(pages), len(items) * 0.012 + 0.001,
+    )
+
+    new_counter = 0
+    junk_skipped = 0
+    no_email_skipped = 0
+    cascade_visits = 0
+    cascade_hits = 0
+    seen_usernames: set[str] = set()
+
+    cascade_ctx: BrowserContext | None = None
+    total_pages = len(pages)
+    random.shuffle(pages)
+
+    try:
+        for processed_idx, p in enumerate(pages):
+            if new_counter >= target_count:
+                break
+            page_name = (p.get("pageName") or "").strip()
+            title = (p.get("title") or page_name).strip()
+            page_url = (p.get("pageUrl") or p.get("facebookUrl") or "").strip()
+            uname_lower = page_name.lower() or _username_from_url(page_url)
+            if not uname_lower:
+                continue
+            seen_usernames.add(uname_lower)
+            followers = p.get("followers")
+            if not isinstance(followers, int):
+                followers = None
+            avatar_url = (p.get("profilePictureUrl") or "").strip() or None
+
+            # Compose a "bio-equivalent" text from intro + info join. We
+            # use this both for regex (in case there's an extra email
+            # buried in the intro that the actor didn't lift to top-level
+            # `email`) and as the bio field we persist on Influencer.
+            intro = (p.get("intro") or "").strip()
+            info_lines = p.get("info") or []
+            if isinstance(info_lines, list):
+                info_text = " | ".join(str(s) for s in info_lines if s)
+            else:
+                info_text = ""
+            bio_blob = (intro + ("\n" + info_text if info_text else "")).strip()
+
+            # Stage 1: explicit email field on the page object
+            email = (p.get("email") or "").strip() or None
+            email_source = "page_email" if email else None
+
+            # Stage 2: regex on intro/info
+            if not email:
+                regex_emails = _PLAIN_EMAIL_RE.findall(bio_blob)
+                if regex_emails:
+                    email = regex_emails[0]
+                    email_source = "intro"
+
+            # Stage 3: cascade — visit page's website with Playwright.
+            # Only fires when the prior two failed AND we have a website.
+            external_url = (p.get("website") or "").strip()
+            if not external_url:
+                websites = p.get("websites") or []
+                if isinstance(websites, list) and websites:
+                    external_url = (websites[0] or "").strip()
+
+            if on_progress:
+                fol = (
+                    f"{followers / 1000:.0f}K"
+                    if isinstance(followers, int) and followers >= 1000
+                    else str(followers or "?")
+                )
+                stage = email_source or ("page→site" if external_url else "无")
+                pct_done = (processed_idx + 1) / max(1, total_pages)
+                pct = PROGRESS_PHASE_C_START + int(
+                    (PROGRESS_PHASE_C_END - PROGRESS_PHASE_C_START) * pct_done
+                )
+                await on_progress(
+                    f"处理 Facebook {title} "
+                    f"({processed_idx + 1}/{total_pages}, {fol} 粉, "
+                    f"{stage}, 已抓 {new_counter}/{target_count})",
+                    pct,
+                )
+
+            if (
+                not email
+                and external_url
+                and external_url.startswith(("http://", "https://"))
+                and browser is not None
+            ):
+                if cascade_ctx is None:
+                    try:
+                        cascade_ctx = await _new_context(browser)
+                    except Exception as e:
+                        logger.warning(
+                            "[Facebook %s] failed to create Playwright context: %s",
+                            round_label, e,
+                        )
+                        cascade_ctx = None
+                if cascade_ctx is not None:
+                    cascade_visits += 1
+                    # In-flight heartbeat: cascade visits a page's external
+                    # site (e.g. fentybeauty.com) which can legitimately
+                    # take 12-20s on Cloudflare-protected JS-heavy sites.
+                    # Without this, the progress text stays frozen on the
+                    # same profile for that whole window — users perceive
+                    # it as "stuck" and ask if they should kill the task.
+                    # Heartbeat fires every 5s with elapsed seconds; bar
+                    # doesn't move (still on this profile's slot) but the
+                    # text changes so the UI proves it's alive.
+                    cascade_t0 = _time.time()
+                    _hb_proc_idx = processed_idx
+                    _hb_total = total_pages
+                    _hb_title = title
+                    _hb_new = new_counter
+
+                    async def _cascade_heartbeat() -> None:
+                        try:
+                            while True:
+                                await asyncio.sleep(5)
+                                if not on_progress:
+                                    continue
+                                waited = int(_time.time() - cascade_t0)
+                                pct_done = (_hb_proc_idx + 1) / max(1, _hb_total)
+                                pct = PROGRESS_PHASE_C_START + int(
+                                    (PROGRESS_PHASE_C_END - PROGRESS_PHASE_C_START) * pct_done
+                                )
+                                await on_progress(
+                                    f"处理 Facebook {_hb_title} "
+                                    f"({_hb_proc_idx + 1}/{_hb_total}, page→site, "
+                                    f"已等 {waited}s, 已抓 {_hb_new}/{target_count})",
+                                    pct,
+                                )
+                        except asyncio.CancelledError:
+                            return
+
+                    hb_task = asyncio.create_task(_cascade_heartbeat())
+                    url_emails: list[str] = []
+                    try:
+                        # Defensive 20s outer timeout. _scrape_aggregator_emails
+                        # already wraps itself in asyncio.timeout(18s), so 20s
+                        # is a safety net for the rare case where Playwright
+                        # holds onto a page IO past its inner cancellation
+                        # (heavy bot-defended sites). 20s = 18s + 2s buffer
+                        # so we don't fire pre-emptively on legitimate slow
+                        # cleans.
+                        url_emails = await asyncio.wait_for(
+                            _scrape_aggregator_emails(cascade_ctx, external_url),
+                            timeout=20.0,
+                        )
+                    except asyncio.TimeoutError:
+                        logger.info(
+                            "[Facebook %s] cascade timeout (20s) for %s — "
+                            "skipping, page hung past internal 18s cap",
+                            round_label, external_url,
+                        )
+                    except Exception as e:
+                        logger.debug(
+                            "[Facebook %s] cascade visit failed for %s: %s",
+                            round_label, external_url, e,
+                        )
+                    finally:
+                        hb_task.cancel()
+                        try:
+                            await hb_task
+                        except (asyncio.CancelledError, Exception):
+                            pass
+                    if url_emails:
+                        email = url_emails[0]
+                        email_source = "site"
+                        cascade_hits += 1
+
+            if not email:
+                no_email_skipped += 1
+                continue
+
+            is_junk, reason = is_junk_email(email)
+            if is_junk:
+                logger.info(
+                    "[Facebook %s] dropped junk email %r from %s: %s",
+                    round_label, email, page_name, reason,
+                )
+                junk_skipped += 1
+                continue
+
+            domain = email.split("@", 1)[1]
+            if not await _mx_valid(domain):
+                continue
+
+            display = title or page_name
+            is_new = await on_found(
+                email,
+                display,
+                page_url,
+                followers=followers,
+                bio=bio_blob or None,
+                avatar_url=avatar_url,
+            )
+            if is_new:
+                new_counter += 1
+    finally:
+        if cascade_ctx is not None:
+            try:
+                await cascade_ctx.close()
+            except Exception:
+                pass
+
+    logger.info(
+        "[Facebook %s] phase done: new=%d / target=%d "
+        "(processed %d pages, %d no-email, %d junk, cascade %d/%d hit)",
+        round_label, new_counter, target_count, len(pages),
+        no_email_skipped, junk_skipped, cascade_hits, cascade_visits,
+    )
+    return new_counter, seen_usernames
+
+
 async def _scrape_stub(platform: str) -> list[dict]:
     """Platforms not yet fully implemented return empty list with a log notice."""
     logger.info(
@@ -3133,6 +3615,38 @@ _TW_FALLBACK_SUFFIXES_BY_LANG = {
     "kr": _TW_FALLBACK_SUFFIXES_KR,
 }
 
+# Facebook fallback suffixes — Brave SERP works on natural-language
+# phrases, so short tags work well. Skew toward business-y terms ("page",
+# "official", "store", "shop") because Facebook KOLs in 2026 are mostly
+# small businesses on Pages, not personal creators.
+_FB_FALLBACK_SUFFIXES_EN = (
+    "page", "official", "store", "shop", "studio",
+    "brand", "team", "experts", "tips", "guide", "club",
+)
+_FB_FALLBACK_SUFFIXES_CN = (
+    "官方", "工作室", "店铺", "品牌", "团队",
+    "专家", "技巧", "指南", "俱乐部", "课程", "中心",
+)
+_FB_FALLBACK_SUFFIXES_TW = (
+    "官方", "工作室", "店家", "品牌", "團隊",
+    "專家", "技巧", "指南", "俱樂部", "課程", "中心",
+)
+_FB_FALLBACK_SUFFIXES_JP = (
+    "公式", "スタジオ", "ショップ", "ブランド", "チーム",
+    "専門家", "コツ", "ガイド", "クラブ", "コース", "センター",
+)
+_FB_FALLBACK_SUFFIXES_KR = (
+    "공식", "스튜디오", "샵", "브랜드", "팀",
+    "전문가", "팁", "가이드", "클럽", "코스", "센터",
+)
+_FB_FALLBACK_SUFFIXES_BY_LANG = {
+    "en": _FB_FALLBACK_SUFFIXES_EN,
+    "cn": _FB_FALLBACK_SUFFIXES_CN,
+    "tw": _FB_FALLBACK_SUFFIXES_TW,
+    "jp": _FB_FALLBACK_SUFFIXES_JP,
+    "kr": _FB_FALLBACK_SUFFIXES_KR,
+}
+
 
 def _fallback_queries(
     industry: str,
@@ -3176,6 +3690,13 @@ def _fallback_queries(
             # caller issues one request per query. Same short-phrase shape
             # as IG/TikTok works well against Twitter's native search.
             suffixes = _TW_FALLBACK_SUFFIXES_BY_LANG.get(expected_lang, _TW_FALLBACK_SUFFIXES_EN)
+            variants = [base] + [f"{base} {suffix}" for suffix in suffixes]
+            result[p] = variants
+        elif p == "facebook":
+            # Facebook discovery goes through Brave SERP (`site:facebook.com
+            # "{q}"`), so we want phrasings that are likely to appear inside
+            # an actual FB Page name or About text.
+            suffixes = _FB_FALLBACK_SUFFIXES_BY_LANG.get(expected_lang, _FB_FALLBACK_SUFFIXES_EN)
             variants = [base] + [f"{base} {suffix}" for suffix in suffixes]
             result[p] = variants
         else:
@@ -4214,6 +4735,126 @@ async def run_scraper_agent(task_id: int) -> None:
                                     quota_errors_out=quota_errors,
                                     on_progress=on_progress,
                                 )
+                elif platform == "facebook":
+                    # Facebook scraping: Brave SERP (`site:facebook.com "{q}"`)
+                    # → Page URLs → apify/facebook-pages-scraper → email/intro
+                    # + Playwright cascade for the page's website. Same
+                    # cascade shape as Twitter, just reached via Brave
+                    # instead of native actor search (FB search-scraper's
+                    # input is undocumented and returns no_items 2026-04-26).
+                    from app.services.settings_service import (
+                        resolve_apify_credentials,
+                    )
+                    from app.services.apify_usage import check_budget
+                    async with AsyncSessionLocal() as _fb_cfg_db:
+                        fb_token, fb_actor = await resolve_apify_credentials(
+                            _fb_cfg_db, "facebook",
+                        )
+
+                    if fb_token:
+                        verdict = await check_budget(fb_token)
+                        if not verdict.ok:
+                            logger.warning("[Facebook] budget abort: %s", verdict.message)
+                            quota_errors.append({
+                                "service": "apify",
+                                "http_code": 0,
+                                "message": verdict.message or "Apify 预算已用尽",
+                                "remaining": None,
+                            })
+                            await _scrape_stub("facebook")
+                            return
+                        if verdict.message:
+                            quota_errors.append({
+                                "service": "apify",
+                                "http_code": 0,
+                                "message": verdict.message,
+                                "remaining": max(
+                                    0.0, verdict.hard_cap - verdict.spent_usd,
+                                ),
+                            })
+
+                    if not fb_token:
+                        logger.warning(
+                            "[Facebook] APIFY_API_TOKEN not set; skipping. "
+                            "Configure in system settings."
+                        )
+                        quota_errors.append({
+                            "service": "apify",
+                            "http_code": 0,
+                            "message": (
+                                "APIFY_API_TOKEN 未配置，Facebook 抓取无法启动。"
+                                "到系统设置粘贴 token。"
+                            ),
+                            "remaining": None,
+                        })
+                        await _scrape_stub("facebook")
+                    else:
+                        # Two-round retry tuned for Facebook's lower yield.
+                        # R1 max=50 pages ≈ $0.60; R2 max=30 ≈ $0.36.
+                        # Budget cap respects the global ≤$1/task target.
+                        fb_queries_r1 = (
+                            search_queries.get("facebook")
+                            or _fallback_queries(
+                                industry, ["facebook"], task.target_market,
+                            ).get("facebook")
+                            or [industry]
+                        )
+                        r1_max = min(max(target_per_platform * 5, 25), 50)
+                        new_r1, seen_r1 = await _scrape_facebook_via_apify(
+                            queries=fb_queries_r1,
+                            target_count=target_per_platform,
+                            on_found=on_found,
+                            apify_token=fb_token,
+                            apify_actor=fb_actor,
+                            browser=browser,
+                            excluded_profiles=excluded_url_set,
+                            max_pages=r1_max,
+                            round_label="R1",
+                            quota_errors_out=quota_errors,
+                            on_progress=on_progress,
+                        )
+                        had_quota_error = any(
+                            qe.get("service") == "apify" for qe in quota_errors
+                        )
+                        if (
+                            not had_quota_error
+                            and new_r1 < target_per_platform * 0.7
+                        ):
+                            remaining = target_per_platform - new_r1
+                            r2_max = min(max(remaining * 5, 15), 30)
+                            fb = _fallback_queries(
+                                industry, ["facebook"], task.target_market,
+                            ).get("facebook") or []
+                            r1_set = {q.strip().lower() for q in fb_queries_r1}
+                            fb_queries_r2 = [
+                                q for q in fb if q.strip().lower() not in r1_set
+                            ][:6]
+                            if fb_queries_r2:
+                                logger.info(
+                                    "[Facebook] R1 hit %d/%d (<70%%), launching "
+                                    "R2 with %d fresh queries, max=%d",
+                                    new_r1, target_per_platform,
+                                    len(fb_queries_r2), r2_max,
+                                )
+                                if on_progress:
+                                    await on_progress(
+                                        f"Facebook R1 命中 {new_r1}/{target_per_platform}，"
+                                        f"启动 R2 补抓 ({len(fb_queries_r2)} 个新 query)…"
+                                    )
+                                await _scrape_facebook_via_apify(
+                                    queries=fb_queries_r2,
+                                    target_count=remaining,
+                                    on_found=on_found,
+                                    apify_token=fb_token,
+                                    apify_actor=fb_actor,
+                                    browser=browser,
+                                    excluded_profiles=excluded_url_set,
+                                    excluded_usernames=seen_r1,
+                                    max_pages=r2_max,
+                                    round_label="R2",
+                                    quota_errors_out=quota_errors,
+                                    on_progress=on_progress,
+                                )
                 else:
                     await _scrape_stub(platform)
 
@@ -4422,7 +5063,7 @@ async def run_scraper_agent(task_id: int) -> None:
                     )
                 warnings.append(f"[WARN]{msg}")
             elif (
-                0 < new_total < task.target_count
+                0 < new_total < task.target_count * 0.7
                 and not quota_errors
             ):
                 # Partial completion — visit budget (max 200 candidates)
@@ -4435,6 +5076,14 @@ async def run_scraper_agent(task_id: int) -> None:
                 # the IG/YT visit cap, not TikTok's (TikTok actor maxResults=50).
                 # Keeping it generic ("候选池已用尽") works for any platform's
                 # cap without lying about the number.
+                #
+                # Threshold = target × 0.7 matches the frontend's
+                # "partial" status badge cutoff (StatusPill in
+                # ScrapeTaskDetailPage / ScrapeBadge in ScrapePage).
+                # Above 70% the badge stays green "完成" — emitting an
+                # orange warning there created visual dissonance (task
+                # #67 case: 9/10 hit, badge green, warning still fired
+                # making the user think something went wrong).
                 warnings.append(
                     f"[WARN]目标 {task.target_count} 个新网红，仅找到 {new_total} 个真新人"
                     f" + {reused_total} 个复链接（候选池已用尽）。"

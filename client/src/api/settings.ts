@@ -19,6 +19,9 @@ export interface SystemSettings {
   apify_twitter_token: string
   apify_twitter_token_set: boolean
   apify_twitter_actor: string
+  apify_facebook_token: string
+  apify_facebook_token_set: boolean
+  apify_facebook_actor: string
 }
 
 export interface SystemSettingsUpdate {
@@ -36,9 +39,11 @@ export interface SystemSettingsUpdate {
   apify_ig_actor?: string
   apify_twitter_token?: string
   apify_twitter_actor?: string
+  apify_facebook_token?: string
+  apify_facebook_actor?: string
 }
 
-export type ApifyPlatform = 'tiktok' | 'instagram' | 'twitter'
+export type ApifyPlatform = 'tiktok' | 'instagram' | 'twitter' | 'facebook'
 
 export interface TestApifyActorResponse {
   success: boolean

@@ -29,6 +29,8 @@ class SystemSettings(Base):
     apify_ig_actor: Mapped[str] = mapped_column(String(255), default="", nullable=False, server_default="")
     apify_twitter_token: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default="")
     apify_twitter_actor: Mapped[str] = mapped_column(String(255), default="", nullable=False, server_default="")
+    apify_facebook_token: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default="")
+    apify_facebook_actor: Mapped[str] = mapped_column(String(255), default="", nullable=False, server_default="")
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
