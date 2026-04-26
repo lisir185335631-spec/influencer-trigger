@@ -10,6 +10,7 @@ import DashboardPage from './pages/DashboardPage'
 import ScrapePage from './pages/ScrapePage'
 import ScrapeTaskDetailPage from './pages/ScrapeTaskDetailPage'
 import EmailsPage from './pages/EmailsPage'
+import CampaignDraftsPage from './pages/CampaignDraftsPage'
 import CRMPage from './pages/CRMPage'
 import TemplatesPage from './pages/TemplatesPage'
 import MailboxesPage from './pages/MailboxesPage'
@@ -41,6 +42,7 @@ const PROTECTED_ROUTES = [
   { path: '/scrape', element: <ScrapePage /> },
   { path: '/scrape/tasks/:taskId', element: <ScrapeTaskDetailPage /> },
   { path: '/emails', element: <EmailsPage /> },
+  { path: '/campaigns/:campaignId/drafts', element: <CampaignDraftsPage /> },
   { path: '/crm', element: <CRMPage /> },
   { path: '/crm/:id', element: <InfluencerDetailPage /> },
   { path: '/templates', element: <TemplatesPage /> },

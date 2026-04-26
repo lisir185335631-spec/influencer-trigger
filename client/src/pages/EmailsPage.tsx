@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { templatesApi, Template } from '../api/templates'
 import {
@@ -9,9 +9,11 @@ import {
   EmailListItem,
   EmailStats,
 } from '../api/emails'
+import { draftsApi, AngleOption } from '../api/drafts'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
 
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+// See WebSocketContext.tsx for why we hardcode :6002 instead of using window.location.host.
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:6002/ws`
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -278,6 +280,7 @@ interface ProgressState {
 
 function SendPanel() {
   const { t } = useTranslation()
+  const navigate = useNavigate()
   const [searchParams, setSearchParams] = useSearchParams()
   const [templates, setTemplates]       = useState<Template[]>([])
   const [selectedTemplateId, setSelectedTemplateId] = useState<number | ''>('')
@@ -290,6 +293,11 @@ function SendPanel() {
   const [error, setError]               = useState('')
   const [loadingTemplates, setLoadingTemplates] = useState(true)
   const [submitting, setSubmitting]     = useState(false)
+  // Draft-mode (Phase 1 personalization workflow)
+  const [angles, setAngles]             = useState<AngleOption[]>([])
+  const [selectedAngle, setSelectedAngle] = useState<string>('friendly')
+  const [extraNotes, setExtraNotes]     = useState('')
+  const [creatingDraft, setCreatingDraft] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   const influencerIds: number[] = (() => {
@@ -303,6 +311,7 @@ function SendPanel() {
       .then(setTemplates)
       .catch(() => setError(t('emails.batch.loadTemplatesFailed')))
       .finally(() => setLoadingTemplates(false))
+    draftsApi.listAngles().then(setAngles).catch(() => { /* non-blocking */ })
   }, [])
 
   const handleWsMessage = useCallback((msg: WsMessage) => {
@@ -364,6 +373,28 @@ function SendPanel() {
       setError(t('emails.batch.sendFailed'))
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  // Draft mode — generates LLM-personalized content per recipient, then
+  // jumps to the review page where the user can edit/regenerate before
+  // the actual send.
+  const handleCreateDraft = async () => {
+    if (!selectedTemplateId || influencerIds.length === 0) return
+    setCreatingDraft(true); setError('')
+    try {
+      const resp = await draftsApi.generate({
+        influencer_ids: influencerIds,
+        template_id: selectedTemplateId as number,
+        campaign_name: campaignName.trim() || undefined,
+        angle: selectedAngle,
+        extra_notes: extraNotes.trim() || undefined,
+      })
+      navigate(`/campaigns/${resp.campaign_id}/drafts`)
+    } catch {
+      setError('草稿创建失败')
+    } finally {
+      setCreatingDraft(false)
     }
   }
 
@@ -460,16 +491,83 @@ function SendPanel() {
 
         {error && <p className="text-sm text-red-500 mb-4">{error}</p>}
 
-        <button
-          onClick={handleSend}
-          disabled={!selectedTemplateId || submitting || influencerIds.length === 0}
-          className="w-full bg-gray-900 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-        >
-          {submitting ? t('emails.batch.starting') : t('emails.batch.sendTo', { count: influencerIds.length })}
-        </button>
-        <p className="text-xs text-gray-400 mt-3 text-center">
-          {t('emails.batch.rateHint')}
-        </p>
+        {/* ── Personalized draft mode (preferred for BD outreach) ───────── */}
+        <div className="mb-4 p-4 border border-emerald-100 bg-emerald-50 rounded-lg">
+          <div className="flex items-start gap-2 mb-3">
+            <span className="text-emerald-600 text-base">✨</span>
+            <div className="flex-1">
+              <div className="text-sm font-medium text-emerald-900">
+                AI 个性化草稿模式（推荐）
+              </div>
+              <div className="text-xs text-emerald-700 mt-0.5">
+                为每个网红基于其平台/粉丝/简介/抓取理由生成专属话术，发送前可逐条审阅修改
+              </div>
+            </div>
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-emerald-800 mb-1 uppercase tracking-wide">
+              个性化角度
+            </label>
+            <select
+              value={selectedAngle}
+              onChange={e => setSelectedAngle(e.target.value)}
+              disabled={angles.length === 0}
+              className="w-full border border-emerald-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            >
+              {angles.length === 0 && <option>加载中…</option>}
+              {angles.map(a => (
+                <option key={a.key} value={a.key}>
+                  {a.key} — {a.description.slice(0, 60)}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-emerald-800 mb-1 uppercase tracking-wide">
+              品牌补充信息 <span className="text-emerald-500 font-normal normal-case">(可选,会传给 LLM)</span>
+            </label>
+            <input
+              value={extraNotes}
+              onChange={e => setExtraNotes(e.target.value)}
+              placeholder="例：我们是一家专注创作者经济的 SaaS 公司，预算 $500-$2000/合作"
+              className="w-full border border-emerald-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
+            />
+          </div>
+
+          <button
+            onClick={handleCreateDraft}
+            disabled={!selectedTemplateId || creatingDraft || influencerIds.length === 0}
+            className="w-full bg-emerald-600 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {creatingDraft
+              ? '创建草稿中…'
+              : `创建 ${influencerIds.length} 个个性化草稿（去审核页）`}
+          </button>
+          <p className="text-xs text-emerald-600 mt-2 text-center">
+            ≈ ${(influencerIds.length * 0.0001).toFixed(4)} LLM 成本 (gpt-4o-mini)
+          </p>
+        </div>
+
+        {/* ── Plain Jinja2 batch send (legacy, still available) ──────────── */}
+        <details className="mb-4">
+          <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">
+            或者直接批量发送（仅 Jinja2 占位符替换，无 LLM 个性化）
+          </summary>
+          <div className="mt-3">
+            <button
+              onClick={handleSend}
+              disabled={!selectedTemplateId || submitting || influencerIds.length === 0}
+              className="w-full bg-gray-900 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+            >
+              {submitting ? t('emails.batch.starting') : t('emails.batch.sendTo', { count: influencerIds.length })}
+            </button>
+            <p className="text-xs text-gray-400 mt-2 text-center">
+              {t('emails.batch.rateHint')}
+            </p>
+          </div>
+        </details>
       </div>
     )
   }
