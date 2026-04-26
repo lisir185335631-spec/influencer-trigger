@@ -591,15 +591,12 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
 
         {/* ── Personalized draft mode (preferred for BD outreach) ───────── */}
         <div className="mb-4 p-4 border border-emerald-100 bg-emerald-50 rounded-lg">
-          <div className="flex items-start gap-2 mb-3">
-            <span className="text-emerald-600 text-base">✨</span>
-            <div className="flex-1">
-              <div className="text-sm font-medium text-emerald-900">
-                {t('drafts.panelTitle')}
-              </div>
-              <div className="text-xs text-emerald-700 mt-0.5">
-                {t('drafts.panelHint')}
-              </div>
+          <div className="mb-3">
+            <div className="text-sm font-medium text-emerald-900">
+              {t('drafts.panelTitle')}
+            </div>
+            <div className="text-xs text-emerald-700 mt-0.5">
+              {t('drafts.panelHint')}
             </div>
           </div>
 
