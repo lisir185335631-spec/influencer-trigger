@@ -331,6 +331,85 @@ async def _mx_valid(domain: str) -> bool:
     return result
 
 
+# ── Apify common infrastructure ──────────────────────────────────────────────
+# Shared across all Apify-backed platform scrapers (Instagram / TikTok /
+# Twitter / Facebook). Centralised here so HTTP timeout tuning and quota
+# error messages are single-source-of-truth instead of drifting across
+# 4 platforms' inline definitions (each one had subtly different copies
+# pre-refactor — a maintenance trap when error wording needed updating).
+
+# Default httpx timeout for run-sync-get-dataset-items endpoints. Apify
+# actors take 60-180s for a typical batch; read=300 leaves comfortable margin.
+APIFY_HTTP_TIMEOUT = httpx.Timeout(
+    connect=15.0, read=300.0, write=30.0, pool=10.0,
+)
+
+# Tighter per-query variant for actors that issue one HTTP call per query
+# (e.g. kaitoeasyapi twitter scraper). Single-query batches finish in
+# 30-180s; read=180 fails fast on stuck queries instead of waiting 5 min.
+APIFY_HTTP_TIMEOUT_FAST = httpx.Timeout(
+    connect=15.0, read=180.0, write=30.0, pool=10.0,
+)
+
+
+def apify_quota_error_message(http_code: int, actor: str) -> str:
+    """Map an Apify quota/auth HTTP status to a user-actionable Chinese
+    message for surfacing in the UI via the quota_errors_out list. `actor`
+    is included only in the 403 (scope) variant where which actor failed
+    matters; other codes don't need it."""
+    if http_code == 401:
+        return (
+            "Apify API token 无效或未找到（HTTP 401）。"
+            "到 https://console.apify.com/account/integrations 重新签发 token，"
+            "更新 server/.env 的 APIFY_API_TOKEN 后重启 backend。"
+        )
+    if http_code == 402:
+        return (
+            "Apify 月度配额已耗尽（HTTP 402）。"
+            "FREE plan 是 $5/月。"
+            "到 https://console.apify.com/billing 查看用量并升级套餐，"
+            "或者等下个月 1 号自动重置。"
+        )
+    if http_code == 403:
+        return (
+            f"Apify token 权限不足（HTTP 403），无法调用 actor {actor!r}。"
+            "检查 token 的 scope，或换一个 actor。"
+        )
+    if http_code == 429:
+        return (
+            "Apify 并发或速率限制触发（HTTP 429）。"
+            "FREE plan 最多 25 个并发 actor run，等几分钟后重试。"
+        )
+    return f"Apify HTTP {http_code}"
+
+
+async def pick_first_valid_email(
+    emails: list[str],
+) -> tuple[str | None, int, int]:
+    """Walk a candidate email list, returning the first that passes both
+    junk-filter AND DNS MX. Returns (email_or_None, junk_count, mx_fail_count)
+    so callers can preserve their per-profile telemetry counters.
+
+    Replaces the prevalent `emails[0] if emails else None` pattern that
+    silently dropped the entire profile when emails[0] happened to be junk
+    or had a dead MX, even when emails[1:] had clean addresses."""
+    junk_count = 0
+    mx_fail_count = 0
+    for email in emails:
+        if not email or "@" not in email:
+            continue
+        is_junk, _reason = is_junk_email(email)
+        if is_junk:
+            junk_count += 1
+            continue
+        domain = email.split("@", 1)[1]
+        if not await _mx_valid(domain):
+            mx_fail_count += 1
+            continue
+        return email, junk_count, mx_fail_count
+    return None, junk_count, mx_fail_count
+
+
 # ── Playwright helpers ───────────────────────────────────────────────────────
 
 _STEALTH_INIT_SCRIPT = """
@@ -1675,9 +1754,8 @@ async def _scrape_via_apify(
     # under IG anti-bot heat. read=300 gives a comfortable margin. The connect
     # timeout stays short (15s) because Apify is on global Cloudflare —
     # connection itself is fast, all the time is on the actor running.
-    timeout = httpx.Timeout(connect=15.0, read=300.0, write=30.0, pool=10.0)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=APIFY_HTTP_TIMEOUT) as client:
             resp = await client.post(
                 api_url,
                 params={"token": token},
@@ -1710,31 +1788,10 @@ async def _scrape_via_apify(
         # Anything else is a transient network / actor-internal error,
         # not user-actionable — those get logged but not bubbled up.
         if quota_errors_out is not None and resp.status_code in (401, 402, 403, 429):
-            messages = {
-                401: (
-                    f"Apify API token 无效或未找到（HTTP 401）。"
-                    f"到 https://console.apify.com/account/integrations 重新签发 token，"
-                    f"更新 server/.env 的 APIFY_API_TOKEN 后重启 backend。"
-                ),
-                402: (
-                    f"Apify 月度配额已耗尽（HTTP 402）。"
-                    f"FREE plan 是 $5/月，约 100 次 IG 任务的额度。"
-                    f"到 https://console.apify.com/billing 查看用量并升级套餐，"
-                    f"或者等下个月 1 号自动重置。"
-                ),
-                403: (
-                    f"Apify token 权限不足（HTTP 403），无法调用 actor {actor!r}。"
-                    f"检查 token 的 scope，或换一个 actor。"
-                ),
-                429: (
-                    f"Apify 并发或速率限制触发（HTTP 429）。"
-                    f"FREE plan 最多 25 个并发 actor run，等几分钟后重试。"
-                ),
-            }
             quota_errors_out.append({
                 "service": "apify",
                 "http_code": resp.status_code,
-                "message": messages.get(resp.status_code, f"Apify HTTP {resp.status_code}: {resp.text[:200]}"),
+                "message": apify_quota_error_message(resp.status_code, actor),
                 "remaining": None,
             })
         return {}
@@ -2220,10 +2277,9 @@ async def _scrape_tiktok_via_clockworks(
     if on_progress:
         heartbeat_task = asyncio.create_task(_heartbeat())
 
-    timeout = httpx.Timeout(connect=15.0, read=300.0, write=30.0, pool=10.0)
     try:
         try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
+            async with httpx.AsyncClient(timeout=APIFY_HTTP_TIMEOUT) as client:
                 resp = await client.post(api_url, params={"token": apify_token}, json=payload)
         except Exception as e:
             logger.warning(
@@ -2247,19 +2303,10 @@ async def _scrape_tiktok_via_clockworks(
             round_label, resp.status_code, resp.text[:300],
         )
         if quota_errors_out is not None and resp.status_code in (401, 402, 403, 429):
-            messages = {
-                401: "Apify API token 无效或未找到（HTTP 401）。请到系统设置重新填写。",
-                402: "Apify 月度配额已耗尽（HTTP 402）。到 console.apify.com/billing 查看用量。",
-                403: f"Apify HTTP 403：账号配额或 actor 权限受限。",
-                429: "Apify 速率限制触发（HTTP 429）。等几分钟后重试。",
-            }
             quota_errors_out.append({
                 "service": "apify",
                 "http_code": resp.status_code,
-                "message": messages.get(
-                    resp.status_code,
-                    f"clockworks Apify HTTP {resp.status_code}: {resp.text[:200]}",
-                ),
+                "message": apify_quota_error_message(resp.status_code, actor),
                 "remaining": None,
             })
         return 0, set()
@@ -2517,9 +2564,11 @@ async def _scrape_twitter_via_apify(
     # completion emits a real progress event so the bar advances on
     # facts, not on time elapsed.
     all_items: list[dict] = []
-    timeout = httpx.Timeout(connect=15.0, read=180.0, write=30.0, pool=10.0)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        # Use FAST variant: each call is one query (not a batch), so the
+        # 5-min default read budget is excessive. 180s fails fast on stuck
+        # queries (kaitoeasyapi single-query batches finish in 30-180s).
+        async with httpx.AsyncClient(timeout=APIFY_HTTP_TIMEOUT_FAST) as client:
             for i, q in enumerate(queries):
                 inflight["query_idx"] = i
                 inflight["query"] = q
@@ -2540,19 +2589,10 @@ async def _scrape_twitter_via_apify(
                             round_label, resp.status_code, q, resp.text[:200],
                         )
                         if quota_errors_out is not None and resp.status_code in (401, 402, 403, 429):
-                            messages = {
-                                401: "Apify Token 无效或未找到（HTTP 401）",
-                                402: "Apify 月度配额耗尽（HTTP 402）",
-                                403: "Apify 权限受限（HTTP 403）",
-                                429: "Apify 速率限制（HTTP 429）",
-                            }
                             quota_errors_out.append({
                                 "service": "apify",
                                 "http_code": resp.status_code,
-                                "message": messages.get(
-                                    resp.status_code,
-                                    f"Twitter actor HTTP {resp.status_code}",
-                                ),
+                                "message": apify_quota_error_message(resp.status_code, actor),
                                 "remaining": None,
                             })
                     else:
@@ -2919,9 +2959,8 @@ async def _scrape_facebook_via_apify(
 
     api_url = f"https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items"
     payload = {"startUrls": [{"url": u} for u in discovered_urls]}
-    timeout = httpx.Timeout(connect=15.0, read=300.0, write=30.0, pool=10.0)
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(timeout=APIFY_HTTP_TIMEOUT) as client:
             resp = await client.post(api_url, params={"token": apify_token}, json=payload)
     except Exception as e:
         logger.warning(
@@ -2936,16 +2975,10 @@ async def _scrape_facebook_via_apify(
             round_label, resp.status_code, resp.text[:300],
         )
         if quota_errors_out is not None and resp.status_code in (401, 402, 403, 429):
-            messages = {
-                401: "Apify Token 无效（HTTP 401）",
-                402: "Apify 月度配额耗尽（HTTP 402）",
-                403: "Apify 权限受限（HTTP 403）",
-                429: "Apify 速率限制（HTTP 429）",
-            }
             quota_errors_out.append({
                 "service": "apify",
                 "http_code": resp.status_code,
-                "message": messages.get(resp.status_code, f"Facebook actor HTTP {resp.status_code}"),
+                "message": apify_quota_error_message(resp.status_code, actor),
                 "remaining": None,
             })
         return 0, set()
