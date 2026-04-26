@@ -160,12 +160,13 @@ Apify `apify~instagram-profile-scraper` 用私 API + 移动端模拟，返完整
 
 ### 3.5 Linktree/aggregator fallback（创作者经济通用模式）
 
-IG 创作者把多链接放在外站是普遍做法，**16 种 aggregator 都识别**：
+IG 创作者把多链接放在外站是普遍做法，**25 种 aggregator 都识别**：
 ```
 linktr.ee, beacons.ai, linkin.bio, campsite.bio, bio.link, carrd.co,
 lnk.bio, allmylinks.com, many.link, flowcode.com, link.me, linkpop.com,
 snipfeed.co, contactin.bio, direct.me, magic.ly, milkshake.app,
-stan.store, komi.io, withkoji.com, tap.bio, pop.bio, popl.co, toneden.io
+stan.store, komi.io, withkoji.com, tap.bio, pop.bio, popl.co, toneden.io,
+hypeauditor.com
 ```
 
 `link.me` 是 2026-04-25 加的（Apify 揭示 Unbox Therapy 等大 KOL 用这个，原黑名单漏过）。
@@ -309,7 +310,7 @@ PremLogin 业务背景**只作为示例参考**，不再当评分基准。
 ## 12. 与其他 4 平台共享的基础设施
 
 - `_search_brave`（含 `url_filter` 参数，IG 默认 `_ig_profile_url_from_href`）
-- `_scrape_aggregator_emails`（Linktree 等 16 种 aggregator 抽 email，Twitter / Facebook 也用）
+- `_scrape_aggregator_emails`（Linktree 等 25 种 aggregator 抽 email，Twitter / Facebook 也用）
 - `is_junk_email`（domain + local-part 黑名单）
 - `_mx_valid`（DNS MX，module-level cache）
 - `_normalize_actor_id`（Apify URL `/` → `~` 防呆）
