@@ -355,6 +355,7 @@
   "influencerPicker": {
     "title": "Pick recipients",
     "subtitle": "{{count}} selected",
+    "hiddenHint": "{{count}} not in current page/filter",
     "searchPlaceholder": "Search by name / email",
     "searchButton": "Search",
     "allPlatforms": "All platforms",

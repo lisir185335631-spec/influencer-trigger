@@ -355,6 +355,7 @@
   "influencerPicker": {
     "title": "选择网红收件人",
     "subtitle": "已选 {{count}} 个",
+    "hiddenHint": "{{count}} 个不在当前页/筛选下",
     "searchPlaceholder": "按昵称 / 邮箱搜索",
     "searchButton": "搜索",
     "allPlatforms": "全部平台",

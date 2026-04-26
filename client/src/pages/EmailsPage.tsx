@@ -8,10 +8,8 @@ import {
   EmailStats,
 } from '../api/emails'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
+import { WS_URL } from '../api/websocket'
 import SendPanel from '../components/SendPanel'
-
-// See WebSocketContext.tsx for why we hardcode :6002 instead of using window.location.host.
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:6002/ws`
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 

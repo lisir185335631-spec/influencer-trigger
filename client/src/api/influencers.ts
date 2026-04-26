@@ -127,6 +127,9 @@ export async function listInfluencers(params?: {
     params: queryParams,
     paramsSerializer: (p) => {
       const sp = new URLSearchParams()
+      // Empty string treated as "no filter" (skipped) — callers like
+      // InfluencerPicker pass `platform: ''` for the "all platforms"
+      // option without needing to coerce to undefined client-side.
       for (const [k, v] of Object.entries(p)) {
         if (v !== undefined && v !== null && v !== '') sp.append(k, String(v))
       }

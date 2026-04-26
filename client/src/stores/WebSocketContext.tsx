@@ -1,5 +1,6 @@
 import { createContext, useContext, ReactNode, useState, useCallback } from 'react'
 import { useWebSocket, WsMessage, WsStatus } from '../hooks/useWebSocket'
+import { WS_URL } from '../api/websocket'
 
 interface WebSocketContextValue {
   status: WsStatus
@@ -9,8 +10,6 @@ interface WebSocketContextValue {
 }
 
 const WebSocketContext = createContext<WebSocketContextValue | null>(null)
-
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
 
 export function WebSocketProvider({ children }: { children: ReactNode }) {
   const [unreadCount, setUnreadCount] = useState(0)

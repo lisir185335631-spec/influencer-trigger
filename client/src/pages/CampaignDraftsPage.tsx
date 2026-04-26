@@ -11,6 +11,7 @@ import {
   DraftCompletedEvent,
 } from '../api/drafts'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
+import { WS_URL } from '../api/websocket'
 
 // Defence-in-depth: backend already sanitizes via nh3 on save, but we
 // double-sanitize here in case content was inserted by a different path
@@ -21,8 +22,6 @@ const SANITIZE_CONFIG = {
   ALLOWED_ATTR: ['href', 'title'],
   ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i,
 }
-
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:6002/ws`
 
 // ── Status badges ─────────────────────────────────────────────────────────────
 

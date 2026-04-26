@@ -1,4 +1,8 @@
-/* eslint-disable react-refresh/only-export-components */
+/* eslint-disable react-refresh/only-export-components --
+   InfluencerPicker is an internal helper component used only by SendPanel
+   in this file. The lint rule wants files to export only components for
+   Fast Refresh; we deliberately co-locate the helper rather than split
+   into two files for cohesion. */
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
@@ -14,9 +18,7 @@ import {
   InfluencerListItem,
 } from '../api/influencers'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
-
-// See WebSocketContext.tsx for why we hardcode :6002 instead of using window.location.host.
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:6002/ws`
+import { WS_URL } from '../api/websocket'
 
 // ── Influencer picker modal ───────────────────────────────────────────────────
 // Self-contained selector for use inside SendPanel — lets users pick recipients
@@ -71,6 +73,15 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
 
   const visibleIds = useMemo(() => items.map(i => i.id), [items])
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every(id => selectedIds.has(id))
+  // Selections persist across pagination/filter/search changes (avoids losing
+  // earlier picks when the user explores). But that means the count shown in
+  // the header can include rows the user can no longer see — flag the gap so
+  // they don't think confirm only sends visible ones.
+  const visibleSelectedCount = useMemo(
+    () => visibleIds.filter(id => selectedIds.has(id)).length,
+    [visibleIds, selectedIds],
+  )
+  const hiddenSelectedCount = selectedIds.size - visibleSelectedCount
 
   const toggleOne = (id: number) => {
     setSelectedIds(prev => {
@@ -114,6 +125,11 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
             </h3>
             <p className="text-xs text-gray-400 mt-0.5">
               {t('influencerPicker.subtitle', { count: selectedIds.size })}
+              {hiddenSelectedCount > 0 && (
+                <span className="ml-1 text-amber-600">
+                  · {t('influencerPicker.hiddenHint', { count: hiddenSelectedCount })}
+                </span>
+              )}
             </p>
           </div>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700 text-xl">×</button>
@@ -204,6 +220,12 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
                     onClick={() => toggleOne(inf.id)}
                   >
                     <td className="px-3 py-2">
+                      {/* Both onChange and the row's onClick fire toggleOne.
+                          The checkbox's onClick stopPropagation prevents
+                          the row's onClick from re-firing — so a click on
+                          the checkbox results in EXACTLY one toggle (via
+                          onChange), not two. Click on the row away from
+                          the checkbox routes only the row's onClick. */}
                       <input
                         type="checkbox"
                         checked={checked}
@@ -435,10 +457,18 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
     setCampaignName('')
     setPhase('setup')
     setPickedIds([])
+    // setSearchParams({}) clears any ?influencer_ids= the user landed
+    // with — no-op if the URL already has no params, harmless.
     setSearchParams({})
   }
 
   const handlePickerConfirm = (ids: number[]) => {
+    // React 18 batches the three setters below into one render, so the
+    // memo for `influencerIds` (which depends on both pickedIds and
+    // searchParams) sees a consistent post-confirm state. Pre-batch
+    // React would have fired three renders with intermediate states,
+    // briefly flashing the empty-recipients placeholder when URL ids
+    // were cleared before pickedIds populated.
     setPickedIds(ids)
     setPickerOpen(false)
     // Clear URL ?influencer_ids= so the in-page picker takes precedence

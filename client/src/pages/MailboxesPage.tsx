@@ -548,7 +548,19 @@ export default function MailboxesPage() {
         ))}
       </div>
 
-      {activeTab === 'send' ? <SendPanel /> : <MailboxPoolPanel />}
+      {/* Both panels stay mounted via display:none toggle — preserves
+          form state (selected influencers / picked template / typed
+          campaign name) when the user briefly switches to the pool tab
+          and back. Conditional render would unmount and lose all state.
+          Trade-off: both panels' initial-load effects run on entry
+          (mailbox list + template list + angles), but each is one cheap
+          GET so the cost is negligible. */}
+      <div style={{ display: activeTab === 'send' ? 'block' : 'none' }}>
+        <SendPanel />
+      </div>
+      <div style={{ display: activeTab === 'pool' ? 'block' : 'none' }}>
+        <MailboxPoolPanel />
+      </div>
     </div>
   )
 }
