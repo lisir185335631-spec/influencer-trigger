@@ -12,3 +12,18 @@
     @apply bg-white text-gray-900;
   }
 }
+
+/* Indeterminate progress shimmer — used as an overlay on the scrape task
+   progress bar while the backend is awaiting a long blocking call (TikTok
+   Apify run, ~3-5 min) where no real percentage is meaningful. The sliding
+   light band tells the user "this is alive, just don't know how long" — a
+   static 0% bar reads as broken. */
+@keyframes indeterminate-progress {
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(400%); }
+}
+
+.indeterminate-bar {
+  animation: indeterminate-progress 1.6s linear infinite;
+  will-change: transform;
+}

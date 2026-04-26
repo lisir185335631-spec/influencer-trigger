@@ -28,10 +28,10 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'sidebar.dashboard', to: '/dashboard', icon: LayoutDashboard },
   { label: 'sidebar.scrape', to: '/scrape', icon: Search },
   { label: 'sidebar.crm', to: '/crm', icon: Users },
-  { label: 'sidebar.import', to: '/import', icon: FileUp },
-  { label: 'sidebar.emails', to: '/emails', icon: Mail },
   { label: 'sidebar.templates', to: '/templates', icon: FileText },
   { label: 'sidebar.mailboxes', to: '/mailboxes', icon: Inbox },
+  { label: 'sidebar.emails', to: '/emails', icon: Mail },
+  { label: 'sidebar.import', to: '/import', icon: FileUp },
   { label: 'sidebar.followUp', to: '/followup', icon: RefreshCw },
   { label: 'sidebar.holidays', to: '/holidays', icon: Gift },
 ]
