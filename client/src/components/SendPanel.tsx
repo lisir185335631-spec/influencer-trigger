@@ -485,11 +485,12 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
   // ── No influencers selected — show selector entry point ─────────────────
   if (phase === 'setup' && influencerIds.length === 0) {
     return (
-      // No max-w on the placeholder branch — the empty-state card should
-      // stretch to match the mailbox-pool table on the sibling tab so
-      // the two surfaces feel equally roomy. The setup form / sending
-      // / done branches below keep max-w-xl because narrow form columns
-      // read better than 1700px-wide inputs.
+      // No max-w — all three SendPanel phases (placeholder / setup form
+      // / sending / done) stretch to match the mailbox-pool table on the
+      // sibling tab so the two surfaces feel equally roomy. The form
+      // inputs in the setup phase end up wide on large screens, but the
+      // user explicitly preferred consistent width with the mailbox tab
+      // over narrow-form readability.
       <div>
         <h2 className="text-base font-semibold text-gray-900 mb-2">{t('emails.batch.title')}</h2>
         <p className="text-sm text-gray-500 mb-6">
@@ -527,7 +528,7 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
   // ── Setup form ────────────────────────────────────────────────────────────
   if (phase === 'setup') {
     return (
-      <div className="max-w-xl">
+      <div>
         <h2 className="text-base font-semibold text-gray-900 mb-1">{t('emails.batch.title')}</h2>
         <p className="text-sm text-gray-500 mb-6">{t('emails.batch.configureHint')}</p>
 
@@ -682,7 +683,7 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
   const isDone = phase === 'done'
 
   return (
-    <div className="max-w-xl">
+    <div>
       <div className="flex items-center justify-between mb-6">
         <div>
           <h2 className="text-base font-semibold text-gray-900">
