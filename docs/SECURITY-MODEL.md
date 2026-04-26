@@ -58,20 +58,18 @@ CRM 场景下接力跟进是核心能力，跨人不可见反而割裂。
 
 下面这些**不是**多租户隔离问题，但**仍然值得加固**——是单团队场景下的"防误操作 / 防数据外泄"。**未实施，待后续讨论**：
 
-### R-1. `POST /api/influencers/export` 任何 user 可拉取整张表 CSV
-**当前**：`Depends(get_current_user)` 仅做认证，不限角色。
-**风险**：员工离职前一键导出全公司网红池。
-**建议**：限 `require_manager_or_above`；admin 可加审计 log。
+### R-1. `POST /api/influencers/export` ✅ 已限 manager+
+**已实施**（2026-04-26）：endpoint 改用 `Depends(require_manager_or_above)`。
+**遗留**：admin 操作 audit log 未加，未来需做时参考 `audit_log` 表 schema。
 
 ### R-2. `PATCH /api/influencers/{id}` 任何 user 可改任何网红资料
 **当前**：同上，仅认证。
 **风险**：低（误操作多于恶意），但 CRM 场景下"乱改别人的网红状态/优先级"也烦。
 **建议**：保持组织共享但加审计——每次修改写 audit_log（谁改了哪行什么字段），管理员事后追溯。
 
-### R-3. `DELETE /api/influencers/{id}` 任何 user 可删
-**当前**：同上。
-**风险**：硬删除丢数据。
-**建议**：限 `require_manager_or_above`；或改"软删除"（status=archived）。
+### R-3. `DELETE /api/influencers/{id}` ✅ 已限 manager+
+**已实施**（2026-04-26）：endpoint 改用 `Depends(require_manager_or_above)`。
+**遗留**：仍是硬删除；如未来要做"软删除"改用 `status=archived` 列。Operator 想清掉自己抓的网红仍可走 PATCH 改 status=archived（R-2 涉及）。
 
 ### R-4. WebSocket 端点完全无认证
 **当前**：`/ws` 接受任意 client 连接，broadcast 全员推送。

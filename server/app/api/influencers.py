@@ -6,7 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 import io
 
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_manager_or_above
 from app.schemas.auth import TokenData
 from app.schemas.influencer import (
     AssignTagsRequest,
@@ -95,7 +95,10 @@ async def batch_update_influencers_endpoint(
 async def export_influencers_endpoint(
     body: ExportRequest,
     db: AsyncSession = Depends(get_db),
-    _: TokenData = Depends(get_current_user),
+    # Bulk CSV export of the entire influencer pool is the single biggest
+    # data-exfiltration vector in this app — limit to manager+ per
+    # docs/SECURITY-MODEL.md R-1.
+    _: TokenData = Depends(require_manager_or_above),
 ) -> StreamingResponse:
     csv_content = await export_influencers_csv(
         db,
@@ -148,7 +151,11 @@ async def update_influencer_endpoint(
 async def delete_influencer_endpoint(
     influencer_id: int,
     db: AsyncSession = Depends(get_db),
-    _: TokenData = Depends(get_current_user),
+    # Hard delete loses CRM history (notes, emails, tags) cascade with the
+    # row. Operators can soft-archive via PATCH status; deletion is a
+    # privileged cleanup action — limit to manager+ per
+    # docs/SECURITY-MODEL.md R-3.
+    _: TokenData = Depends(require_manager_or_above),
 ) -> None:
     deleted = await delete_influencer(db, influencer_id)
     if not deleted:
