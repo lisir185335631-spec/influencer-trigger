@@ -1,8 +1,8 @@
 """
 Scraper Agent — Playwright-based influencer email extractor.
 
-Supports: Instagram, YouTube (full Playwright scraping)
-Degrades:  TikTok, Twitter, Facebook (stub — shows manual-input prompt)
+Supports: Instagram, YouTube (full Playwright scraping), TikTok (Apify-only)
+Degrades:  Twitter, Facebook (stub — shows manual-input prompt)
 
 Concurrency: controlled by `scrape_concurrency` system setting (default 1), random 5-15 second delay between page visits.
 """
@@ -27,6 +27,7 @@ from app.database import AsyncSessionLocal
 from app.models.influencer import Influencer, InfluencerPlatform
 from app.models.scrape_task import ScrapeTask, ScrapeTaskStatus
 from app.models.scrape_task_influencer import ScrapeTaskInfluencer
+from app.services.email_junk_filter import is_junk_email
 from app.services.scrape_service import update_task_status
 from app.services.settings_service import get_or_create_system_settings
 from app.websocket.manager import manager
@@ -906,6 +907,13 @@ async def _scrape_youtube(
                             emails = []  # nothing to insert; visited_counter still bumps below
 
                         for email in emails:
+                            is_junk, reason = is_junk_email(email)
+                            if is_junk:
+                                logger.info(
+                                    "[YouTube] dropped junk email %r from %s: %s",
+                                    email, name or "?", reason,
+                                )
+                                continue
                             domain = email.split("@")[1]
                             if await _mx_valid(domain):
                                 # on_found returns True only when the
@@ -1768,6 +1776,14 @@ async def _scrape_instagram_via_apify(
             for email in emails:
                 if "@" not in email:
                     continue
+                # Junk filter: same module used by TikTok path.
+                is_junk, reason = is_junk_email(email)
+                if is_junk:
+                    logger.info(
+                        "[Instagram/Apify] dropped junk email %r from @%s: %s",
+                        email, username, reason,
+                    )
+                    continue
                 domain = email.split("@", 1)[1]
                 if not await _mx_valid(domain):
                     continue
@@ -1866,9 +1882,12 @@ async def _scrape_instagram(
         )
         return
 
-    settings = get_settings()
-    apify_token = (settings.apify_api_token or "").strip()
-    apify_actor = (settings.apify_ig_actor or "apify~instagram-profile-scraper").strip()
+    # Prefer DB-configured Apify credentials (system_settings page), fall back
+    # to env vars in config.py. Open a short-lived session — same pattern as
+    # other scraper helpers in this file.
+    from app.services.settings_service import resolve_apify_credentials
+    async with AsyncSessionLocal() as _cfg_db:
+        apify_token, apify_actor = await resolve_apify_credentials(_cfg_db, "instagram")
 
     if apify_token:
         logger.info(
@@ -1969,6 +1988,13 @@ async def _scrape_instagram(
                         )
 
                         for email in emails:
+                            is_junk, reason = is_junk_email(email)
+                            if is_junk:
+                                logger.info(
+                                    "[Instagram] dropped junk email %r from @%s: %s",
+                                    email, username, reason,
+                                )
+                                continue
                             domain = email.split("@")[1]
                             if await _mx_valid(domain):
                                 is_new = await on_found(
@@ -2013,6 +2039,294 @@ async def _scrape_instagram(
         await ctx.close()
 
 
+
+async def _scrape_tiktok_via_clockworks(
+    queries: list[str],
+    target_count: int,
+    on_found: "Callable[..., Awaitable[bool]]",
+    apify_token: str,
+    apify_actor: str = "clockworks~tiktok-scraper",
+    excluded_profiles: set[str] | None = None,
+    excluded_usernames: set[str] | None = None,
+    max_videos: int = 60,
+    round_label: str = "R1",
+    quota_errors_out: list[dict] | None = None,
+    on_progress: "Callable[[str, int | None], Awaitable[None]] | None" = None,
+) -> "tuple[int, set[str]]":
+    """v2 TikTok scraper — `clockworks/tiktok-scraper` (cheap list actor) +
+    local bio email extraction.
+
+    Why this beats the email-actor (jurassic_jove) path:
+
+      * Cost ≈ $0.0037 per video result vs $0.03+/result on email actor
+        (8x cheaper). $0.20 budget gives ~50 videos ≈ 40 unique creators
+        ≈ 10 emails at the dog-training niche's measured 27% bio-email rate
+        (probed 2026-04-26 against live data, see PR notes).
+
+      * No `scrapeEmails=true` external-link visit ⇒ no Apple/clickbank
+        leak from third-party landing pages. The bio text is provably
+        owned by the creator, so emails extracted from it are real
+        contacts (no `johnappleseed@gmail.com` style false positives).
+
+      * Same R1/R2 retry semantics as v1: caller decides whether to fire
+        a second clockworks call with fallback queries when R1 hit < 70%.
+
+    Returns (new_counter, seen_usernames). seen_usernames lets the caller
+    pass them into a follow-up call's excluded_usernames so R2 doesn't
+    waste $$ re-processing the same authors that R1 already proved empty.
+    """
+    if not queries:
+        logger.warning("[TikTok/v2] no search queries provided, skipping")
+        return 0, set()
+    if not apify_token:
+        logger.warning("[TikTok/v2] APIFY_API_TOKEN not set, skipping")
+        return 0, set()
+
+    excluded = excluded_profiles or set()
+    excluded_users = {u.lower() for u in (excluded_usernames or set())}
+
+    # Actor is configurable via system_settings.apify_tiktok_actor; default
+    # `clockworks/tiktok-scraper` is the cheapest viable list-style actor
+    # we've benchmarked. Operators can swap in a different cheap actor
+    # (apidojo etc.) without code change as long as the response schema
+    # exposes `authorMeta.signature` (bio) — the field bio-regex extracts
+    # emails from. If you swap to an actor with a different shape this
+    # function will silently return 0; check logs.
+    actor = (apify_actor or "").strip() or "clockworks~tiktok-scraper"
+    api_url = f"https://api.apify.com/v2/acts/{actor}/run-sync-get-dataset-items"
+    # `resultsPerPage` is per searchQuery in clockworks; total = N × len(queries).
+    # Distribute the max_videos budget evenly across queries so we don't blow
+    # the budget on the first query.
+    per_query = max(1, max_videos // max(1, len(queries)))
+    payload = {
+        "searchQueries": queries,
+        "resultsPerPage": per_query,
+        # Default video-search section yields the most diverse author pool
+        # (probed 2026-04-26: 30 videos → 26 unique authors / 87% diversity).
+    }
+
+    # Heartbeat — same shape as v1's, the actor takes ~30-90s for 60 videos.
+    _HEARTBEAT_INTERVAL_S = 10
+    _HEARTBEAT_PROGRESS_CAP = 28
+    _HEARTBEAT_STEP = 3
+
+    async def _heartbeat() -> None:
+        elapsed = 0
+        fake_progress = 5
+        if on_progress:
+            await on_progress(
+                f"调用 clockworks TikTok actor [{round_label}] "
+                f"({len(queries)} 个搜索词 × {per_query}/词, 预计 30-90s)…",
+                fake_progress,
+            )
+        try:
+            while True:
+                await asyncio.sleep(_HEARTBEAT_INTERVAL_S)
+                elapsed += _HEARTBEAT_INTERVAL_S
+                fake_progress = min(_HEARTBEAT_PROGRESS_CAP, fake_progress + _HEARTBEAT_STEP)
+                if on_progress:
+                    await on_progress(
+                        f"等待 TikTok 数据中（已等 {elapsed}s）…",
+                        fake_progress,
+                    )
+        except asyncio.CancelledError:
+            return
+
+    heartbeat_task: asyncio.Task | None = None
+    if on_progress:
+        heartbeat_task = asyncio.create_task(_heartbeat())
+
+    timeout = httpx.Timeout(connect=15.0, read=300.0, write=30.0, pool=10.0)
+    try:
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.post(api_url, params={"token": apify_token}, json=payload)
+        except Exception as e:
+            logger.warning(
+                "[TikTok/v2 %s] request failed: %s: %r",
+                round_label, type(e).__name__, e, exc_info=True,
+            )
+            return 0, set()
+    finally:
+        if heartbeat_task is not None and not heartbeat_task.done():
+            heartbeat_task.cancel()
+            try:
+                await heartbeat_task
+            except (asyncio.CancelledError, Exception):
+                pass
+
+    # clockworks returns 201 Created (sync run completed) instead of 200 OK
+    # for run-sync endpoints. Both are success.
+    if resp.status_code not in (200, 201):
+        logger.warning(
+            "[TikTok/v2 %s] HTTP %d — %s",
+            round_label, resp.status_code, resp.text[:300],
+        )
+        if quota_errors_out is not None and resp.status_code in (401, 402, 403, 429):
+            messages = {
+                401: "Apify API token 无效或未找到（HTTP 401）。请到系统设置重新填写。",
+                402: "Apify 月度配额已耗尽（HTTP 402）。到 console.apify.com/billing 查看用量。",
+                403: f"Apify HTTP 403：账号配额或 actor 权限受限。",
+                429: "Apify 速率限制触发（HTTP 429）。等几分钟后重试。",
+            }
+            quota_errors_out.append({
+                "service": "apify",
+                "http_code": resp.status_code,
+                "message": messages.get(
+                    resp.status_code,
+                    f"clockworks Apify HTTP {resp.status_code}: {resp.text[:200]}",
+                ),
+                "remaining": None,
+            })
+        return 0, set()
+
+    try:
+        items = resp.json()
+    except Exception as e:
+        logger.warning("[TikTok/v2 %s] JSON decode failed: %s", round_label, e)
+        return 0, set()
+
+    if not isinstance(items, list):
+        logger.warning(
+            "[TikTok/v2 %s] unexpected response shape: %s",
+            round_label, type(items).__name__,
+        )
+        return 0, set()
+
+    # Dedup by authorMeta.name. Each video carries the FULL author snapshot,
+    # so we keep the first occurrence and discard subsequent videos by the
+    # same creator. We DO accumulate every video's caption (`text` field)
+    # for that creator into a per-author list — used later as a fallback
+    # email source when bio is empty (some creators post "email me at xxx"
+    # in video descriptions instead of bio). Captions piggyback on data
+    # we've already paid for, no extra Apify cost.
+    profiles: dict[str, dict] = {}
+    captions_by_user: dict[str, list[str]] = {}
+    for it in items:
+        if not isinstance(it, dict):
+            continue
+        am = it.get("authorMeta") or {}
+        if not isinstance(am, dict):
+            continue
+        name = (am.get("name") or "").strip().lower()
+        if not name:
+            continue
+        if name in excluded_users:
+            continue
+        profile_url = (am.get("profileUrl") or "").strip()
+        if profile_url and profile_url in excluded:
+            continue
+        if name not in profiles:
+            profiles[name] = am
+        # Always accumulate caption text — even for profiles we've already
+        # snapshotted. More videos = more chances of an email mention.
+        caption = (it.get("text") or "").strip()
+        if caption:
+            captions_by_user.setdefault(name, []).append(caption)
+
+    logger.info(
+        "[TikTok/v2 %s] got %d video records → %d unique authors "
+        "(excluded %d already-seen, est cost $%.3f)",
+        round_label, len(items), len(profiles), len(excluded_users),
+        len(items) * 0.0037 + 0.001,
+    )
+
+    if on_progress:
+        await on_progress(
+            f"TikTok 候选池建好 [{round_label}]: {len(profiles)} 个 profile",
+            30,
+        )
+
+    new_counter = 0
+    junk_skipped = 0
+    no_email_skipped = 0
+    seen_usernames: set[str] = set()
+    profile_list = list(profiles.values())
+    random.shuffle(profile_list)
+
+    for am in profile_list:
+        if new_counter >= target_count:
+            break
+        username = (am.get("name") or "").strip()
+        if not username:
+            continue
+        seen_usernames.add(username.lower())
+        full_name = (am.get("nickName") or "").strip()
+        bio = (am.get("signature") or "").strip()
+        followers = am.get("fans")
+        if not isinstance(followers, int):
+            followers = None
+        profile_url = (am.get("profileUrl") or "").strip()
+        avatar_url = (am.get("originalAvatarUrl") or am.get("avatar") or "").strip() or None
+
+        # Pick first plain email from bio. Many creators put `mailto:` style
+        # addresses in their TikTok bio for biz contact (probed 2026-04-26:
+        # 27% of dog-training creators in our sample). The bio is provably
+        # owned by the creator so unlike scrapeEmails=True external-link
+        # harvesting, bio-only extraction has no third-party leakage.
+        emails = _PLAIN_EMAIL_RE.findall(bio)
+        email = emails[0] if emails else None
+        email_source = "bio" if email else None
+
+        # Caption fallback: when bio has no email, scan accumulated video
+        # captions for this creator. Captions are the creator's own posts
+        # so attribution is safe (same trust level as bio). This adds a
+        # marginal +5-10% to hit rate at zero extra Apify cost.
+        if not email:
+            for caption in captions_by_user.get(username.lower(), []):
+                cap_emails = _PLAIN_EMAIL_RE.findall(caption)
+                if cap_emails:
+                    email = cap_emails[0]
+                    email_source = "caption"
+                    break
+
+        if on_progress:
+            fol = (
+                f"{followers / 1000:.0f}K"
+                if isinstance(followers, int) and followers >= 1000
+                else str(followers or "?")
+            )
+            label = (f"1 邮箱({email_source})" if email else "无邮箱")
+            await on_progress(f"处理 TikTok @{username} ({fol} 粉, {label})")
+
+        if not email:
+            no_email_skipped += 1
+            continue
+
+        is_junk, reason = is_junk_email(email)
+        if is_junk:
+            logger.info(
+                "[TikTok/v2 %s] dropped junk email %r from @%s: %s",
+                round_label, email, username, reason,
+            )
+            junk_skipped += 1
+            continue
+
+        domain = email.split("@", 1)[1]
+        if not await _mx_valid(domain):
+            continue
+
+        display_name = full_name or f"@{username}"
+        is_new = await on_found(
+            email,
+            display_name,
+            profile_url,
+            followers=followers,
+            bio=bio or None,
+            avatar_url=avatar_url,
+        )
+        if is_new:
+            new_counter += 1
+
+    logger.info(
+        "[TikTok/v2 %s] phase done: new=%d / target=%d "
+        "(processed %d profiles, %d no-email, %d junk)",
+        round_label, new_counter, target_count, len(profiles),
+        no_email_skipped, junk_skipped,
+    )
+    return new_counter, seen_usernames
+
+
 async def _scrape_stub(platform: str) -> list[dict]:
     """Platforms not yet fully implemented return empty list with a log notice."""
     logger.info(
@@ -2024,6 +2338,25 @@ async def _scrape_stub(platform: str) -> list[dict]:
 
 
 # ── LLM pre/post processing ──────────────────────────────────────────────────
+
+# ── Strategy diagnostics ────────────────────────────────────────────────
+# Decouples "the LLM API truly failed" from "the LLM worked but we filtered
+# some of its output". Both used to be smashed into a single
+# `fallback_reason: str | None` which the caller then prefixed with
+# "LLM 搜索策略不可用" — misleading wording in the drops-only case,
+# producing yellow-banner cognitive dissonance on tasks that hit target
+# fully (the user thinks "did this fail?" when it succeeded).
+class StrategyDiagnostics:
+    __slots__ = ("llm_failure_reason", "post_validation_drops")
+
+    def __init__(
+        self,
+        llm_failure_reason: str | None = None,
+        post_validation_drops: list[str] | None = None,
+    ) -> None:
+        self.llm_failure_reason = llm_failure_reason
+        self.post_validation_drops = list(post_validation_drops or [])
+
 
 # ── LLM search-strategy cache ───────────────────────────────────────────
 # In-memory cache for `_generate_search_strategy` results, keyed by the
@@ -2076,23 +2409,31 @@ async def _generate_search_strategy(
     target_market: str | None = None,
     competitor_brands: str | None = None,
     excluded_channels: list[str] | None = None,
-) -> tuple[dict[str, list[str]], str | None]:
+) -> tuple[dict[str, list[str]], "StrategyDiagnostics"]:
     """LLM pre-processing: expand industry keyword into platform-specific search queries.
 
-    Returns `(queries, fallback_reason)`. `fallback_reason` is None on LLM
-    success WITH all queries language-aligned. On LLM failure OR script
-    mismatch (e.g. LLM returned Chinese queries for target_market='us'),
-    the offending queries are dropped and fallback fills in if remaining
-    count drops below 3.
+    Returns `(queries, diagnostics)`.
+
+    diagnostics.llm_failure_reason — non-None ONLY when the LLM API truly
+        failed (no key configured, prompt template missing, network error,
+        bad JSON). Caller uses this to emit a warning explaining why we
+        ran on fallback queries instead of LLM-generated ones.
+
+    diagnostics.post_validation_drops — non-empty when the LLM responded
+        successfully but some of its queries were dropped during
+        post-validation (language mismatch, already-mined-KOL match).
+        These are NOT LLM failures — the system worked as designed,
+        filtering noise. Caller decides whether to surface based on
+        task outcome (don't warn if task still hit target).
     """
     settings = get_settings()
     expected_lang = _expected_query_lang(industry, target_market)
 
     # ── Cache hit fast path ─────────────────────────────────────────
     # Skip the 5-15s LLM call when the same (industry, market, competitors,
-    # platforms) tuple was queried within the TTL window. The fallback_reason
-    # is replayed from cache too so the UI's "LLM unreachable" / "drops
-    # X/12 queries" warnings stay consistent across cached invocations.
+    # platforms) tuple was queried within the TTL window. The diagnostics
+    # object is replayed from cache too so the UI's drop-count info stays
+    # consistent across cached invocations.
     cache_key = _llm_cache_key(
         industry, target_market, competitor_brands, platforms,
         excluded_count=len(excluded_channels) if excluded_channels else 0,
@@ -2110,7 +2451,12 @@ async def _generate_search_strategy(
         return cached_queries, cached[2]
 
     if not settings.openai_api_key:
-        return _fallback_queries(industry, platforms, target_market), "OPENAI_API_KEY 未配置，使用 fallback 多 query 变体"
+        return (
+            _fallback_queries(industry, platforms, target_market),
+            StrategyDiagnostics(
+                llm_failure_reason="OPENAI_API_KEY 未配置，已使用 fallback 模板 query",
+            ),
+        )
 
     from app.prompts import load_prompt
     try:
@@ -2118,7 +2464,12 @@ async def _generate_search_strategy(
         system = load_prompt("scraper/search_strategy.system", business_context=business_ctx)
     except FileNotFoundError as e:
         logger.warning("Prompt template not found, using fallback: %s", e)
-        return _fallback_queries(industry, platforms, target_market), f"Prompt 模板缺失: {e}"
+        return (
+            _fallback_queries(industry, platforms, target_market),
+            StrategyDiagnostics(
+                llm_failure_reason=f"Prompt 模板缺失（{e}），已使用 fallback 模板 query",
+            ),
+        )
 
     user_lines = [
         f"Industry keyword: {industry}",
@@ -2174,7 +2525,12 @@ async def _generate_search_strategy(
             reason,
             exc_info=True,
         )
-        return _fallback_queries(industry, platforms, target_market), reason
+        return (
+            _fallback_queries(industry, platforms, target_market),
+            StrategyDiagnostics(
+                llm_failure_reason=f"LLM 调用失败（{reason}），已使用 fallback 模板 query",
+            ),
+        )
 
     # ── Post-validate LLM output: language alignment + blacklist match ─
     # Even when the API call succeeds, the LLM can return:
@@ -2222,33 +2578,47 @@ async def _generate_search_strategy(
                 continue
             valid.append(q)
         if blacklist_hits:
+            # Wording: "去重过滤" not "丢弃命中黑名单 KOL". The blacklist is
+            # the cross-task de-dup set (channels mined within the last
+            # 30 days), NOT a moral blacklist of bad KOLs. The old wording
+            # made tasks that hit target fully look like they had problems.
             drop_notes.append(
-                f"{p}: 丢弃 {len(blacklist_hits)} 条命中黑名单 KOL 的 query "
+                f"{p}: 去重过滤掉 {len(blacklist_hits)} 条已抓过的 KOL query "
                 f"({', '.join(blacklist_hits[:3])}{'...' if len(blacklist_hits) > 3 else ''})"
             )
         dropped = len(platform_queries) - len(valid) - len(blacklist_hits)
         if dropped > 0:
-            drop_notes.append(f"{p}: 丢弃 {dropped}/{len(platform_queries)} 条语言不符 query (期望 lang={expected_lang})")
+            drop_notes.append(
+                f"{p}: 语言过滤掉 {dropped}/{len(platform_queries)} 条 query "
+                f"(期望 lang={expected_lang})"
+            )
         if len(valid) < 3:
             fb = _fallback_queries(industry, [p], target_market).get(p, [])
             # Merge: keep LLM's language-aligned queries first, then fill
             # from fallback up to 8 total. dict.fromkeys preserves order.
             merged = list(dict.fromkeys(valid + fb))[:8]
             result[p] = merged
-            drop_notes.append(f"{p}: LLM 有效 query 仅 {len(valid)} 条，回退 fallback 补齐到 {len(merged)} 条")
+            drop_notes.append(
+                f"{p}: LLM 有效 query 仅 {len(valid)} 条，已用 fallback 补齐到 {len(merged)} 条"
+            )
         else:
             result[p] = valid
 
-    fallback_reason = "; ".join(drop_notes) if drop_notes else None
+    diagnostics = StrategyDiagnostics(
+        llm_failure_reason=None,  # LLM worked successfully — drops are not failures
+        post_validation_drops=drop_notes,
+    )
     logger.info(
         "LLM search strategy generated (business=%s, expected_lang=%s, drops=%s): %s",
         settings.active_business, expected_lang, drop_notes or "none", result,
     )
-    # Cache the LLM-derived result for 5 minutes — only the hot path
-    # gets cached. fallback_reason from drops is preserved so cached
-    # replays surface the same drop-count warning.
-    _llm_strategy_cache[cache_key] = (now, {k: list(v) for k, v in result.items()}, fallback_reason)
-    return result, fallback_reason
+    # Cache the LLM-derived result for 5 minutes — only the hot path gets
+    # cached. Diagnostics are preserved so cached replays surface the
+    # same drop-count info to the caller.
+    _llm_strategy_cache[cache_key] = (
+        now, {k: list(v) for k, v in result.items()}, diagnostics,
+    )
+    return result, diagnostics
 
 
 # Suffix vocabularies for fallback YouTube queries, per script. The same
@@ -2329,6 +2699,52 @@ _IG_FALLBACK_SUFFIXES_BY_LANG = {
     "kr": _IG_FALLBACK_SUFFIXES_KR,
 }
 
+# TikTok fallback suffixes — same per-script structure as IG. Used when LLM
+# is unavailable. The actor's `searchTerms` field expects natural-language
+# keyword phrases (it runs them against TikTok's native search), so we keep
+# them short (1-3 words) — same shape as IG queries.
+# Composition (2026-04-26 niche-agnostic redesign):
+#   * Universal-compat group: "creator", "official", "top", "best", "popular",
+#     "accounts" — work for any niche including pure-entertainment
+#     (comedy/asmr/vlog) where teaching-style suffixes (expert/coach) are
+#     awkward.
+#   * Teaching-style group: "review", "tutorial", "tips", "expert", "coach",
+#     "pro", "hacks", "advice", "guide", "for creators" — strong for
+#     instructional niches (training/cooking/diy/AI tools).
+# 11 suffixes per language so target=10 tasks always get ≥ 12 queries
+# (1 bare + 11 suffix variants); the universal group ensures fallback
+# stays usable even on entertainment niches.
+_TT_FALLBACK_SUFFIXES_EN = (
+    # Universal — work for any niche
+    "creator", "official", "top", "best", "popular", "accounts",
+    # Teaching/instructional bias
+    "review", "tutorial", "tips", "expert", "guide",
+)
+_TT_FALLBACK_SUFFIXES_CN = (
+    "创作者", "官方", "热门", "最佳", "推荐", "账号",
+    "评测", "教程", "技巧", "专家", "指南",
+)
+_TT_FALLBACK_SUFFIXES_TW = (
+    "創作者", "官方", "熱門", "最佳", "推薦", "帳號",
+    "評測", "教學", "技巧", "專家", "指南",
+)
+_TT_FALLBACK_SUFFIXES_JP = (
+    "クリエイター", "公式", "人気", "ベスト", "おすすめ", "アカウント",
+    "レビュー", "使い方", "コツ", "プロ", "ガイド",
+)
+_TT_FALLBACK_SUFFIXES_KR = (
+    "크리에이터", "공식", "인기", "베스트", "추천", "계정",
+    "리뷰", "사용법", "팁", "전문가", "가이드",
+)
+
+_TT_FALLBACK_SUFFIXES_BY_LANG = {
+    "en": _TT_FALLBACK_SUFFIXES_EN,
+    "cn": _TT_FALLBACK_SUFFIXES_CN,
+    "tw": _TT_FALLBACK_SUFFIXES_TW,
+    "jp": _TT_FALLBACK_SUFFIXES_JP,
+    "kr": _TT_FALLBACK_SUFFIXES_KR,
+}
+
 
 def _fallback_queries(
     industry: str,
@@ -2358,6 +2774,13 @@ def _fallback_queries(
             # the most-recall form when later dorks add language-specific
             # limiters.
             suffixes = _IG_FALLBACK_SUFFIXES_BY_LANG.get(expected_lang, _IG_FALLBACK_SUFFIXES_EN)
+            variants = [base] + [f"{base} {suffix}" for suffix in suffixes]
+            result[p] = variants
+        elif p == "tiktok":
+            # TikTok actor's native `searchTerms` field accepts natural-language
+            # phrases — same shape as IG. Bare industry first, then suffixed
+            # variants for diversity.
+            suffixes = _TT_FALLBACK_SUFFIXES_BY_LANG.get(expected_lang, _TT_FALLBACK_SUFFIXES_EN)
             variants = [base] + [f"{base} {suffix}" for suffix in suffixes]
             result[p] = variants
         else:
@@ -2744,7 +3167,11 @@ async def run_scraper_agent(task_id: int) -> None:
                 stmt = (
                     sa.select(Influencer.profile_url, Influencer.nickname, Influencer.industry)
                     .where(
-                        Influencer.platform.in_([InfluencerPlatform.youtube, InfluencerPlatform.instagram]),
+                        Influencer.platform.in_([
+                            InfluencerPlatform.youtube,
+                            InfluencerPlatform.instagram,
+                            InfluencerPlatform.tiktok,
+                        ]),
                         Influencer.created_at >= cutoff,
                         Influencer.profile_url.isnot(None),
                         Influencer.profile_url != "",
@@ -2823,18 +3250,16 @@ async def run_scraper_agent(task_id: int) -> None:
                 task_id, len(excluded_profile_urls), _SATURATION_THRESHOLD,
             )
 
-        search_queries, fallback_reason = await _generate_search_strategy(
+        search_queries, strategy_diag = await _generate_search_strategy(
             task.industry, platforms, task.target_market, task.competitor_brands,
             excluded_channels=excluded_for_llm,
         )
         task.search_keywords = json.dumps(search_queries, ensure_ascii=False)
-        if fallback_reason:
-            # Surface the fallback reason on the task. The UI shows
-            # error_message in a yellow/red banner — better to admit
-            # "LLM unreachable, ran with fallback queries" than to silently
-            # produce shallow results. Append (don't overwrite) so the
-            # earlier saturation warning survives.
-            llm_msg = f"LLM 搜索策略不可用，使用 fallback 关键词。原因: {fallback_reason}"
+        # Only surface the LLM-failure reason eagerly here — drops are
+        # informational and decision-deferred to the post-completion
+        # warning logic (which knows whether the task hit target).
+        if strategy_diag.llm_failure_reason:
+            llm_msg = f"[WARN]LLM 搜索策略生成失败: {strategy_diag.llm_failure_reason}"
             task.error_message = (
                 f"{task.error_message} | {llm_msg}" if task.error_message else llm_msg
             )
@@ -3099,6 +3524,178 @@ async def run_scraper_agent(task_id: int) -> None:
                         quota_errors_out=quota_errors,
                         on_progress=on_progress,
                     )
+                elif platform == "tiktok":
+                    # TikTok scraping (v2): clockworks/tiktok-scraper (cheap
+                    # list actor) + local bio-regex email extraction. The
+                    # legacy v1 path (jurassic_jove email actor with
+                    # scrapeEmails=true) was removed 2026-04-26 — it cost
+                    # ~$3/task and leaked third-party emails (Apple's
+                    # `johnappleseed@`, affiliate-platform `support@` etc.)
+                    # via the external-bio-link harvest. v2 is ~12x cheaper
+                    # AND only sees creator-owned bio text.
+                    from app.services.settings_service import (
+                        resolve_apify_credentials,
+                    )
+                    from app.services.apify_usage import check_budget
+                    async with AsyncSessionLocal() as _tt_cfg_db:
+                        tt_token, tt_actor = await resolve_apify_credentials(
+                            _tt_cfg_db, "tiktok",
+                        )
+
+                    # Pre-flight budget guard — refuse to start if monthly
+                    # Apify spend hit the hard cap. Failing open if the
+                    # usage endpoint is unreachable (don't block legitimate
+                    # scrapes on transient network issues).
+                    if tt_token:
+                        verdict = await check_budget(tt_token)
+                        if not verdict.ok:
+                            logger.warning(
+                                "[TikTok] budget abort: %s", verdict.message,
+                            )
+                            quota_errors.append({
+                                "service": "apify",
+                                "http_code": 0,
+                                "message": verdict.message or "Apify 预算已用尽",
+                                "remaining": None,
+                            })
+                            await _scrape_stub("tiktok")
+                            return
+                        if verdict.message:
+                            quota_errors.append({
+                                "service": "apify",
+                                "http_code": 0,
+                                "message": verdict.message,
+                                "remaining": max(
+                                    0.0, verdict.hard_cap - verdict.spent_usd,
+                                ),
+                            })
+
+                    if not tt_token:
+                        logger.warning(
+                            "[TikTok] APIFY_API_TOKEN not set; skipping. "
+                            "Configure in server/.env or system settings."
+                        )
+                        quota_errors.append({
+                            "service": "apify",
+                            "http_code": 0,
+                            "message": (
+                                "APIFY_API_TOKEN 未配置，TikTok 抓取无法启动。"
+                                "到 https://console.apify.com/account/integrations "
+                                "签发 token 后填入系统设置或 server/.env 的 "
+                                "APIFY_API_TOKEN。"
+                            ),
+                            "remaining": None,
+                        })
+                        await _scrape_stub("tiktok")
+                    else:
+                        # Two-round retry strategy (per-task budget ≤ $0.59):
+                        #   R1: max_videos = min(target × 10, 100)   ≈ ≤$0.37
+                        #   R2 (if hit < 70%): max = min(remaining × 10, 60) ≈ ≤$0.22
+                        # Tuned 2026-04-26 after observing 4-7/10 hit rate
+                        # variance on dog-training niche. Wider candidate pool
+                        # absorbs the niche-specific bio-email rate variance
+                        # (8-27% in our samples) so target=10 is reachable
+                        # even on the low end of the distribution.
+                        tt_queries_r1 = (
+                            search_queries.get("tiktok")
+                            or _fallback_queries(
+                                industry, ["tiktok"], task.target_market,
+                            ).get("tiktok")
+                            or [industry]
+                        )
+                        r1_max = min(max(target_per_platform * 10, 30), 100)
+                        new_r1, seen_r1 = await _scrape_tiktok_via_clockworks(
+                            queries=tt_queries_r1,
+                            target_count=target_per_platform,
+                            on_found=on_found,
+                            apify_token=tt_token,
+                            apify_actor=tt_actor,
+                            excluded_profiles=excluded_url_set,
+                            max_videos=r1_max,
+                            round_label="R1",
+                            quota_errors_out=quota_errors,
+                            on_progress=on_progress,
+                        )
+
+                        # R2 retry — only if R1 underperformed AND no quota
+                        # error blocked us (re-trying on 402/403 just wastes
+                        # time and budget).
+                        had_quota_error = any(
+                            qe.get("service") == "apify" for qe in quota_errors
+                        )
+                        if (
+                            not had_quota_error
+                            and new_r1 < target_per_platform * 0.7
+                        ):
+                            remaining = target_per_platform - new_r1
+                            # Adaptive R2 cap based on R1's actual hit rate.
+                            # Different niches have wildly different bio-email
+                            # rates (B2B SaaS / luxury watches: 40-60%;
+                            # comedy / asmr / vlog: < 5%). Static R2 cap was
+                            # under-shooting low-rate niches and over-spending
+                            # on high-rate ones. Formula:
+                            #   hit_rate = new_r1 / max(seen_r1, 1)
+                            #   * <5%   → niche has very few bio emails;
+                            #             use full 60 cap to maximise candidates
+                            #   * 5-15% → typical instructional/lifestyle niche;
+                            #             use ~40 (cost ~$0.15)
+                            #   * >15%  → high-yield niche; 25-30 is plenty
+                            #             since each video gives more emails
+                            # Floor of 20 keeps R2 worth running at all.
+                            r1_hit_rate = (
+                                new_r1 / max(len(seen_r1), 1)
+                                if seen_r1 else 0.0
+                            )
+                            if r1_hit_rate < 0.05:
+                                r2_max = min(max(remaining * 12, 40), 60)
+                            elif r1_hit_rate < 0.15:
+                                r2_max = min(max(remaining * 8, 25), 40)
+                            else:
+                                r2_max = min(max(remaining * 5, 20), 30)
+                            logger.info(
+                                "[TikTok] R2 sizing: r1_hit_rate=%.2f%% (%d/%d) "
+                                "→ r2_max=%d",
+                                r1_hit_rate * 100, new_r1, len(seen_r1), r2_max,
+                            )
+                            fb = _fallback_queries(
+                                industry, ["tiktok"], task.target_market,
+                            ).get("tiktok") or []
+                            r1_set = {q.strip().lower() for q in tt_queries_r1}
+                            tt_queries_r2 = [
+                                q for q in fb
+                                if q.strip().lower() not in r1_set
+                            ][:8]
+                            if tt_queries_r2:
+                                logger.info(
+                                    "[TikTok] R1 hit %d/%d (<70%%), launching "
+                                    "R2 with %d fresh queries, max=%d",
+                                    new_r1, target_per_platform,
+                                    len(tt_queries_r2), r2_max,
+                                )
+                                if on_progress:
+                                    await on_progress(
+                                        f"TikTok R1 命中 {new_r1}/{target_per_platform}，"
+                                        f"启动 R2 补抓 ({len(tt_queries_r2)} 个新 query)…"
+                                    )
+                                await _scrape_tiktok_via_clockworks(
+                                    queries=tt_queries_r2,
+                                    target_count=remaining,
+                                    on_found=on_found,
+                                    apify_token=tt_token,
+                                    apify_actor=tt_actor,
+                                    excluded_profiles=excluded_url_set,
+                                    excluded_usernames=seen_r1,
+                                    max_videos=r2_max,
+                                    round_label="R2",
+                                    quota_errors_out=quota_errors,
+                                    on_progress=on_progress,
+                                )
+                            else:
+                                logger.info(
+                                    "[TikTok] R1 hit %d/%d but no fresh queries "
+                                    "available for R2 (fallback overlapped)",
+                                    new_r1, target_per_platform,
+                                )
                 else:
                     await _scrape_stub(platform)
 
@@ -3215,13 +3812,19 @@ async def run_scraper_agent(task_id: int) -> None:
             # existing 4 (pending/running/completed/failed/cancelled) are
             # already wired through the entire stack; surfacing the warning
             # via error_message keeps the change surface small.
+            # Severity-aware warnings — each entry is prefixed with one of
+            # `[INFO]`, `[WARN]`, `[ERROR]`. The frontend strips the prefix
+            # for display and uses it to decide colour (gray/amber/red) and
+            # whether to surface in the task list (info hidden, warn/error
+            # shown). Default severity for un-prefixed strings is WARN —
+            # backwards-compatible with older error_message values.
             warnings: list[str] = []
             # Saturation warning surfaced at startup is preserved across
             # the run — it explains the most likely reason why a low
             # new_count happened, and the operator may not see the
             # transient WebSocket toast if they navigated away.
             if saturation_warning:
-                warnings.append(saturation_warning)
+                warnings.append(f"[WARN]{saturation_warning}")
             # Quota errors come first because they're the most actionable —
             # the user can't do anything about "industry exhausted" except
             # try a new keyword, but they CAN top up Brave/Apify credit.
@@ -3233,9 +3836,44 @@ async def run_scraper_agent(task_id: int) -> None:
                 if key in seen_services:
                     continue
                 seen_services.add(key)
-                warnings.append(qe.get("message") or f"{qe.get('service')} 配额异常")
-            if fallback_reason:
-                warnings.append(f"LLM 搜索策略不可用: {fallback_reason}")
+                msg = qe.get("message") or f"{qe.get('service')} 配额异常"
+                warnings.append(f"[WARN]{msg}")
+            # LLM-true-failure case: emit warning regardless of outcome
+            # (operator should know they ran on fallback templates, even
+            # if it still hit target by luck).
+            if strategy_diag.llm_failure_reason:
+                warnings.append(
+                    f"[WARN]LLM 搜索策略生成失败: {strategy_diag.llm_failure_reason}"
+                )
+            # Post-validation drops case: LLM worked, just filtered some
+            # output. Surfacing logic depends on task outcome:
+            #   * task hit target & drop is small → suppress (it's
+            #     irrelevant noise — the dropped queries didn't matter)
+            #   * task hit target & drop is large → emit info (gray)
+            #     so power users can audit "why did the system filter
+            #     so many of my queries?"
+            #   * task missed target → emit warning (it might explain
+            #     why the candidate pool was thin)
+            if strategy_diag.post_validation_drops:
+                drops_text = "; ".join(strategy_diag.post_validation_drops)
+                hit_target_full = new_total >= task.target_count and task.target_count > 0
+                # Drop ratio: (# dropped) / (# total LLM proposed). We
+                # don't have exact counts here easily, so use a coarse
+                # proxy: each drop_note line is one filter event. >= 4
+                # lines is "a lot" (more than half of typical 8-12 query
+                # batches got filtered).
+                heavy_drops = len(strategy_diag.post_validation_drops) >= 3
+                if hit_target_full and not heavy_drops:
+                    pass  # suppressed — it's noise on a successful task
+                elif hit_target_full and heavy_drops:
+                    warnings.append(
+                        f"[INFO]Query 去重过滤详情（不影响本次结果）: {drops_text}"
+                    )
+                else:
+                    warnings.append(
+                        f"[WARN]Query 去重过滤: {drops_text} "
+                        f"— 候选池可能因此变窄，建议换 industry 或扩大 target_market"
+                    )
             # Surface LLM enrichment failures (one per failed batch / blocked
             # stage) so the user can tell why scores look heuristic instead
             # of LLM-graded. Dedup duplicates so 5 batches all hitting the
@@ -3247,7 +3885,7 @@ async def run_scraper_agent(task_id: int) -> None:
                     if key in seen_enrich:
                         continue
                     seen_enrich.add(key)
-                    warnings.append(ef)
+                    warnings.append(f"[WARN]{ef}")
             if new_total == 0 and task.target_count > 0 and not quota_errors:
                 msg = (
                     "本次未抓到任何新网红("
@@ -3264,7 +3902,7 @@ async def run_scraper_agent(task_id: int) -> None:
                         "受限（约 35%，配置后可达 70-85%）。"
                         "参考 server/data/README-youtube-cookies.md。"
                     )
-                warnings.append(msg)
+                warnings.append(f"[WARN]{msg}")
             elif (
                 0 < new_total < task.target_count
                 and not quota_errors
@@ -3275,9 +3913,13 @@ async def run_scraper_agent(task_id: int) -> None:
                 # influencers), this surfaces when the candidate pool's
                 # email-collision rate is too high to find `target`
                 # genuinely new contacts within the visit cap.
+                # Genericised: the old wording said "200 个 channel" which is
+                # the IG/YT visit cap, not TikTok's (TikTok actor maxResults=50).
+                # Keeping it generic ("候选池已用尽") works for any platform's
+                # cap without lying about the number.
                 warnings.append(
-                    f"目标 {task.target_count} 个新网红，仅找到 {new_total} 个真新人"
-                    f" + {reused_total} 个复链接（已遍历候选池上限 200 个 channel）。"
+                    f"[WARN]目标 {task.target_count} 个新网红，仅找到 {new_total} 个真新人"
+                    f" + {reused_total} 个复链接（候选池已用尽）。"
                     "建议换 industry 关键词或扩大 target_market 拓展候选池。"
                 )
             warning_message = " | ".join(warnings) if warnings else None

@@ -1,12 +1,14 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useAuthContext } from '../stores/AuthContext'
 import {
   getSettings,
   updateSettings,
   testWebhook,
+  testApifyActor,
   SystemSettings,
   SystemSettingsUpdate,
+  ApifyPlatform,
   getYouTubeCookiesStatus,
   saveYouTubeCookies,
   deleteYouTubeCookies,
@@ -21,6 +23,37 @@ type CookieSaveState =
   | { kind: 'saved' }
   | { kind: 'error'; message: string }
 
+type ApifyTestState = {
+  status: 'idle' | 'testing' | 'ok' | 'fail'
+  message?: string
+}
+
+const APIFY_PLATFORMS: {
+  key: ApifyPlatform
+  labelKey: string
+  tokenField: 'apify_tiktok_token' | 'apify_ig_token'
+  tokenSetField: 'apify_tiktok_token_set' | 'apify_ig_token_set'
+  actorField: 'apify_tiktok_actor' | 'apify_ig_actor'
+  actorPlaceholder: string
+}[] = [
+  {
+    key: 'tiktok',
+    labelKey: 'settings.apify.tiktok',
+    tokenField: 'apify_tiktok_token',
+    tokenSetField: 'apify_tiktok_token_set',
+    actorField: 'apify_tiktok_actor',
+    actorPlaceholder: 'jurassic_jove~tiktok-email-scraper',
+  },
+  {
+    key: 'instagram',
+    labelKey: 'settings.apify.instagram',
+    tokenField: 'apify_ig_token',
+    tokenSetField: 'apify_ig_token_set',
+    actorField: 'apify_ig_actor',
+    actorPlaceholder: 'apify~instagram-profile-scraper',
+  },
+]
+
 export default function SettingsPage() {
   const { t } = useTranslation()
   const { role } = useAuthContext()
@@ -33,6 +66,17 @@ export default function SettingsPage() {
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+
+  // Track which Apify token fields the user has actually edited. The GET
+  // response gives us masked tokens like "****abcd"; if the user doesn't
+  // touch the field we must NOT send that masked value back as the new token
+  // — the server would write the literal "****abcd" string and break the
+  // scraper. Only fields in this set get included in the PUT payload.
+  const apifyTokenDirty = useRef<Set<ApifyPlatform>>(new Set())
+  const [apifyTest, setApifyTest] = useState<Record<ApifyPlatform, ApifyTestState>>({
+    tiktok: { status: 'idle' },
+    instagram: { status: 'idle' },
+  })
 
   // YouTube cookies state — independent from the main `form` because it's
   // a file-backed config (server/data/youtube-cookies.json), not a DB row,
@@ -93,15 +137,74 @@ export default function SettingsPage() {
         scrape_concurrency: form.scrape_concurrency,
         webhook_feishu: form.webhook_feishu,
         webhook_slack: form.webhook_slack,
+        // Actors are not secrets — always send them so cleared/edited values
+        // round-trip correctly.
+        apify_tiktok_actor: form.apify_tiktok_actor,
+        apify_ig_actor: form.apify_ig_actor,
+      }
+      // Tokens: only send fields the user actually touched (otherwise we'd
+      // overwrite real tokens with masked placeholders).
+      if (apifyTokenDirty.current.has('tiktok')) {
+        patch.apify_tiktok_token = form.apify_tiktok_token
+      }
+      if (apifyTokenDirty.current.has('instagram')) {
+        patch.apify_ig_token = form.apify_ig_token
       }
       const updated = await updateSettings(patch)
       setForm(updated)
+      apifyTokenDirty.current.clear()
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2500)
     } catch {
       setSaveStatus('error')
       setTimeout(() => setSaveStatus('idle'), 3000)
     }
+  }
+
+  const handleApifyTokenChange = (platform: ApifyPlatform, value: string) => {
+    apifyTokenDirty.current.add(platform)
+    if (platform === 'tiktok') {
+      handleChange('apify_tiktok_token', value)
+    } else {
+      handleChange('apify_ig_token', value)
+    }
+    // Reset test state when user edits the token.
+    setApifyTest((prev) => ({ ...prev, [platform]: { status: 'idle' } }))
+  }
+
+  const handleTestApify = async (platform: ApifyPlatform) => {
+    if (!form) return
+    setApifyTest((prev) => ({ ...prev, [platform]: { status: 'testing' } }))
+    try {
+      // Send the in-memory token only if user has edited it (otherwise the
+      // server-side resolver uses the saved DB value). Always send the actor
+      // since it's not secret and the user may be testing an unsaved actor.
+      const token = apifyTokenDirty.current.has(platform)
+        ? form[platform === 'tiktok' ? 'apify_tiktok_token' : 'apify_ig_token']
+        : undefined
+      const actor =
+        platform === 'tiktok' ? form.apify_tiktok_actor : form.apify_ig_actor
+      const result = await testApifyActor(platform, token, actor || undefined)
+      setApifyTest((prev) => ({
+        ...prev,
+        [platform]: {
+          status: result.success ? 'ok' : 'fail',
+          message: result.message,
+        },
+      }))
+    } catch (e: unknown) {
+      const err = e as { response?: { data?: { detail?: string } } }
+      setApifyTest((prev) => ({
+        ...prev,
+        [platform]: {
+          status: 'fail',
+          message: err?.response?.data?.detail || t('settings.apify.testError'),
+        },
+      }))
+    }
+    setTimeout(() => {
+      setApifyTest((prev) => ({ ...prev, [platform]: { status: 'idle' } }))
+    }, 6000)
   }
 
   const handleSaveCookies = async () => {
@@ -306,6 +409,126 @@ export default function SettingsPage() {
             }
             className="w-20 text-right border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-gray-400"
           />
+        </div>
+      </section>
+
+      {/* Apify per-platform configuration */}
+      <section className="mb-8">
+        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+          {t('settings.apify.title')}
+        </h2>
+        <div className="text-xs text-gray-400 mb-4">
+          {t('settings.apify.subtitle')}
+        </div>
+
+        <div className="space-y-6">
+          {APIFY_PLATFORMS.map((p) => {
+            const tokenSet = form[p.tokenSetField]
+            const tokenValue = form[p.tokenField]
+            const dirty = apifyTokenDirty.current.has(p.key)
+            const test = apifyTest[p.key]
+
+            return (
+              <div key={p.key} className="border border-gray-100 rounded-lg p-4">
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span
+                      className={`inline-block w-2 h-2 rounded-full ${
+                        tokenSet ? 'bg-green-500' : 'bg-gray-300'
+                      }`}
+                    />
+                    <div className="text-sm font-medium text-gray-800">
+                      {t(p.labelKey)}
+                    </div>
+                    <span className="text-xs text-gray-400">
+                      {tokenSet
+                        ? t('settings.apify.statusConfigured')
+                        : t('settings.apify.statusNotConfigured')}
+                    </span>
+                  </div>
+                  <button
+                    onClick={() => handleTestApify(p.key)}
+                    disabled={test.status === 'testing'}
+                    className={`text-xs px-3 py-1 rounded border transition-colors ${
+                      test.status === 'ok'
+                        ? 'border-green-200 text-green-600 bg-green-50'
+                        : test.status === 'fail'
+                        ? 'border-red-200 text-red-600 bg-red-50'
+                        : 'border-gray-200 text-gray-500 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed'
+                    }`}
+                  >
+                    {test.status === 'testing'
+                      ? t('settings.apify.test.testing')
+                      : test.status === 'ok'
+                      ? t('settings.apify.test.success')
+                      : test.status === 'fail'
+                      ? t('settings.apify.test.failed')
+                      : t('settings.apify.test.button')}
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">
+                      {t('settings.apify.tokenLabel')}
+                    </label>
+                    <input
+                      type="password"
+                      autoComplete="off"
+                      value={tokenValue}
+                      placeholder={
+                        tokenSet && !dirty
+                          ? t('settings.apify.tokenMasked')
+                          : t('settings.apify.tokenPlaceholder')
+                      }
+                      onChange={(e) =>
+                        handleApifyTokenChange(p.key, e.target.value)
+                      }
+                      className="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-gray-400 placeholder-gray-300"
+                    />
+                    {tokenSet && !dirty && (
+                      <div className="text-xs text-gray-400 mt-1">
+                        {t('settings.apify.tokenMaskedHint', { masked: tokenValue })}
+                      </div>
+                    )}
+                  </div>
+
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">
+                      {t('settings.apify.actorLabel')}
+                    </label>
+                    <input
+                      type="text"
+                      value={form[p.actorField]}
+                      placeholder={p.actorPlaceholder}
+                      onChange={(e) =>
+                        handleChange(p.actorField, e.target.value)
+                      }
+                      className="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-gray-400 placeholder-gray-300"
+                    />
+                    <div className="text-xs text-gray-400 mt-1">
+                      {t('settings.apify.actorHint', { fallback: p.actorPlaceholder })}
+                    </div>
+                  </div>
+                </div>
+
+                {test.status === 'fail' && test.message && (
+                  <div className="mt-3 px-3 py-2 bg-red-50 border border-red-100 rounded text-xs text-red-700">
+                    {test.message}
+                  </div>
+                )}
+                {test.status === 'ok' && test.message && (
+                  <div className="mt-3 px-3 py-2 bg-green-50 border border-green-100 rounded text-xs text-green-700">
+                    {test.message}
+                  </div>
+                )}
+              </div>
+            )
+          })}
+        </div>
+
+        <div className="mt-3 px-3 py-2 bg-amber-50 border border-amber-100 rounded text-xs text-amber-700">
+          {t('settings.apify.warning')}
         </div>
       </section>
 

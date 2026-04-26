@@ -172,6 +172,7 @@
       "pending": "Pending",
       "running": "Running",
       "done": "Done",
+      "partial": "Partial",
       "failed": "Failed",
       "cancelled": "Cancelled"
     },
@@ -179,10 +180,34 @@
       "title": "New Scrape Task",
       "platforms": "Platforms",
       "csvOnly": "CSV only",
-      "platformHint": "Instagram & YouTube support automatic Playwright scraping. TikTok / Twitter / Facebook will prompt for CSV import.",
+      "notSupported": "Coming soon",
+      "platformHint": "One platform per task. Twitter / Facebook auto-scraping not yet available — use CSV import for those.",
+      "targetMarketHint": "All overseas regions. Selecting a specific market significantly sharpens query precision and hit rate.",
+      "marketGroup": {
+        "english": "English markets",
+        "cnEastAsia": "Chinese / East Asia",
+        "europe": "Europe",
+        "latamSeaOther": "LATAM / SEA / Other"
+      },
+      "tiktokInfo": {
+        "title": "About TikTok scraping",
+        "cost": {
+          "label": "Cost per task",
+          "value": "≈ $0.20-0.60"
+        },
+        "avatar": {
+          "label": "Avatar",
+          "value": "✓ Auto-fetched"
+        },
+        "dedup": {
+          "label": "Smart dedup",
+          "value": "Skips channels visited in last 30d"
+        }
+      },
       "industryLabel": "Industry keyword *",
       "industryPlaceholder": "e.g. fitness, beauty, gaming",
       "targetLabel": "Target email count — {{count}}",
+      "targetWarning": "Targets above 20 push single-task cost toward the $1 cap and extend wall time. Recommend splitting into multiple smaller tasks (e.g. 2-3 batches); cross-task dedup is automatic.",
       "cancel": "Cancel",
       "startScraping": "Start Scraping",
       "targetMarket": "Target Market (optional)",
@@ -191,7 +216,7 @@
       "competitorPlaceholder": "e.g. GoingBus, GamsGo, FlixSeek"
     },
     "validation": {
-      "selectPlatform": "Select at least one platform",
+      "selectPlatform": "Pick a platform that supports automatic scraping",
       "industryRequired": "Industry keyword is required"
     },
     "createFailed": "Failed to create task"
@@ -240,6 +265,11 @@
       "showingCount": "Showing {{count}}",
       "errorLabel": "Error",
       "warningLabel": "Warning",
+      "severityLabel": {
+        "info": "Info",
+        "warning": "Warning",
+        "error": "Error"
+      },
       "quotaModal": {
         "title": "API Quota Exhausted",
         "subtitle": "This run was interrupted because an upstream service ran out of credit or its token was rejected. Top up / refresh the token and retry.",
@@ -768,6 +798,28 @@
       "title": "Scrape Configuration",
       "concurrency": "Scrape concurrency",
       "concurrencyHint": "Number of concurrent Playwright browser instances"
+    },
+    "apify": {
+      "title": "Apify Actor Configuration",
+      "subtitle": "TikTok / Instagram scraping runs on Apify. Each platform has its own Token + Actor, isolated from each other. Leave blank to fall back to server/.env env vars.",
+      "tiktok": "TikTok",
+      "instagram": "Instagram",
+      "tokenLabel": "API Token",
+      "tokenPlaceholder": "Paste Apify API Token (apify_api_…)",
+      "tokenMasked": "Configured (type to overwrite)",
+      "tokenMaskedHint": "Currently saved: {{masked}}",
+      "actorLabel": "Actor ID",
+      "actorHint": "Format: username~actor-name (note: tilde ~, not slash /; we auto-convert if you paste a slash); leave blank to use default {{fallback}}",
+      "statusConfigured": "Configured",
+      "statusNotConfigured": "Not configured",
+      "warning": "Token is a sensitive credential and is never shown in plaintext after save. Use a separate token per platform to isolate quota and billing.",
+      "test": {
+        "button": "Test connection",
+        "testing": "Verifying…",
+        "success": "✓ Verified",
+        "failed": "✗ Failed"
+      },
+      "testError": "Test request failed"
     },
     "youtubeCookies": {
       "title": "YouTube Cookies",

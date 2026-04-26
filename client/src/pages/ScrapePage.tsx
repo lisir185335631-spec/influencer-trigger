@@ -15,8 +15,15 @@ import {
   AlertCircle,
   ArrowRight,
   Trash2,
+  Info,
 } from 'lucide-react'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
+import {
+  parseWarningList,
+  filterShown,
+  maxSeverity,
+  type Severity,
+} from '../hooks/warningSeverity'
 import {
   scrapeApi,
   ScrapeTask,
@@ -32,14 +39,70 @@ import {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+// See WebSocketContext.tsx for why we hardcode :6002 instead of using window.location.host.
+const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:6002/ws`
 
-const PLATFORMS = [
+type PlatformDef = {
+  id: string
+  labelKey: string
+  /** stub = no auto-scraping yet; radio is disabled, user is told to use CSV import. */
+  stub?: boolean
+}
+
+const PLATFORMS: PlatformDef[] = [
   { id: 'instagram', labelKey: 'common.platform.instagram' },
   { id: 'youtube', labelKey: 'common.platform.youtube' },
-  { id: 'tiktok', labelKey: 'common.platform.tiktok', stub: true },
+  { id: 'tiktok', labelKey: 'common.platform.tiktok' },
   { id: 'twitter', labelKey: 'common.platform.twitter', stub: true },
   { id: 'facebook', labelKey: 'common.platform.facebook', stub: true },
+]
+
+/**
+ * Per-task target market options. Backend's `_MARKET_TO_LANG` map decides
+ * the script category (en / cn / tw / jp / kr) the LLM will produce queries
+ * in. Codes not in that map fall through to "en" (or to the industry's own
+ * script if industry is CJK), so adding markets here is always safe — worst
+ * case the LLM uses English queries for that region.
+ *
+ * Grouped via <optgroup> for readability. All overseas — domestic CN markets
+ * are intentionally absent because the system targets海外 KOL outreach.
+ */
+const MARKET_GROUPS: { groupKey: string; markets: { value: string; label: string }[] }[] = [
+  {
+    groupKey: 'scrape.modal.marketGroup.english',
+    markets: [
+      { value: 'us', label: 'English (US / Global)' },
+      { value: 'uk', label: 'English (UK)' },
+      { value: 'au', label: 'English (Australia)' },
+      { value: 'ca', label: 'English (Canada)' },
+      { value: 'in', label: 'English (India)' },
+    ],
+  },
+  {
+    groupKey: 'scrape.modal.marketGroup.cnEastAsia',
+    markets: [
+      { value: 'tw', label: '繁體中文 (Taiwan)' },
+      { value: 'hk', label: '繁體中文 (Hong Kong)' },
+      { value: 'jp', label: '日本語 (Japan)' },
+      { value: 'kr', label: '한국어 (Korea)' },
+    ],
+  },
+  {
+    groupKey: 'scrape.modal.marketGroup.europe',
+    markets: [
+      { value: 'de', label: 'Deutsch (Germany)' },
+      { value: 'fr', label: 'Français (France)' },
+      { value: 'es', label: 'Español (Spain)' },
+      { value: 'it', label: 'Italiano (Italy)' },
+    ],
+  },
+  {
+    groupKey: 'scrape.modal.marketGroup.latamSeaOther',
+    markets: [
+      { value: 'pt', label: 'Português (Brazil)' },
+      { value: 'sea', label: 'Southeast Asia' },
+    ],
+  },
 ]
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -58,16 +121,33 @@ function isRunning(t: ScrapeTask) {
   return t.status === 'running' || t.status === 'pending'
 }
 
-function StatusBadge({ status }: { status: string }) {
+function StatusBadge({
+  status,
+  newCount,
+  targetCount,
+}: {
+  status: string
+  newCount?: number
+  targetCount?: number
+}) {
   const { t } = useTranslation()
+  // Derive "partial" for completed-but-under-target tasks. Same threshold
+  // (70%) as the backend retry trigger so visuals match the system's own
+  // judgement of whether the task delivered.
+  let display = status
+  if (status === 'completed' && targetCount && targetCount > 0) {
+    const hit = (newCount ?? 0) / targetCount
+    if (hit < 0.7) display = 'partial'
+  }
   const map: Record<string, { label: string; cls: string; icon: React.ReactNode }> = {
     pending:   { label: t('scrape.status.pending'),   cls: 'bg-amber-50 text-amber-700 ring-amber-200',   icon: <Clock size={11} /> },
     running:   { label: t('scrape.status.running'),   cls: 'bg-blue-50 text-blue-700 ring-blue-200',      icon: <Loader2 size={11} className="animate-spin" /> },
     completed: { label: t('scrape.status.done'),      cls: 'bg-emerald-50 text-emerald-700 ring-emerald-200', icon: <CheckCircle size={11} /> },
+    partial:   { label: t('scrape.status.partial'),   cls: 'bg-orange-50 text-orange-700 ring-orange-200', icon: <CheckCircle size={11} /> },
     failed:    { label: t('scrape.status.failed'),    cls: 'bg-red-50 text-red-600 ring-red-200',          icon: <XCircle size={11} /> },
     cancelled: { label: t('scrape.status.cancelled'), cls: 'bg-gray-50 text-gray-500 ring-gray-200',       icon: <XCircle size={11} /> },
   }
-  const cfg = map[status] ?? map['pending']
+  const cfg = map[display] ?? map['pending']
   return (
     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium ring-1 ${cfg.cls}`}>
       {cfg.icon}
@@ -109,7 +189,9 @@ type CreateModalProps = {
 
 function CreateModal({ onClose, onCreated }: CreateModalProps) {
   const { t } = useTranslation()
-  const [selectedPlatforms, setSelectedPlatforms] = useState<string[]>(['instagram', 'youtube'])
+  // Single-platform selection (radio). Backend still accepts an array, so
+  // we wrap on submit. Default = instagram (most-used and battle-tested path).
+  const [selectedPlatform, setSelectedPlatform] = useState<string>('instagram')
   const [industry, setIndustry] = useState('')
   const [targetCount, setTargetCount] = useState(50)
   const [creating, setCreating] = useState(false)
@@ -117,15 +199,12 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
   const [targetMarket, setTargetMarket] = useState('')
   const [competitorBrands, setCompetitorBrands] = useState('')
 
-  function togglePlatform(id: string) {
-    setSelectedPlatforms((prev) =>
-      prev.includes(id) ? prev.filter((p) => p !== id) : [...prev, id]
-    )
-  }
+  const platformDef = PLATFORMS.find((p) => p.id === selectedPlatform)
+  const isStubPlatform = platformDef?.stub === true
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
-    if (selectedPlatforms.length === 0) {
+    if (!selectedPlatform || isStubPlatform) {
       setError(t('scrape.validation.selectPlatform'))
       return
     }
@@ -137,7 +216,9 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
     setError('')
     try {
       const payload: ScrapeTaskCreate = {
-        platforms: selectedPlatforms,
+        // Backend API contract is `platforms: string[]` — wrap single
+        // selection so we don't have to change any server-side code.
+        platforms: [selectedPlatform],
         industry: industry.trim(),
         target_count: targetCount,
         target_market: targetMarket || undefined,
@@ -164,31 +245,38 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
         </div>
 
         <form onSubmit={handleSubmit} className="p-6 space-y-5">
-          {/* Platform selection */}
+          {/* Platform selection — single radio per task. Stub platforms are
+              disabled and badged "暂不支持" so the user can't accidentally pick
+              one and get a 0-result task. */}
           <div>
             <label className="block text-xs text-gray-500 mb-2">{t('scrape.modal.platforms')}</label>
             <div className="grid grid-cols-2 gap-2">
               {PLATFORMS.map((p) => {
-                const checked = selectedPlatforms.includes(p.id)
+                const checked = selectedPlatform === p.id
+                const disabled = p.stub === true
                 return (
                   <label
                     key={p.id}
-                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border cursor-pointer transition-all ${
-                      checked
-                        ? 'border-gray-900 bg-gray-50'
-                        : 'border-gray-200 hover:border-gray-300'
+                    className={`flex items-center gap-2.5 px-3 py-2.5 rounded-lg border transition-all ${
+                      disabled
+                        ? 'border-gray-100 bg-gray-50/40 opacity-60 cursor-not-allowed'
+                        : checked
+                        ? 'border-gray-900 bg-gray-50 cursor-pointer'
+                        : 'border-gray-200 hover:border-gray-300 cursor-pointer'
                     }`}
                   >
                     <input
-                      type="checkbox"
+                      type="radio"
+                      name="scrape-platform"
                       checked={checked}
-                      onChange={() => togglePlatform(p.id)}
+                      disabled={disabled}
+                      onChange={() => !disabled && setSelectedPlatform(p.id)}
                       className="w-3.5 h-3.5 accent-gray-900"
                     />
                     <span className="text-xs text-gray-700">{t(p.labelKey)}</span>
-                    {p.stub && (
+                    {disabled && (
                       <span className="ml-auto text-[10px] text-gray-400 bg-gray-100 px-1.5 py-0.5 rounded">
-                        {t('scrape.modal.csvOnly')}
+                        {t('scrape.modal.notSupported')}
                       </span>
                     )}
                   </label>
@@ -199,6 +287,32 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
               {t('scrape.modal.platformHint')}
             </p>
           </div>
+
+          {/* TikTok-specific info cards. Surface the operationally-relevant
+              facts (cost, no avatar, cross-task dedup) right where the user
+              is making the choice — so there's no surprise after the task runs. */}
+          {selectedPlatform === 'tiktok' && (
+            <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
+              <p className="text-[11px] font-medium text-gray-700 mb-2 flex items-center gap-1.5">
+                <Info size={11} className="text-gray-500" />
+                {t('scrape.modal.tiktokInfo.title')}
+              </p>
+              <div className="grid grid-cols-3 gap-2">
+                <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
+                  <p className="text-[10px] text-gray-400">{t('scrape.modal.tiktokInfo.cost.label')}</p>
+                  <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.tiktokInfo.cost.value')}</p>
+                </div>
+                <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
+                  <p className="text-[10px] text-gray-400">{t('scrape.modal.tiktokInfo.avatar.label')}</p>
+                  <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.tiktokInfo.avatar.value')}</p>
+                </div>
+                <div className="bg-white rounded-md px-2.5 py-2 border border-gray-100">
+                  <p className="text-[10px] text-gray-400">{t('scrape.modal.tiktokInfo.dedup.label')}</p>
+                  <p className="text-xs font-medium text-gray-800 mt-0.5">{t('scrape.modal.tiktokInfo.dedup.value')}</p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Industry */}
           <div>
@@ -231,9 +345,16 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
               <span>5</span>
               <span>500</span>
             </div>
+            {targetCount > 20 && (
+              <div className="mt-2 px-2.5 py-1.5 bg-amber-50 border border-amber-100 rounded text-[11px] text-amber-700">
+                {t('scrape.modal.targetWarning')}
+              </div>
+            )}
           </div>
 
-          {/* Optional: Target Market */}
+          {/* Optional: Target Market — overseas regions only, grouped by area
+              for readability. The empty option ("不限市场") is retained as the
+              default but with a hint that specifying a region improves precision. */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
               {t('scrape.modal.targetMarket')}
@@ -244,17 +365,17 @@ function CreateModal({ onClose, onCreated }: CreateModalProps) {
               className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-1 focus:ring-gray-300"
             >
               <option value="">{t('scrape.modal.noMarketFilter')}</option>
-              <option value="us">English (US/Global)</option>
-              <option value="tw">繁體中文 (Taiwan)</option>
-              <option value="hk">繁體中文 (Hong Kong)</option>
-              <option value="jp">日本語 (Japan)</option>
-              <option value="kr">한국어 (Korea)</option>
-              <option value="es">Español (Spanish)</option>
-              <option value="pt">Português (Brazil)</option>
-              <option value="fr">Français (France)</option>
-              <option value="de">Deutsch (Germany)</option>
-              <option value="sea">Southeast Asia</option>
+              {MARKET_GROUPS.map((g) => (
+                <optgroup key={g.groupKey} label={t(g.groupKey)}>
+                  {g.markets.map((m) => (
+                    <option key={m.value} value={m.value}>{m.label}</option>
+                  ))}
+                </optgroup>
+              ))}
             </select>
+            <p className="text-[11px] text-gray-400 mt-1">
+              {t('scrape.modal.targetMarketHint')}
+            </p>
           </div>
 
           {/* Optional: Competitor Brands */}
@@ -739,12 +860,29 @@ export default function ScrapePage() {
                       {task.industry}
                     </td>
                     <td className="px-4 py-3">
-                      <StatusBadge status={task.status} />
-                      {task.error_message && (
-                        <p className="text-[10px] text-red-400 mt-0.5 max-w-[160px] truncate" title={task.error_message}>
-                          {task.error_message}
-                        </p>
-                      )}
+                      <StatusBadge
+                        status={task.status}
+                        newCount={task.new_count}
+                        targetCount={task.target_count}
+                      />
+                      {(() => {
+                        // List page intentionally hides INFO-level entries —
+                        // they're audit trail (e.g. "system filtered N
+                        // duplicate queries on a successful task") and only
+                        // belong on the detail page. Show only warnings and
+                        // errors so the list isn't visually polluted by
+                        // benign filter notes on green-status tasks.
+                        const shown = filterShown(parseWarningList(task.error_message))
+                        if (shown.length === 0) return null
+                        const sev: Severity = maxSeverity(shown) ?? 'warning'
+                        const colour = sev === 'error' ? 'text-red-500' : 'text-amber-600'
+                        const text = shown.map(w => w.message).join(' · ')
+                        return (
+                          <p className={`text-[10px] ${colour} mt-0.5 max-w-[160px] truncate`} title={text}>
+                            {text}
+                          </p>
+                        )
+                      })()}
                     </td>
                     <td className="px-4 py-3">
                       <div className="space-y-1">

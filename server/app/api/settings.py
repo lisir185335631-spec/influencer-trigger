@@ -14,9 +14,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.deps import get_current_user, require_manager_or_above
 from app.schemas.auth import TokenData
-from app.schemas.settings import SettingsOut, SettingsUpdate
+from app.schemas.settings import (
+    SettingsOut,
+    SettingsUpdate,
+    TestApifyActorRequest,
+    TestApifyActorResponse,
+)
 from app.services.settings_service import (
     get_or_create_system_settings,
+    mask_token,
+    resolve_apify_credentials,
     update_system_settings,
 )
 from app.services.follow_up_service import get_or_create_settings, update_settings as update_follow_up
@@ -54,14 +61,8 @@ async def get_db():  # type: ignore[return]
         yield db
 
 
-@router.get("", response_model=SettingsOut)
-async def get_settings(
-    db: AsyncSession = Depends(get_db),
-    current_user: TokenData = Depends(get_current_user),
-) -> SettingsOut:
-    """Return merged system settings."""
-    sys = await get_or_create_system_settings(db)
-    fu = await get_or_create_settings(db)
+def _build_settings_out(sys, fu) -> SettingsOut:
+    """Shared serializer — masks Apify tokens before sending to client."""
     return SettingsOut(
         follow_up_enabled=fu.enabled,
         interval_days=fu.interval_days,
@@ -70,7 +71,24 @@ async def get_settings(
         scrape_concurrency=sys.scrape_concurrency,
         webhook_feishu=sys.webhook_feishu,
         webhook_slack=sys.webhook_slack,
+        apify_tiktok_token=mask_token(sys.apify_tiktok_token or ""),
+        apify_tiktok_token_set=bool(sys.apify_tiktok_token),
+        apify_tiktok_actor=sys.apify_tiktok_actor or "",
+        apify_ig_token=mask_token(sys.apify_ig_token or ""),
+        apify_ig_token_set=bool(sys.apify_ig_token),
+        apify_ig_actor=sys.apify_ig_actor or "",
     )
+
+
+@router.get("", response_model=SettingsOut)
+async def get_settings(
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(get_current_user),
+) -> SettingsOut:
+    """Return merged system settings."""
+    sys = await get_or_create_system_settings(db)
+    fu = await get_or_create_settings(db)
+    return _build_settings_out(sys, fu)
 
 
 @router.put("", response_model=SettingsOut)
@@ -86,6 +104,10 @@ async def update_settings(
         scrape_concurrency=body.scrape_concurrency,
         webhook_feishu=body.webhook_feishu,
         webhook_slack=body.webhook_slack,
+        apify_tiktok_token=body.apify_tiktok_token,
+        apify_tiktok_actor=body.apify_tiktok_actor,
+        apify_ig_token=body.apify_ig_token,
+        apify_ig_actor=body.apify_ig_actor,
     )
 
     # Update FollowUpSettings
@@ -109,14 +131,110 @@ async def update_settings(
         except Exception as exc:
             logger.warning("Failed to reschedule follow-up job: %s", exc)
 
-    return SettingsOut(
-        follow_up_enabled=fu.enabled,
-        interval_days=fu.interval_days,
-        max_count=fu.max_count,
-        hour_utc=fu.hour_utc,
-        scrape_concurrency=sys.scrape_concurrency,
-        webhook_feishu=sys.webhook_feishu,
-        webhook_slack=sys.webhook_slack,
+    return _build_settings_out(sys, fu)
+
+
+@router.post("/test-apify-actor", response_model=TestApifyActorResponse)
+async def test_apify_actor(
+    body: TestApifyActorRequest,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_manager_or_above),
+) -> TestApifyActorResponse:
+    """Verify an Apify token+actor combo by hitting Apify's metadata endpoint.
+
+    Doesn't run the actor (which would cost money) — just calls the
+    `/v2/acts/{actor}` lookup with the token. Returns 200 OK if Apify accepts
+    the token and the actor exists.
+    """
+    import httpx
+
+    platform = (body.platform or "").strip().lower()
+    logger.info(
+        "[settings] test_apify_actor: platform=%s actor=%r token_provided=%s user=%s",
+        platform, body.actor, bool(body.token), current_user.user_id,
+    )
+    if platform not in ("tiktok", "instagram", "ig"):
+        raise HTTPException(
+            status_code=400,
+            detail="platform 必须是 tiktok 或 instagram",
+        )
+
+    # Resolve effective credentials. If body provides token/actor, use those;
+    # otherwise fall back to currently saved DB values (with env-var fallback).
+    # Normalize the body's actor field too — user might be testing a freshly-
+    # pasted `username/actor-name` before saving, the test should green-flag
+    # it instead of 404'ing on the same `/`-vs-`~` URL bug.
+    from app.services.settings_service import _normalize_actor_id
+    token = (body.token or "").strip()
+    actor = _normalize_actor_id(body.actor or "")
+    if not token or not actor:
+        db_token, db_actor = await resolve_apify_credentials(db, platform)
+        token = token or db_token
+        actor = actor or db_actor
+
+    if not token:
+        return TestApifyActorResponse(
+            success=False,
+            platform=platform,
+            actor=actor,
+            message="未填写 Apify Token，且 DB 与环境变量均无可用 token。",
+        )
+    if not actor:
+        return TestApifyActorResponse(
+            success=False,
+            platform=platform,
+            actor="",
+            message="未填写 Actor ID。",
+        )
+
+    # Apify's actor lookup: GET /v2/acts/{actorId} with ?token=...
+    # Use ~ as separator for username~actor-name (Apify accepts both ~ and /
+    # but ~ is what config.py uses everywhere).
+    url = f"https://api.apify.com/v2/acts/{actor}"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(url, params={"token": token})
+    except httpx.RequestError as e:
+        logger.warning("[settings] apify test request failed: %s", e)
+        return TestApifyActorResponse(
+            success=False,
+            platform=platform,
+            actor=actor,
+            message=f"网络请求失败：{e}",
+        )
+
+    if resp.status_code == 401:
+        return TestApifyActorResponse(
+            success=False, platform=platform, actor=actor,
+            message="Token 无效（HTTP 401）。请到 https://console.apify.com/account/integrations 重新签发。",
+        )
+    if resp.status_code == 403:
+        return TestApifyActorResponse(
+            success=False, platform=platform, actor=actor,
+            message="Token 权限不足或账号被限制（HTTP 403）。",
+        )
+    if resp.status_code == 404:
+        return TestApifyActorResponse(
+            success=False, platform=platform, actor=actor,
+            message=f"Actor 不存在：{actor!r}（HTTP 404）。",
+        )
+    if resp.status_code != 200:
+        return TestApifyActorResponse(
+            success=False, platform=platform, actor=actor,
+            message=f"Apify 返回 HTTP {resp.status_code}：{resp.text[:200]}",
+        )
+
+    try:
+        data = resp.json().get("data", {})
+    except Exception:
+        data = {}
+    return TestApifyActorResponse(
+        success=True,
+        platform=platform,
+        actor=actor,
+        actor_title=data.get("title") or data.get("name"),
+        actor_username=data.get("username"),
+        message="Token 与 Actor 校验通过。",
     )
 
 

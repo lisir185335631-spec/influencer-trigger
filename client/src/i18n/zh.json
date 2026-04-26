@@ -68,7 +68,7 @@
   "sidebar": {
     "brand": "网红触发",
     "dashboard": "仪表盘",
-    "scrape": "邮箱抓取",
+    "scrape": "邮件抓取",
     "import": "数据导入",
     "emails": "邮件管理",
     "crm": "网红数据",
@@ -99,7 +99,7 @@
     "fallbackTitle": "Influencer Trigger",
     "pageTitles": {
       "dashboard": "仪表盘",
-      "scrape": "邮箱抓取",
+      "scrape": "邮件抓取",
       "import": "数据导入",
       "emails": "邮件管理",
       "crm": "网红数据",
@@ -144,7 +144,7 @@
     "loadFailed": "仪表盘加载失败"
   },
   "scrape": {
-    "title": "邮箱抓取",
+    "title": "邮件抓取",
     "subtitle": "自动抓取或手动导入网红邮箱",
     "newTask": "新建任务",
     "tabScrapeTasks": "抓取任务",
@@ -172,6 +172,7 @@
       "pending": "等待中",
       "running": "运行中",
       "done": "完成",
+      "partial": "部分完成",
       "failed": "失败",
       "cancelled": "已取消"
     },
@@ -179,19 +180,43 @@
       "title": "新建抓取任务",
       "platforms": "平台",
       "csvOnly": "仅CSV",
-      "platformHint": "Instagram 和 YouTube 支持 Playwright 自动抓取。TikTok / Twitter / Facebook 需使用 CSV 导入。",
+      "notSupported": "暂不支持",
+      "platformHint": "每个任务只跑一个平台。Twitter / Facebook 暂不支持自动抓取，请使用 CSV 导入。",
       "industryLabel": "行业关键词 *",
       "industryPlaceholder": "如：fitness, beauty, gaming",
       "targetLabel": "目标邮箱数量 — {{count}}",
+      "targetWarning": "目标 > 20 时单次成本接近 $1 上限、wall time 加长。建议拆成多次任务（如分 2-3 批）以避开预算护栏，跨批次的 dedup 自动处理。",
       "cancel": "取消",
       "startScraping": "开始抓取",
       "targetMarket": "目标市场（可选）",
       "noMarketFilter": "— 不限市场 —",
+      "targetMarketHint": "全部为海外区域。指定具体市场可显著提升 query 精准度与命中率。",
+      "marketGroup": {
+        "english": "英语市场",
+        "cnEastAsia": "中文 / 东亚",
+        "europe": "欧洲",
+        "latamSeaOther": "拉美 / 东南亚 / 其他"
+      },
+      "tiktokInfo": {
+        "title": "TikTok 抓取说明",
+        "cost": {
+          "label": "单次成本",
+          "value": "约 $0.20-0.60 / 任务"
+        },
+        "avatar": {
+          "label": "头像",
+          "value": "✓ 自动抓取"
+        },
+        "dedup": {
+          "label": "智能去重",
+          "value": "已抓 channel 30 天不重访"
+        }
+      },
       "competitorBrands": "竞品品牌（可选）",
       "competitorPlaceholder": "如：GoingBus, GamsGo, FlixSeek"
     },
     "validation": {
-      "selectPlatform": "请至少选择一个平台",
+      "selectPlatform": "请选择一个支持自动抓取的平台",
       "industryRequired": "行业关键词不能为空"
     },
     "createFailed": "创建任务失败"
@@ -240,6 +265,11 @@
       "showingCount": "共 {{count}} 条",
       "errorLabel": "错误",
       "warningLabel": "警告",
+      "severityLabel": {
+        "info": "提示",
+        "warning": "警告",
+        "error": "错误"
+      },
       "quotaModal": {
         "title": "API 配额耗尽",
         "subtitle": "本次抓取因外部服务配额或鉴权问题中断。请按下方提示充值或更新 token 后重试。",
@@ -768,6 +798,28 @@
       "title": "抓取配置",
       "concurrency": "抓取并发数",
       "concurrencyHint": "同时启动的 Playwright 浏览器实例数量"
+    },
+    "apify": {
+      "title": "Apify Actor 配置",
+      "subtitle": "TikTok / Instagram 抓取依赖 Apify。每个平台独立配置 Token 与 Actor，互不影响。留空则回退到 server/.env 的环境变量值。",
+      "tiktok": "TikTok",
+      "instagram": "Instagram",
+      "tokenLabel": "API Token",
+      "tokenPlaceholder": "粘贴 Apify API Token（apify_api_…）",
+      "tokenMasked": "已配置（输入新值即覆盖）",
+      "tokenMaskedHint": "当前已保存：{{masked}}",
+      "actorLabel": "Actor ID",
+      "actorHint": "格式 username~actor-name（注意是波浪号 ~ 不是斜杠 /，但系统会自动转换）；留空使用默认值 {{fallback}}",
+      "statusConfigured": "已配置",
+      "statusNotConfigured": "未配置",
+      "warning": "Token 是敏感凭证，保存后不会再以明文展示。建议为每个平台使用独立 Token，便于隔离配额与计费。",
+      "test": {
+        "button": "测试连接",
+        "testing": "校验中…",
+        "success": "✓ 校验通过",
+        "failed": "✗ 校验失败"
+      },
+      "testError": "测试请求失败"
     },
     "youtubeCookies": {
       "title": "YouTube Cookies 配置",

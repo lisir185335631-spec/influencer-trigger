@@ -3,7 +3,6 @@ import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   ArrowLeft,
-  ArrowUpDown,
   ArrowUp,
   ArrowDown,
   Loader2,
@@ -13,6 +12,7 @@ import {
 } from 'lucide-react'
 import { scrapeApi, ScrapeTask, ScrapeInfluencerResult, parsePlatforms } from '../api/scrape'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
+import { parseWarningList, type Severity } from '../hooks/warningSeverity'
 import AvatarBadge from '../components/AvatarBadge'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -83,8 +83,34 @@ type LiveProgress = {
   quota_errors?: QuotaError[] | null
 }
 
-function StatusPill({ status }: { status: string }) {
+// Derived UI status: completed tasks that hit < 70% of target are shown as
+// "partial" with an orange badge. The underlying ScrapeTaskStatus enum stays
+// "completed" — this is purely a render-time signal so users see at a glance
+// whether the task actually delivered what they asked for. The 70% threshold
+// matches the backend retry trigger so the visual matches the system's own
+// internal "did this go well?" judgment.
+function _deriveDisplayStatus(
+  status: string,
+  newCount: number | undefined,
+  target: number | undefined,
+): string {
+  if (status !== 'completed') return status
+  if (!target || target <= 0) return status
+  const hit = (newCount ?? 0) / target
+  return hit < 0.7 ? 'partial' : 'completed'
+}
+
+function StatusPill({
+  status,
+  newCount,
+  targetCount,
+}: {
+  status: string
+  newCount?: number
+  targetCount?: number
+}) {
   const { t } = useTranslation()
+  const display = _deriveDisplayStatus(status, newCount, targetCount)
   const styles: Record<string, string> = {
     pending: 'bg-gray-100 text-gray-600',
     // running: solid blue + white text + ring + pulse so the badge is
@@ -92,13 +118,16 @@ function StatusPill({ status }: { status: string }) {
     // had so little contrast the user couldn't tell the task was alive.
     running: 'bg-blue-600 text-white ring-2 ring-blue-300 ring-offset-1 shadow-sm animate-pulse',
     completed: 'bg-emerald-50 text-emerald-700',
+    partial: 'bg-orange-50 text-orange-700 border border-orange-200',
     failed: 'bg-red-50 text-red-700',
     cancelled: 'bg-gray-100 text-gray-500',
   }
+  // i18n key mapping: "completed" → done, "partial" → partial, others use raw key.
+  const labelKey = display === 'completed' ? 'done' : display
   return (
-    <span className={`inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full ${styles[status] ?? styles.pending}`}>
-      {status === 'running' && <Loader2 size={12} className="animate-spin mr-1.5" />}
-      {t(`scrape.status.${status === 'completed' ? 'done' : status}`)}
+    <span className={`inline-flex items-center px-3 py-1 text-xs font-semibold rounded-full ${styles[display] ?? styles.pending}`}>
+      {display === 'running' && <Loader2 size={12} className="animate-spin mr-1.5" />}
+      {t(`scrape.status.${labelKey}`)}
     </span>
   )
 }
@@ -212,7 +241,8 @@ export default function ScrapeTaskDetailPage() {
   }, [task, quotaModal, quotaModalDismissed])
 
   // ── WebSocket: subscribe to scrape:progress for this task ──────────────────
-  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
+  // See WebSocketContext.tsx for why we hardcode :6002 instead of window.location.host.
+  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:6002/ws`
   useWebSocket(wsUrl, useCallback((msg: WsMessage) => {
     if (msg.event !== 'scrape:progress') return
     const evt = msg.data as LiveProgress
@@ -375,7 +405,11 @@ export default function ScrapeTaskDetailPage() {
         <div className="bg-gradient-to-br from-white to-gray-50 border border-gray-200 rounded-2xl p-6 space-y-5">
           {/* Status pill + big percentage */}
           <div className="flex items-center justify-between">
-            <StatusPill status={(live?.status ?? task.status) as string} />
+            <StatusPill
+              status={(live?.status ?? task.status) as string}
+              newCount={live?.new_count ?? task.new_count}
+              targetCount={task.target_count}
+            />
             <div className="text-right">
               <div className="text-3xl font-bold text-gray-900 tabular-nums">
                 {live?.progress ?? task.progress}%
@@ -384,8 +418,13 @@ export default function ScrapeTaskDetailPage() {
             </div>
           </div>
 
-          {/* Large progress bar */}
-          <div className="h-3 bg-gray-100 rounded-full overflow-hidden">
+          {/* Large progress bar. The indeterminate shimmer overlay only renders
+              while the task is actually running AND the bar is in the low
+              "we're waiting on a blocking external call" range (< 30%). Once
+              real percentage data starts flowing in (post-Apify, candidate-pool
+              built), the shimmer disappears so the user's attention shifts to
+              the genuine progress movement. */}
+          <div className="h-3 bg-gray-100 rounded-full overflow-hidden relative">
             <div
               className={`h-full transition-all duration-500 ease-out ${
                 (live?.status ?? task.status) === 'completed' ? 'bg-emerald-500' :
@@ -394,6 +433,11 @@ export default function ScrapeTaskDetailPage() {
               }`}
               style={{ width: `${live?.progress ?? task.progress}%` }}
             />
+            {(live?.status ?? task.status) === 'running' && (live?.progress ?? task.progress) < 30 && (
+              <div className="absolute inset-0 overflow-hidden pointer-events-none">
+                <div className="h-full w-1/4 bg-blue-300/50 indeterminate-bar rounded-full" />
+              </div>
+            )}
           </div>
 
           {/* Phase text (under progress bar). When the inner scraper sends
@@ -423,16 +467,46 @@ export default function ScrapeTaskDetailPage() {
             <StatCard label={t('scrapeDetail.live.stats.platforms')} value={platforms.length} />
           </div>
 
-          {/* Completed-with-warning banner: the task ran to completion but
-              error_message was populated (LLM fallback / 0 new finds). The
-              underlying ScrapeTaskStatus is still "completed" — we surface
-              the caveat inline rather than inventing a new status. */}
-          {(live?.status === 'completed' || task.status === 'completed') && (live?.warning || task.error_message) && (
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-xs text-amber-800">
-              <strong>{t('scrapeDetail.live.warningLabel')}:</strong>{' '}
-              {live?.warning ?? task.error_message}
-            </div>
-          )}
+          {/* Completed-with-warning banner — severity-aware. The task ran
+              to completion but the warning bag is non-empty. We split by
+              `[INFO]/[WARN]/[ERROR]` prefix so:
+                * INFO entries (e.g. "去重过滤详情" on a successful task)
+                  render in a subtle gray box — informational, not alarm
+                * WARN entries (e.g. "候选池已用尽" on partial completion)
+                  render in amber — operator should consider adjusting
+                * ERROR entries are vanishingly rare on a "completed"
+                  status but if a quota or auth error slipped past the
+                  status check, we render red.
+              Live websocket warning takes precedence (current run) but
+              falls back to task.error_message (page reload after
+              completion). */}
+          {(live?.status === 'completed' || task.status === 'completed') && (live?.warning || task.error_message) && (() => {
+            const raw = live?.warning ?? task.error_message ?? ''
+            const parsed = parseWarningList(raw)
+            if (parsed.length === 0) return null
+            const groups: Record<Severity, string[]> = { info: [], warning: [], error: [] }
+            parsed.forEach(p => groups[p.severity].push(p.message))
+            const styles: Record<Severity, { box: string; label: string }> = {
+              info:    { box: 'bg-gray-50 border-gray-200 text-gray-600',     label: 'text-gray-500' },
+              warning: { box: 'bg-amber-50 border-amber-200 text-amber-800',  label: 'text-amber-900' },
+              error:   { box: 'bg-red-50 border-red-200 text-red-700',        label: 'text-red-900' },
+            }
+            const order: Severity[] = ['error', 'warning', 'info']
+            return (
+              <div className="space-y-2">
+                {order.map(sev =>
+                  groups[sev].length > 0 ? (
+                    <div key={sev} className={`${styles[sev].box} border rounded-lg p-3 text-xs`}>
+                      <strong className={styles[sev].label}>
+                        {t(`scrapeDetail.live.severityLabel.${sev}`)}:
+                      </strong>{' '}
+                      {groups[sev].join(' · ')}
+                    </div>
+                  ) : null
+                )}
+              </div>
+            )
+          })()}
 
           {/* Live email stream */}
           {emailStream.length > 0 && (

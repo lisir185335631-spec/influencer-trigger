@@ -20,6 +20,14 @@ class SystemSettings(Base):
     default_daily_quota: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     security_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
 
+    # Per-platform Apify configuration. Each platform has its own token + actor
+    # so operators can isolate billing / rotate credentials per platform without
+    # cross-impact. Empty string means "fall back to env var in config.py".
+    apify_tiktok_token: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default="")
+    apify_tiktok_actor: Mapped[str] = mapped_column(String(255), default="", nullable=False, server_default="")
+    apify_ig_token: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default="")
+    apify_ig_actor: Mapped[str] = mapped_column(String(255), default="", nullable=False, server_default="")
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, server_default=func.now(), nullable=False
     )

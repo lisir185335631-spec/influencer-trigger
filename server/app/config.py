@@ -79,6 +79,13 @@ class Settings(BaseSettings):
     # login.
     apify_api_token: str = ""
     apify_ig_actor: str = "apify~instagram-profile-scraper"
+    # TikTok scraper actor. Default is clockworks/tiktok-scraper (cheap list
+    # actor at $0.0037/result; we extract emails locally from bio text).
+    # Switched from jurassic_jove/tiktok-email-scraper on 2026-04-26 — old
+    # actor cost ~$0.03/result and its scrapeEmails=true was leaking
+    # third-party emails (johnappleseed@, support@clickbank, etc.) from
+    # external bio link landing pages. Same APIFY_API_TOKEN works for both.
+    apify_tiktok_actor: str = "clockworks~tiktok-scraper"
 
     class Config:
         env_file = ".env"
