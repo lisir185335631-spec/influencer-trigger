@@ -13,7 +13,7 @@ import {
   Settings,
   ChevronLeft,
   ChevronRight,
-  Zap,
+  Send,
   FileUp,
   Gift,
 } from 'lucide-react'
@@ -82,7 +82,7 @@ export default function Sidebar() {
       {/* Logo */}
       <div className="flex items-center gap-2 px-3 py-4 border-b border-gray-100">
           <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-gray-900">
-            <Zap size={14} className="text-white" />
+            <Send size={14} className="text-white" />
           </div>
           {!collapsed && (
             <span className="text-sm font-semibold text-gray-900 truncate">
