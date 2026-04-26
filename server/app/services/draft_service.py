@@ -12,11 +12,18 @@ The router itself (api/drafts.py) stays thin — schema validation, auth,
 and delegation only.
 """
 import logging
+import re
 from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select, update, func, delete
 from sqlalchemy.ext.asyncio import AsyncSession
+
+# Strip simple HTML tags for the list preview. Module-level so it doesn't
+# re-parse on every list_drafts_for_campaign call (was being constructed
+# inside the loop pre-cleanup).
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+_WHITESPACE_RE = re.compile(r"\s+")
 
 from app.agents.personalizer import (
     ANGLE_DEFINITIONS,
@@ -84,102 +91,120 @@ async def generate_drafts_for_campaign(
     Runs sequentially (not concurrently) — LLM rate limits and local
     backend stability matter more than wall time, and batch sizes are
     typically <200. Failures on individual drafts don't break the batch.
+
+    Session lifecycle: each iteration uses a short-lived session that
+    commits + closes before the next iteration starts. This avoids
+    holding a single connection open for the full ~25-minute batch
+    runtime, which would block other DB-touching code paths waiting
+    for a connection from the pool.
     """
     angle = angle if angle in ANGLE_DEFINITIONS else DEFAULT_ANGLE
     model = "gpt-4o" if use_premium_model else "gpt-4o-mini"
 
+    # Phase 1: collect work list. Short session — closes before LLM calls.
     async with AsyncSessionLocal() as db:
-        # Collect pending drafts + supporting Influencer + Template
         result = await db.execute(
-            select(EmailDraft)
+            select(EmailDraft.id, EmailDraft.influencer_id, EmailDraft.template_id)
             .where(
                 EmailDraft.campaign_id == campaign_id,
                 EmailDraft.status == EmailDraftStatus.pending,
             )
             .order_by(EmailDraft.id)
         )
-        drafts = list(result.scalars().all())
-        if not drafts:
-            logger.info("Campaign %d: no pending drafts to generate", campaign_id)
+        rows = result.all()
+    if not rows:
+        async with AsyncSessionLocal() as db:
             await _finalize_campaign_drafts(db, campaign_id)
-            return
+        logger.info("Campaign %d: no pending drafts to generate", campaign_id)
+        return
 
-        template_id = drafts[0].template_id
-        template = await db.get(Template, template_id) if template_id else None
+    template_id = rows[0].template_id
+    total = len(rows)
+    completed = 0
+    succeeded = 0
+    failed = 0
 
-        total = len(drafts)
-        completed = 0
-        succeeded = 0
-        failed = 0
+    # Phase 2: per-draft generation. Each iteration owns a fresh session
+    # so the DB connection pool isn't pinned for the full batch.
+    for row in rows:
+        draft_id = row.id
+        influencer_id = row.influencer_id
 
-        for draft in drafts:
-            influencer = await db.get(Influencer, draft.influencer_id)
+        async with AsyncSessionLocal() as db:
+            influencer = await db.get(Influencer, influencer_id)
+            template = (
+                await db.get(Template, template_id) if template_id else None
+            )
+            draft = await db.get(EmailDraft, draft_id)
+            if not draft:
+                # Concurrent delete; skip gracefully.
+                completed += 1
+                continue
             if not influencer:
                 draft.status = EmailDraftStatus.failed
                 draft.error_message = "Influencer no longer exists"
+                await db.commit()
                 failed += 1
                 completed += 1
-                await db.commit()
                 continue
-
             draft.status = EmailDraftStatus.generating
             await db.commit()
 
-            subject, body_html, model_used, error_msg = await generate_or_fallback(
-                influencer=influencer,
-                angle_key=angle,
-                base_template=template,
-                extra_notes=extra_notes,
-                model=model,
-            )
+        # LLM call happens OUTSIDE any session — long network IO must
+        # never hold a DB connection.
+        subject, body_html, model_used, error_msg = await generate_or_fallback(
+            influencer=influencer,
+            angle_key=angle,
+            base_template=template,
+            extra_notes=extra_notes,
+            model=model,
+        )
 
+        # Phase 3: persist outcome in another short session.
+        async with AsyncSessionLocal() as db:
+            draft = await db.get(EmailDraft, draft_id)
+            if not draft:
+                completed += 1
+                continue
             draft.subject = subject
             draft.body_html = body_html
             draft.angle_used = angle
-            draft.generation_model = model_used  # None if static fallback
+            draft.generation_model = model_used
             draft.generation_prompt_hash = compute_prompt_hash(
-                influencer.id, angle, template_id, model, extra_notes,
+                influencer_id, angle, template_id, model, extra_notes,
             )
             draft.generated_at = datetime.now(timezone.utc)
             draft.error_message = error_msg
-            # Static fallback (LLM unavailable) is still "ready" — content
-            # was produced and is reviewable. Only true exceptions go to failed.
             draft.status = EmailDraftStatus.ready
             await db.commit()
 
-            if model_used:
-                succeeded += 1
-            else:
-                # Counted as success for UX (something was produced) but
-                # tagged with error_msg so the UI can surface a "fallback used"
-                # badge.
-                succeeded += 1
-
-            completed += 1
-            # NOTE: WebSocket broadcasts are global — every connected client
-            # receives this event regardless of campaign ownership. Until
-            # connection-level user routing is added, the payload omits
-            # influencer email / name / any PII to avoid cross-tenant leak.
-            # Owner reconciles details via authenticated REST list endpoint.
-            await manager.broadcast("draft:progress", {
-                "campaign_id": campaign_id,
-                "completed": completed,
-                "total": total,
-                "succeeded": succeeded,
-                "failed": failed,
-            })
-
-        await _finalize_campaign_drafts(db, campaign_id)
-        await manager.broadcast("draft:completed", {
+        succeeded += 1
+        completed += 1
+        # NOTE: WebSocket broadcasts are global — every connected client
+        # receives this event regardless of campaign ownership. Until
+        # connection-level user routing is added, the payload omits
+        # influencer email / name / any PII to avoid cross-tenant leak.
+        await manager.broadcast("draft:progress", {
             "campaign_id": campaign_id,
+            "completed": completed,
             "total": total,
             "succeeded": succeeded,
             "failed": failed,
         })
-        logger.info(
-            "Campaign %d draft generation done: %d/%d ready (%d failed)",
-            campaign_id, succeeded, total, failed,
-        )
+
+    # Phase 4: finalise.
+    async with AsyncSessionLocal() as db:
+        await _finalize_campaign_drafts(db, campaign_id)
+    await manager.broadcast("draft:completed", {
+        "campaign_id": campaign_id,
+        "total": total,
+        "succeeded": succeeded,
+        "failed": failed,
+    })
+    logger.info(
+        "Campaign %d draft generation done: %d/%d ready (%d failed)",
+        campaign_id, succeeded, total, failed,
+    )
 
 
 async def _finalize_campaign_drafts(db: AsyncSession, campaign_id: int) -> None:
@@ -239,9 +264,8 @@ async def list_drafts_for_campaign(
         body = (r["body_html"] or "").strip()
         # Strip simple HTML tags for the list preview — keeps the API
         # output frontend-agnostic. Frontend renders the full HTML in modal.
-        import re as _re
-        plain = _re.sub(r"<[^>]+>", " ", body)
-        plain = _re.sub(r"\s+", " ", plain).strip()
+        plain = _HTML_TAG_RE.sub(" ", body)
+        plain = _WHITESPACE_RE.sub(" ", plain).strip()
         items.append({
             "id": r["id"],
             "campaign_id": r["campaign_id"],

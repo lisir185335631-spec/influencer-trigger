@@ -173,6 +173,17 @@ async def run_sender_agent(
             influencer = await db.get(Influencer, inf_id)
             if not influencer:
                 failed_count += 1
+                # Sync the bump immediately so the campaign-detail UI
+                # doesn't underreport during a long batch — the campaign
+                # row was previously only re-written further down on the
+                # success path, leaving early failures invisible until
+                # the loop finished.
+                await db.execute(
+                    update(Campaign)
+                    .where(Campaign.id == campaign_id)
+                    .values(failed_count=failed_count)
+                )
+                await db.commit()
                 continue
 
             mailbox = rotator.next()

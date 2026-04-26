@@ -49,17 +49,22 @@ function StatusBadge({ status }: { status: DraftStatus }) {
 // ── Edit modal ────────────────────────────────────────────────────────────────
 
 interface EditModalProps {
-  draftId: number
+  /** The list-row item being edited. We accept the whole row (rather than
+   * just an id) because the parent page already has the influencer name +
+   * email loaded from /campaigns/:id/drafts; passing it down avoids a
+   * second round trip to fetch metadata that the page already has. */
+  item: DraftListItem
   onClose: () => void
   onSaved: () => void
   angles: AngleOption[]
 }
 
-function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
+function EditModal({ item, onClose, onSaved, angles }: EditModalProps) {
+  const { t } = useTranslation()
+  const draftId = item.id
   const [subject, setSubject] = useState('')
   const [bodyHtml, setBodyHtml] = useState('')
   const [angleUsed, setAngleUsed] = useState<string | null>(null)
-  const [influencerEmail, setInfluencerEmail] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [regenerating, setRegenerating] = useState(false)
@@ -67,6 +72,10 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
   const [regenAngle, setRegenAngle] = useState('')
   const [regenNotes, setRegenNotes] = useState('')
   const [error, setError] = useState('')
+
+  // Display label sourced from the list-row props so the modal opens
+  // showing the right person immediately, before the GET completes.
+  const recipientLabel = `${item.influencer_name || '—'} <${item.influencer_email}>`
 
   useEffect(() => {
     setLoading(true)
@@ -76,10 +85,8 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
         setBodyHtml(d.body_html)
         setAngleUsed(d.angle_used)
         setRegenAngle(d.angle_used || 'friendly')
-        // grab influencer email via list endpoint... or just show ID for now
-        setInfluencerEmail(`influencer #${d.influencer_id}`)
       })
-      .catch(() => setError('Failed to load draft'))
+      .catch(() => setError(t('drafts.edit.loadFailed')))
       .finally(() => setLoading(false))
   }, [draftId])
 
@@ -90,7 +97,7 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
       onSaved()
       onClose()
     } catch {
-      setError('Save failed')
+      setError(t('drafts.edit.saveFailed'))
     } finally {
       setSaving(false)
     }
@@ -109,7 +116,7 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
       setShowRegen(false)
       onSaved()
     } catch {
-      setError('Regenerate failed')
+      setError(t('drafts.edit.regenFailed'))
     } finally {
       setRegenerating(false)
     }
@@ -125,21 +132,21 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
         onClick={e => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h3 className="text-base font-semibold text-gray-900">编辑草稿</h3>
+          <h3 className="text-base font-semibold text-gray-900">{t('drafts.edit.title')}</h3>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-700">×</button>
         </div>
 
         {loading ? (
-          <div className="p-12 text-center text-gray-400 text-sm">加载中…</div>
+          <div className="p-12 text-center text-gray-400 text-sm">{t('drafts.edit.loading')}</div>
         ) : (
           <div className="p-6 space-y-4">
             <div className="text-xs text-gray-400">
-              收件人 · {influencerEmail} · 当前角度: <span className="font-mono">{angleUsed || '—'}</span>
+              {t('drafts.edit.recipient')} · {recipientLabel} · {t('drafts.edit.currentAngle')}: <span className="font-mono">{angleUsed || '—'}</span>
             </div>
 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">
-                主题
+                {t('drafts.edit.subject')}
               </label>
               <input
                 value={subject}
@@ -150,7 +157,7 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
 
             <div>
               <label className="block text-xs font-medium text-gray-500 mb-1 uppercase tracking-wide">
-                正文 (HTML)
+                {t('drafts.edit.bodyHtml')}
               </label>
               <textarea
                 value={bodyHtml}
@@ -159,7 +166,7 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
                 className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-blue-500"
               />
               <div className="mt-2 border border-gray-100 rounded-lg p-3 bg-gray-50">
-                <div className="text-xs font-medium text-gray-500 mb-1">渲染预览</div>
+                <div className="text-xs font-medium text-gray-500 mb-1">{t('drafts.edit.preview')}</div>
                 <div
                   className="text-sm text-gray-800 prose prose-sm max-w-none"
                   dangerouslySetInnerHTML={{
@@ -171,7 +178,7 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
 
             {showRegen && (
               <div className="border border-amber-200 bg-amber-50 rounded-lg p-3 space-y-2">
-                <div className="text-xs font-medium text-amber-800">重新生成 (LLM)</div>
+                <div className="text-xs font-medium text-amber-800">{t('drafts.edit.regenSection')}</div>
                 <div className="flex items-center gap-2">
                   <select
                     value={regenAngle}
@@ -183,14 +190,14 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
                     ))}
                   </select>
                   <input
-                    placeholder="补充说明（可选）"
+                    placeholder={t('drafts.edit.regenNotesPlaceholder')}
                     value={regenNotes}
                     onChange={e => setRegenNotes(e.target.value)}
                     className="flex-1 text-sm border border-gray-200 rounded px-2 py-1"
                   />
                 </div>
                 <div className="text-xs text-amber-700">
-                  会覆盖当前内容，且清除"用户已编辑"标记
+                  {t('drafts.edit.regenWarn')}
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -198,13 +205,13 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
                     disabled={regenerating}
                     className="text-sm bg-amber-600 text-white px-3 py-1 rounded hover:bg-amber-700 disabled:opacity-40"
                   >
-                    {regenerating ? '生成中…' : '执行'}
+                    {regenerating ? t('drafts.edit.regenerating') : t('drafts.edit.regenExecute')}
                   </button>
                   <button
                     onClick={() => setShowRegen(false)}
                     className="text-sm text-gray-500 px-3 py-1 hover:text-gray-700"
                   >
-                    取消
+                    {t('drafts.edit.regenCancel')}
                   </button>
                 </div>
               </div>
@@ -220,21 +227,21 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
             disabled={loading || regenerating}
             className="text-sm text-amber-700 hover:text-amber-900 disabled:opacity-40"
           >
-            {showRegen ? '收起重生' : '重新生成 (LLM)…'}
+            {showRegen ? t('drafts.edit.regenToggleHide') : t('drafts.edit.regenToggleShow')}
           </button>
           <div className="flex gap-2">
             <button
               onClick={onClose}
               className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1.5"
             >
-              取消
+              {t('drafts.edit.cancel')}
             </button>
             <button
               onClick={handleSave}
               disabled={saving || loading}
               className="text-sm bg-gray-900 text-white px-4 py-1.5 rounded-lg hover:bg-gray-800 disabled:opacity-40"
             >
-              {saving ? '保存中…' : '保存'}
+              {saving ? t('drafts.edit.saving') : t('drafts.edit.save')}
             </button>
           </div>
         </div>
@@ -255,21 +262,33 @@ export default function CampaignDraftsPage() {
   const [counts, setCounts] = useState<Record<string, number>>({})
   const [angles, setAngles] = useState<AngleOption[]>([])
   const [loading, setLoading] = useState(true)
-  const [editingId, setEditingId] = useState<number | null>(null)
+  const [editingItem, setEditingItem] = useState<DraftListItem | null>(null)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
   const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null)
 
+  // Route param can be NaN (`/campaigns/abc/drafts`) or 0; normalise to a
+  // boolean validity flag so the page can render a clean error rather than
+  // silently firing API calls with a bogus id.
+  const cidValid = Number.isFinite(cid) && cid > 0
+
   const load = useCallback(async () => {
-    if (!cid) return
+    if (!cidValid) return
     try {
       const resp = await draftsApi.listForCampaign(cid)
       setItems(resp.items)
       setCounts(resp.counts_by_status)
-    } catch {
-      setError('加载草稿列表失败')
+    } catch (e: unknown) {
+      // Distinguish 404 (campaign doesn't exist or doesn't belong to user)
+      // from generic load failure so the UX can suggest navigating back.
+      const status = (e as { response?: { status?: number } })?.response?.status
+      if (status === 404 || status === 403) {
+        setError(t('drafts.review.noAccess'))
+      } else {
+        setError(t('drafts.review.loadFailed'))
+      }
     }
-  }, [cid])
+  }, [cid, cidValid, t])
 
   useEffect(() => {
     setLoading(true)
@@ -277,7 +296,7 @@ export default function CampaignDraftsPage() {
       draftsApi.listAngles().then(setAngles).catch(() => {}),
       load(),
     ]).finally(() => setLoading(false))
-  }, [cid, load])
+  }, [cid, cidValid, load])
 
   // WebSocket: live progress while drafts are still being generated
   const handleWs = useCallback((msg: WsMessage) => {
@@ -317,37 +336,58 @@ export default function CampaignDraftsPage() {
       await draftsApi.regenerate(id, {})
       await load()
     } catch {
-      setError('重生失败')
+      setError(t('drafts.review.regenerateFailed'))
     }
   }
 
   const handleDelete = async (id: number) => {
-    if (!confirm('确定删除（取消）这个草稿吗？')) return
+    if (!confirm(t('drafts.review.deleteConfirm'))) return
     try {
       await draftsApi.remove(id)
       await load()
     } catch {
-      setError('删除失败')
+      setError(t('drafts.review.deleteFailed'))
     }
   }
 
   const handleSendAll = async () => {
     if (!cid) return
-    if (!confirm(`确定发送 ${totals.ready} 个草稿吗？发送后不可撤回`)) return
+    if (!confirm(t('drafts.review.sendConfirm', { count: totals.ready }))) return
     setSending(true); setError('')
     try {
       const resp = await draftsApi.send(cid)
-      alert(`已开始发送 ${resp.sendable_drafts} / ${resp.total_drafts}`)
+      alert(t('drafts.review.sendStarted', {
+        sent: resp.sendable_drafts, total: resp.total_drafts,
+      }))
       await load()
     } catch {
-      setError('发送失败')
+      setError(t('drafts.review.sendFailed'))
     } finally {
       setSending(false)
     }
   }
 
+  if (!cidValid) {
+    return (
+      <div className="p-8 max-w-xl">
+        <div className="border border-red-100 bg-red-50 rounded-lg p-4">
+          <div className="text-sm font-medium text-red-700 mb-1">{t('drafts.review.invalidIdTitle')}</div>
+          <div className="text-xs text-red-600 mb-3">
+            {t('drafts.review.invalidIdHint')}
+          </div>
+          <button
+            onClick={() => navigate('/emails')}
+            className="text-xs bg-red-600 text-white px-3 py-1.5 rounded hover:bg-red-700"
+          >
+            {t('drafts.review.backToEmails')}
+          </button>
+        </div>
+      </div>
+    )
+  }
+
   if (loading) {
-    return <div className="p-8 text-sm text-gray-400">加载中…</div>
+    return <div className="p-8 text-sm text-gray-400">{t('drafts.review.loading')}</div>
   }
 
   return (
@@ -358,13 +398,13 @@ export default function CampaignDraftsPage() {
             onClick={() => navigate('/emails')}
             className="text-sm text-gray-400 hover:text-gray-700 mb-2"
           >
-            ← 返回邮件
+            {t('drafts.review.back')}
           </button>
           <h1 className="text-xl font-semibold text-gray-900">
-            草稿审核 · Campaign #{cid}
+            {t('drafts.review.title', { id: cid })}
           </h1>
           <p className="text-sm text-gray-500 mt-1">
-            review per-recipient personalized drafts before sending
+            {t('drafts.review.subtitle')}
           </p>
         </div>
         <button
@@ -372,18 +412,18 @@ export default function CampaignDraftsPage() {
           disabled={sending || totals.ready === 0}
           className="bg-gray-900 text-white text-sm font-medium px-4 py-2 rounded-lg hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed"
         >
-          {sending ? '发送中…' : `发送 ${totals.ready} 封`}
+          {sending ? t('drafts.review.sending') : t('drafts.review.sendButton', { count: totals.ready })}
         </button>
       </div>
 
       {/* Summary strip */}
       <div className="grid grid-cols-5 gap-3 mb-6">
         {[
-          { label: '总数', value: totals.total, color: 'text-gray-700' },
-          { label: '可发送 (ready/edited)', value: totals.ready, color: 'text-blue-600' },
-          { label: '生成中', value: totals.inflight, color: 'text-yellow-600' },
-          { label: '失败', value: totals.failed, color: 'text-red-600' },
-          { label: '已发', value: totals.sent, color: 'text-green-600' },
+          { label: t('drafts.review.summary.total'), value: totals.total, color: 'text-gray-700' },
+          { label: t('drafts.review.summary.ready'), value: totals.ready, color: 'text-blue-600' },
+          { label: t('drafts.review.summary.inflight'), value: totals.inflight, color: 'text-yellow-600' },
+          { label: t('drafts.review.summary.failed'), value: totals.failed, color: 'text-red-600' },
+          { label: t('drafts.review.summary.sent'), value: totals.sent, color: 'text-green-600' },
         ].map((s, i) => (
           <div key={i} className="border border-gray-100 rounded-lg p-3">
             <div className={`text-xl font-semibold ${s.color}`}>{s.value}</div>
@@ -396,7 +436,7 @@ export default function CampaignDraftsPage() {
       {progress && progress.completed < progress.total && (
         <div className="mb-4 p-3 border border-blue-100 bg-blue-50 rounded-lg">
           <div className="flex items-center justify-between text-sm text-blue-700">
-            <span>生成中 {progress.completed}/{progress.total}</span>
+            <span>{t('drafts.review.live', { completed: progress.completed, total: progress.total })}</span>
           </div>
           <div className="mt-2 h-1.5 bg-blue-100 rounded-full overflow-hidden">
             <div
@@ -418,12 +458,12 @@ export default function CampaignDraftsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">收件人</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">主题</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">正文摘要</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">角度</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">状态</th>
-              <th className="text-right px-4 py-2 font-medium text-gray-500">操作</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.recipient')}</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.subject')}</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.preview')}</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.angle')}</th>
+              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.status')}</th>
+              <th className="text-right px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
@@ -449,9 +489,17 @@ export default function CampaignDraftsPage() {
                 <td className="px-4 py-3">
                   <StatusBadge status={item.status} />
                   {item.edited_by_user && (
-                    <span className="ml-1 text-xs text-emerald-600" title="已编辑">✎</span>
+                    <span className="ml-1 text-xs text-emerald-600" title={t('drafts.review.edited')}>✎</span>
                   )}
-                  {item.error_message && (
+                  {item.error_message?.includes('static fallback') && (
+                    <span
+                      className="ml-1 text-xs text-amber-600"
+                      title={t('drafts.review.fallbackHint')}
+                    >
+                      ⚙
+                    </span>
+                  )}
+                  {item.error_message && !item.error_message.includes('static fallback') && (
                     <div className="text-xs text-red-500 mt-0.5" title={item.error_message}>
                       ⚠ {item.error_message.slice(0, 40)}…
                     </div>
@@ -459,25 +507,25 @@ export default function CampaignDraftsPage() {
                 </td>
                 <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
                   <button
-                    onClick={() => setEditingId(item.id)}
+                    onClick={() => setEditingItem(item)}
                     className="text-xs text-blue-600 hover:text-blue-800"
                     disabled={item.status === 'sent' || item.status === 'sending'}
                   >
-                    查看 / 编辑
+                    {t('drafts.review.table.edit')}
                   </button>
                   <button
                     onClick={() => handleRegenerate(item.id)}
                     className="text-xs text-amber-600 hover:text-amber-800"
                     disabled={['sent', 'sending', 'generating'].includes(item.status)}
                   >
-                    重生
+                    {t('drafts.review.table.regenerate')}
                   </button>
                   <button
                     onClick={() => handleDelete(item.id)}
                     className="text-xs text-red-500 hover:text-red-700"
                     disabled={['sent', 'sending'].includes(item.status)}
                   >
-                    删除
+                    {t('drafts.review.table.delete')}
                   </button>
                 </td>
               </tr>
@@ -485,7 +533,7 @@ export default function CampaignDraftsPage() {
             {items.length === 0 && (
               <tr>
                 <td colSpan={6} className="px-4 py-12 text-center text-sm text-gray-400">
-                  无草稿
+                  {t('drafts.review.empty')}
                 </td>
               </tr>
             )}
@@ -493,10 +541,10 @@ export default function CampaignDraftsPage() {
         </table>
       </div>
 
-      {editingId !== null && (
+      {editingItem !== null && (
         <EditModal
-          draftId={editingId}
-          onClose={() => setEditingId(null)}
+          item={editingItem}
+          onClose={() => setEditingItem(null)}
           onSaved={load}
           angles={angles}
         />

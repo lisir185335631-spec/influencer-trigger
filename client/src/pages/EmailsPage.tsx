@@ -392,7 +392,7 @@ function SendPanel() {
       })
       navigate(`/campaigns/${resp.campaign_id}/drafts`)
     } catch {
-      setError('草稿创建失败')
+      setError(t('drafts.creationFailed'))
     } finally {
       setCreatingDraft(false)
     }
@@ -497,17 +497,17 @@ function SendPanel() {
             <span className="text-emerald-600 text-base">✨</span>
             <div className="flex-1">
               <div className="text-sm font-medium text-emerald-900">
-                AI 个性化草稿模式（推荐）
+                {t('drafts.panelTitle')}
               </div>
               <div className="text-xs text-emerald-700 mt-0.5">
-                为每个网红基于其平台/粉丝/简介/抓取理由生成专属话术，发送前可逐条审阅修改
+                {t('drafts.panelHint')}
               </div>
             </div>
           </div>
 
           <div className="mb-3">
             <label className="block text-xs font-medium text-emerald-800 mb-1 uppercase tracking-wide">
-              个性化角度
+              {t('drafts.angleLabel')}
             </label>
             <select
               value={selectedAngle}
@@ -515,7 +515,7 @@ function SendPanel() {
               disabled={angles.length === 0}
               className="w-full border border-emerald-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             >
-              {angles.length === 0 && <option>加载中…</option>}
+              {angles.length === 0 && <option>{t('drafts.review.loading')}</option>}
               {angles.map(a => (
                 <option key={a.key} value={a.key}>
                   {a.key} — {a.description.slice(0, 60)}
@@ -526,12 +526,13 @@ function SendPanel() {
 
           <div className="mb-3">
             <label className="block text-xs font-medium text-emerald-800 mb-1 uppercase tracking-wide">
-              品牌补充信息 <span className="text-emerald-500 font-normal normal-case">(可选,会传给 LLM)</span>
+              {t('drafts.extraNotesLabel')}{' '}
+              <span className="text-emerald-500 font-normal normal-case">{t('drafts.extraNotesOptional')}</span>
             </label>
             <input
               value={extraNotes}
               onChange={e => setExtraNotes(e.target.value)}
-              placeholder="例：我们是一家专注创作者经济的 SaaS 公司，预算 $500-$2000/合作"
+              placeholder={t('drafts.extraNotesPlaceholder')}
               className="w-full border border-emerald-200 rounded-lg px-3 py-2 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
             />
           </div>
@@ -542,18 +543,18 @@ function SendPanel() {
             className="w-full bg-emerald-600 text-white text-sm font-medium py-2.5 rounded-lg hover:bg-emerald-700 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
           >
             {creatingDraft
-              ? '创建草稿中…'
-              : `创建 ${influencerIds.length} 个个性化草稿（去审核页）`}
+              ? t('drafts.creating')
+              : t('drafts.createButton', { count: influencerIds.length })}
           </button>
           <p className="text-xs text-emerald-600 mt-2 text-center">
-            ≈ ${(influencerIds.length * 0.0001).toFixed(4)} LLM 成本 (gpt-4o-mini)
+            {t('drafts.costEstimate', { cost: (influencerIds.length * 0.0001).toFixed(4) })}
           </p>
         </div>
 
         {/* ── Plain Jinja2 batch send (legacy, still available) ──────────── */}
         <details className="mb-4">
           <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">
-            或者直接批量发送（仅 Jinja2 占位符替换，无 LLM 个性化）
+            {t('drafts.directSendDetails')}
           </summary>
           <div className="mt-3">
             <button
