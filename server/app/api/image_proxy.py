@@ -52,6 +52,13 @@ _REFERER_BY_SUFFIX: tuple[tuple[str, str], ...] = (
 
 _IMAGE_CT_RE = re.compile(r"^image/", re.IGNORECASE)
 
+# Avatars are typically 50-300 KB; 5 MB is a generous cap that catches
+# attacker / mis-encoded responses without rejecting any legit avatar we've
+# observed. The proxy used to stream arbitrary sizes, which left the browser
+# vulnerable to an upstream CDN compromise (or an attacker forging a CDN
+# response in any path that loops to `/api/image-proxy`).
+_MAX_IMAGE_BYTES = 5 * 1024 * 1024  # 5 MB
+
 
 def _is_host_allowed(host: str) -> bool:
     host = (host or "").lower()
@@ -103,21 +110,56 @@ async def image_proxy(url: str = Query(..., max_length=2048)) -> Response:
         await client.aclose()
         raise HTTPException(status_code=502, detail="upstream is not an image")
 
+    # Pre-flight size check via declared Content-Length. Cheap reject before
+    # we start streaming — saves both bandwidth and avoids handing partial
+    # bytes to the browser.
+    declared_len = resp.headers.get("content-length")
+    if declared_len is not None:
+        try:
+            if int(declared_len) > _MAX_IMAGE_BYTES:
+                await resp.aclose()
+                await client.aclose()
+                raise HTTPException(status_code=413, detail="upstream image too large")
+        except ValueError:
+            # malformed Content-Length — fall through to stream-time guard
+            pass
+
     async def _stream():
+        total = 0
         try:
             async for chunk in resp.aiter_bytes(8192):
+                total += len(chunk)
+                if total > _MAX_IMAGE_BYTES:
+                    # Streaming-time guard for upstreams that lie about (or
+                    # omit) Content-Length. We can't change the HTTP status
+                    # mid-response — the client gets a truncated image, which
+                    # is acceptable since this only fires on adversarial /
+                    # broken CDN responses (legit avatars are <300KB).
+                    break
                 yield chunk
         finally:
             await resp.aclose()
             await client.aclose()
 
+    response_headers = {
+        # Avatar URLs on IG CDN rotate every few weeks; 24h cache is a
+        # good tradeoff between hit rate and freshness.
+        "Cache-Control": "public, max-age=86400",
+        "X-Content-Type-Options": "nosniff",
+    }
+    # Forward the upstream Content-Length when known and within cap, so the
+    # browser can show a progress bar for slow loads. (Skipped if absent or
+    # malformed; StreamingResponse handles chunked-transfer in that case.)
+    if declared_len is not None:
+        try:
+            cl_int = int(declared_len)
+            if 0 <= cl_int <= _MAX_IMAGE_BYTES:
+                response_headers["Content-Length"] = str(cl_int)
+        except ValueError:
+            pass
+
     return StreamingResponse(
         _stream(),
         media_type=content_type,
-        headers={
-            # Avatar URLs on IG CDN rotate every few weeks; 24h cache is a
-            # good tradeoff between hit rate and freshness.
-            "Cache-Control": "public, max-age=86400",
-            "X-Content-Type-Options": "nosniff",
-        },
+        headers=response_headers,
     )
