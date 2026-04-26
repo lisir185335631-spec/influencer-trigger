@@ -12,14 +12,15 @@
 
 | 资源 | `created_by` 是否在 | 读 | 改/删 | 备注 |
 |---|---|---|---|---|
-| Influencer | ❌ 没有 | 全员 | 全员 | 池子共享，谁抓的同事都能接着用 |
-| Template | ✅ 有（仅审计）| 全员 | 全员 | 公司模板库 |
-| Campaign | ✅ 有（**含访问控制**）| 创建者 + admin | 创建者 + admin | 因 LLM 生成内容个性化到收件人，跨人查看可能引起困惑 |
-| EmailDraft | 通过 Campaign 间接拥有 | 同 Campaign | 同 Campaign | 跟 Campaign 一致 |
-| ScrapeTask | ✅ 有（仅审计） | 全员 | 全员 | 历史抓取记录可见 |
-| Note / Collaboration | ✅ 有（仅审计）| 全员 | 全员 | CRM 协作内容 |
-| Mailbox（SMTP 池） | n/a（无 created_by）| 全员 | 全员 | 公司发件账号池 |
-| Holiday / FollowUpSettings | n/a | 全员 | manager+ | 系统级配置 |
+| Influencer | ❌ 没有 | 全员 | 全员 PATCH / **manager+** 批量+硬删+导出 | 单条 PATCH 共享；批量操作 / 硬删除 / 导出 = manager+（R-1, R-3, W-1）|
+| Template | ✅ 有（仅审计）| 全员 | 全员 改 / **manager+** 删 | 删模板可能影响他人 in-flight campaign（W-3）|
+| Campaign | ✅ 有（**含访问控制**）| 创建者 + admin | 创建者 + admin | 创建者 + admin | LLM 生成内容个性化到收件人，跨人查看 confusing |
+| EmailDraft | 通过 Campaign 间接拥有 | 同 Campaign | 同 Campaign | 同 Campaign | 跟 Campaign 一致 |
+| ScrapeTask | ✅ 有（仅审计） | 全员 | 全员 | 全员 | 历史抓取记录可见 |
+| Note / Collaboration | ✅ 有（仅审计）| 全员 | 全员 | 全员 | CRM 协作内容 |
+| Tag | n/a | 全员 | 全员 改 / **manager+** 删 | 删 tag 影响所有用过它的网红（W-2）|
+| Mailbox（SMTP 池）| n/a | 全员 | 全员 改 / **manager+** 删 | SMTP 凭据 admin 配置，operator 不该删（W-4）|
+| Holiday / FollowUpSettings | n/a | 全员 | manager+ | manager+ | 系统级配置 |
 
 **只有 Campaign / Draft 做了创建者+admin 的访问控制**——这是 phase 1 草稿功能新加的，原因是个性化内容跟收件人一对一绑定，跨人查看 confusing。其他资源遵循组织共享原则。
 

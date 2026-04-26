@@ -79,7 +79,10 @@ async def list_influencers_endpoint(
 async def batch_update_influencers_endpoint(
     body: BatchUpdateRequest,
     db: AsyncSession = Depends(get_db),
-    _: TokenData = Depends(get_current_user),
+    # Multi-row mutation (archive N + tag N at once) has the same blast
+    # radius as bulk delete — limit to manager+ for consistency with R-1
+    # and R-3, per docs/SECURITY-MODEL.md W-1.
+    _: TokenData = Depends(require_manager_or_above),
 ) -> BatchUpdateResponse:
     if body.action not in ("archive", "assign_tags"):
         raise HTTPException(status_code=400, detail="action must be 'archive' or 'assign_tags'")
@@ -219,7 +222,10 @@ async def create_tag_endpoint(
 async def delete_tag_endpoint(
     tag_id: int,
     db: AsyncSession = Depends(get_db),
-    _: TokenData = Depends(get_current_user),
+    # Tag deletion cascades the tag off every influencer that uses it —
+    # one wrong click affects an unbounded set of rows across the team's
+    # work. Limit to manager+ per docs/SECURITY-MODEL.md W-2.
+    _: TokenData = Depends(require_manager_or_above),
 ) -> None:
     deleted = await delete_tag(db, tag_id)
     if not deleted:

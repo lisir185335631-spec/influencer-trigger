@@ -10,6 +10,8 @@ import {
   type InfluencerUpdate,
 } from '../api/influencers'
 import { useWebSocket, type WsMessage } from '../hooks/useWebSocket'
+import { WS_URL } from '../api/websocket'
+import { useAuthContext } from '../stores/AuthContext'
 import AvatarBadge from '../components/AvatarBadge'
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -77,8 +79,7 @@ export default function CRMPage() {
   }, [page, totalPages])
 
   // ── WebSocket: new influencers from scraper land here in real time ─────────
-  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
-  useWebSocket(wsUrl, useCallback((msg: WsMessage) => {
+  useWebSocket(WS_URL, useCallback((msg: WsMessage) => {
     if (msg.event !== 'influencer:created') return
     const newItem = msg.data as InfluencerListItem
     if (!newItem || typeof newItem.id !== 'number') return
@@ -100,6 +101,12 @@ export default function CRMPage() {
   }, [page, pageSize]))
 
   // ── Row actions: edit + delete ──────────────────────────────────────────────
+  // Hide the delete button for operator-role accounts — the backend
+  // (R-3) limits DELETE /influencers/{id} to manager+ now, and showing
+  // a button that always 403s is poor UX. Hard-archive remains
+  // available to operators via the inline status edit (PATCH).
+  const { role } = useAuthContext()
+  const canDelete = role === 'admin' || role === 'manager'
   const [editing, setEditing] = useState<InfluencerListItem | null>(null)
   const [deleteTarget, setDeleteTarget] = useState<InfluencerListItem | null>(null)
   const [deletingId, setDeletingId] = useState<number | null>(null)
@@ -240,15 +247,17 @@ export default function CRMPage() {
                       >
                         <Pencil size={16} />
                       </button>
-                      <button
-                        onClick={() => setDeleteTarget(inf)}
-                        disabled={deletingId === inf.id}
-                        className="p-1.5 rounded text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-wait"
-                        title={t('crm.actions.delete')}
-                        aria-label={t('crm.actions.delete')}
-                      >
-                        {deletingId === inf.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
-                      </button>
+                      {canDelete && (
+                        <button
+                          onClick={() => setDeleteTarget(inf)}
+                          disabled={deletingId === inf.id}
+                          className="p-1.5 rounded text-gray-500 hover:bg-red-50 hover:text-red-600 transition-colors disabled:opacity-50 disabled:cursor-wait"
+                          title={t('crm.actions.delete')}
+                          aria-label={t('crm.actions.delete')}
+                        >
+                          {deletingId === inf.id ? <Loader2 size={16} className="animate-spin" /> : <Trash2 size={16} />}
+                        </button>
+                      )}
                     </div>
                   </td>
                 </tr>

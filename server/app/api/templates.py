@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_manager_or_above
 from app.schemas.auth import TokenData
 from app.schemas.template import (
     GenerateRequest,
@@ -60,7 +60,10 @@ async def update_template_endpoint(
 async def delete_template_endpoint(
     template_id: int,
     db: AsyncSession = Depends(get_db),
-    _: TokenData = Depends(get_current_user),
+    # Template deletion can break in-flight campaigns relying on it
+    # (FK SET NULL leaves the campaign without a template reference).
+    # Limit to manager+ per docs/SECURITY-MODEL.md W-3.
+    _: TokenData = Depends(require_manager_or_above),
 ):
     deleted = await delete_template(db, template_id)
     if not deleted:

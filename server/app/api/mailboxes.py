@@ -3,7 +3,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import get_db
-from app.deps import get_current_user
+from app.deps import get_current_user, require_manager_or_above
 from app.models.mailbox import MailboxStatus
 from app.schemas.auth import TokenData
 from app.schemas.mailbox import (
@@ -69,7 +69,10 @@ async def update_mailbox_endpoint(
 async def delete_mailbox_endpoint(
     mailbox_id: int,
     db: AsyncSession = Depends(get_db),
-    _: TokenData = Depends(get_current_user),
+    # SMTP/IMAP credentials are admin-provisioned company assets;
+    # operators should not be able to remove send capacity. Limit to
+    # manager+ per docs/SECURITY-MODEL.md W-4.
+    _: TokenData = Depends(require_manager_or_above),
 ):
     deleted = await delete_mailbox(db, mailbox_id)
     if not deleted:
