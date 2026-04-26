@@ -129,6 +129,46 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning("Zombie cleanup failed (non-fatal): %s", e)
 
+        # Same recovery for orphaned EmailDraft rows. If uvicorn was killed
+        # while the Sender Agent was mid-flight on a draft, the draft is
+        # left at status='sending' / 'generating' with no agent to clear it.
+        # Without this, the user can neither resend nor regenerate that
+        # row (both refuse those statuses). Demote orphans back to a
+        # reviewable / regeneratable state.
+        from app.models.email_draft import EmailDraft, EmailDraftStatus
+        try:
+            draft_stmt = (
+                update(EmailDraft)
+                .where(EmailDraft.status == EmailDraftStatus.sending)
+                .values(
+                    status=EmailDraftStatus.ready,
+                    error_message="服务重启中断；草稿已重置为可发送状态",
+                )
+            )
+            res = await db.execute(draft_stmt)
+            if res.rowcount:
+                logger.warning(
+                    "Startup cleanup: reset %d zombie 'sending' draft(s) → ready",
+                    res.rowcount,
+                )
+            draft_gen_stmt = (
+                update(EmailDraft)
+                .where(EmailDraft.status == EmailDraftStatus.generating)
+                .values(
+                    status=EmailDraftStatus.failed,
+                    error_message="服务重启中断；请重新生成此草稿",
+                )
+            )
+            res = await db.execute(draft_gen_stmt)
+            if res.rowcount:
+                logger.warning(
+                    "Startup cleanup: marked %d zombie 'generating' draft(s) → failed",
+                    res.rowcount,
+                )
+            await db.commit()
+        except Exception as e:
+            logger.warning("Draft zombie cleanup failed (non-fatal): %s", e)
+
     scheduler.add_job(
         _reset_today_sent_job,
         CronTrigger(hour=0, minute=0, timezone="UTC"),

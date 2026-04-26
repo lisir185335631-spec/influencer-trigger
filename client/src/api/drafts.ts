@@ -93,14 +93,17 @@ export interface SendCampaignFromDraftsResponse {
   message: string
 }
 
-// WebSocket events broadcast during draft generation
+// WebSocket events broadcast during draft generation.
+// Note: events are broadcast globally to all WS subscribers, so no
+// influencer email / PII is included in the payload — the campaign
+// owner reconciles per-row details via the authenticated REST list
+// endpoint. Frontend listens on campaign_id match.
 export interface DraftProgressEvent {
   campaign_id: number
   completed: number
   total: number
   succeeded: number
   failed: number
-  current_influencer?: string
 }
 
 export interface DraftCompletedEvent {

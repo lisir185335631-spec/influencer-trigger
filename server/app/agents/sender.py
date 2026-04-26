@@ -207,8 +207,12 @@ async def run_sender_agent(
             # Pick subject + body source based on campaign mode.
             draft = None
             if use_drafts:
-                draft_q = await db.execute(
-                    select(EmailDraft)
+                # Atomic claim: UPDATE ... WHERE status IN (ready, edited)
+                # → sending. If two send-tasks race on the same draft, only
+                # one rowcount==1 wins; the loser sees rowcount==0 and skips.
+                # We then SELECT to read the row's snapshot (subject/body/id).
+                claim_stmt = (
+                    update(EmailDraft)
                     .where(
                         EmailDraft.campaign_id == campaign_id,
                         EmailDraft.influencer_id == inf_id,
@@ -217,22 +221,34 @@ async def run_sender_agent(
                             EmailDraftStatus.edited,
                         ]),
                     )
+                    .values(status=EmailDraftStatus.sending)
                 )
-                draft = draft_q.scalar_one_or_none()
-                if not draft:
-                    # Caller (drafts API) only handed us influencer_ids whose
-                    # drafts were sendable; if we get here the row was edited
-                    # to a non-sendable state mid-flight. Skip silently.
+                claim_res = await db.execute(claim_stmt)
+                if claim_res.rowcount == 0:
+                    # Either nothing was sendable (status changed mid-flight)
+                    # or another sender beat us to it. Either way, don't
+                    # double-send.
+                    await db.commit()
                     logger.info(
-                        "Campaign %d: no sendable draft for influencer %d; skipping",
+                        "Campaign %d: no claimable draft for influencer %d; skipping",
                         campaign_id, inf_id,
                     )
                     failed_count += 1
                     continue
+                await db.commit()
+                draft_q = await db.execute(
+                    select(EmailDraft)
+                    .where(
+                        EmailDraft.campaign_id == campaign_id,
+                        EmailDraft.influencer_id == inf_id,
+                    )
+                )
+                draft = draft_q.scalar_one_or_none()
+                if not draft:
+                    failed_count += 1
+                    continue
                 rendered_subject = draft.subject
                 rendered_body = draft.body_html
-                draft.status = EmailDraftStatus.sending
-                await db.commit()
             else:
                 rendered_subject, rendered_body = _render_template(
                     tmpl.body_html, tmpl.subject, influencer,

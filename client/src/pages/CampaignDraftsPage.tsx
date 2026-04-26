@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import DOMPurify from 'dompurify'
 import {
   draftsApi,
   AngleOption,
@@ -10,6 +11,16 @@ import {
   DraftCompletedEvent,
 } from '../api/drafts'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
+
+// Defence-in-depth: backend already sanitizes via nh3 on save, but we
+// double-sanitize here in case content was inserted by a different path
+// or the backend sanitize ever regresses. DOMPurify is the de-facto
+// browser-side standard; the same library is used in TemplatesPage.
+const SANITIZE_CONFIG = {
+  ALLOWED_TAGS: ['p', 'br', 'strong', 'em', 'b', 'i', 'u', 'a', 'ul', 'ol', 'li', 'blockquote', 'span'],
+  ALLOWED_ATTR: ['href', 'title'],
+  ALLOWED_URI_REGEXP: /^(?:https?|mailto):/i,
+}
 
 const WS_URL = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:6002/ws`
 
@@ -151,7 +162,9 @@ function EditModal({ draftId, onClose, onSaved, angles }: EditModalProps) {
                 <div className="text-xs font-medium text-gray-500 mb-1">渲染预览</div>
                 <div
                   className="text-sm text-gray-800 prose prose-sm max-w-none"
-                  dangerouslySetInnerHTML={{ __html: bodyHtml }}
+                  dangerouslySetInnerHTML={{
+                    __html: DOMPurify.sanitize(bodyHtml, SANITIZE_CONFIG),
+                  }}
                 />
               </div>
             </div>
@@ -245,7 +258,7 @@ export default function CampaignDraftsPage() {
   const [editingId, setEditingId] = useState<number | null>(null)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState('')
-  const [progress, setProgress] = useState<{ completed: number; total: number; current?: string } | null>(null)
+  const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null)
 
   const load = useCallback(async () => {
     if (!cid) return
@@ -274,7 +287,6 @@ export default function CampaignDraftsPage() {
       setProgress({
         completed: data.completed,
         total: data.total,
-        current: data.current_influencer,
       })
       // refresh list periodically
       if (data.completed % 5 === 0 || data.completed === data.total) {
@@ -385,7 +397,6 @@ export default function CampaignDraftsPage() {
         <div className="mb-4 p-3 border border-blue-100 bg-blue-50 rounded-lg">
           <div className="flex items-center justify-between text-sm text-blue-700">
             <span>生成中 {progress.completed}/{progress.total}</span>
-            {progress.current && <span className="text-xs text-blue-500">{progress.current}</span>}
           </div>
           <div className="mt-2 h-1.5 bg-blue-100 rounded-full overflow-hidden">
             <div

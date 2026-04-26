@@ -23,6 +23,7 @@ from app.agents.personalizer import (
     DEFAULT_ANGLE,
     compute_prompt_hash,
     generate_or_fallback,
+    sanitize_email_html,
 )
 from app.database import AsyncSessionLocal
 from app.models.campaign import Campaign, CampaignStatus
@@ -155,13 +156,17 @@ async def generate_drafts_for_campaign(
                 succeeded += 1
 
             completed += 1
+            # NOTE: WebSocket broadcasts are global — every connected client
+            # receives this event regardless of campaign ownership. Until
+            # connection-level user routing is added, the payload omits
+            # influencer email / name / any PII to avoid cross-tenant leak.
+            # Owner reconciles details via authenticated REST list endpoint.
             await manager.broadcast("draft:progress", {
                 "campaign_id": campaign_id,
                 "completed": completed,
                 "total": total,
                 "succeeded": succeeded,
                 "failed": failed,
-                "current_influencer": influencer.email,
             })
 
         await _finalize_campaign_drafts(db, campaign_id)
@@ -284,8 +289,10 @@ async def update_draft(
         # Frozen — once we've handed the draft to the sender it's
         # immutable for audit reasons.
         return draft
+    # XSS defence: user can paste arbitrary HTML into the textarea.
+    # Sanitize before persisting so the eventual SMTP body is safe.
     draft.subject = subject
-    draft.body_html = body_html
+    draft.body_html = sanitize_email_html(body_html)
     draft.edited_by_user = True
     if draft.status in {EmailDraftStatus.failed, EmailDraftStatus.pending}:
         draft.status = EmailDraftStatus.edited
@@ -309,7 +316,15 @@ async def regenerate_single_draft(
     draft = await db.get(EmailDraft, draft_id)
     if not draft:
         return None
-    if draft.status in {EmailDraftStatus.sending, EmailDraftStatus.sent}:
+    # Refuse to regenerate frozen / cancelled drafts. sending+sent are
+    # in-flight or done; cancelled was explicitly removed by the user
+    # and resurrecting it via regenerate is confusing UX (silently brings
+    # back something they thought they killed).
+    if draft.status in {
+        EmailDraftStatus.sending,
+        EmailDraftStatus.sent,
+        EmailDraftStatus.cancelled,
+    }:
         return draft
 
     influencer = await db.get(Influencer, draft.influencer_id)

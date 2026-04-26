@@ -27,7 +27,11 @@ class AngleOption(BaseModel):
 class GenerateDraftsRequest(BaseModel):
     """Create a Campaign in draft mode and kick off batch LLM generation
     for all selected influencers."""
-    influencer_ids: list[int] = Field(..., min_length=1)
+    # Hard cap of 500 — sequential LLM calls at ~3s each puts a 500-batch
+    # at ~25 minutes, which is the practical UX ceiling. Larger asks should
+    # be split client-side. Without this cap, a malicious / careless caller
+    # could DoS the LLM budget + DB session pool with one request.
+    influencer_ids: list[int] = Field(..., min_length=1, max_length=500)
     template_id: int
     campaign_name: Optional[str] = None
     angle: str = "friendly"
@@ -97,8 +101,12 @@ class DraftListResponse(BaseModel):
 class UpdateDraftRequest(BaseModel):
     """User edits a draft — sets edited_by_user=True so subsequent bulk
     regenerate operations skip this row."""
-    subject: str = Field(..., max_length=512)
-    body_html: str
+    # Both fields must have at least one non-whitespace char. Empty subject
+    # / body would let the user accidentally save (and later send) a blank
+    # email — caught at the API layer rather than relying on every consumer
+    # to validate.
+    subject: str = Field(..., min_length=1, max_length=512)
+    body_html: str = Field(..., min_length=1)
 
 
 class RegenerateDraftRequest(BaseModel):
