@@ -46,6 +46,7 @@ from app.api.templates import router as templates_router
 from app.api.scrape import router as scrape_router
 from app.api.import_ import router as import_router
 from app.api.emails import router as emails_router
+from app.api.drafts import router as drafts_router
 from app.api.notifications import router as notifications_router
 from app.api.influencers import router as influencers_router
 from app.api.follow_up import router as follow_up_router
@@ -215,6 +216,7 @@ app.include_router(templates_router, prefix="/api")
 app.include_router(scrape_router, prefix="/api")
 app.include_router(import_router, prefix="/api")
 app.include_router(emails_router, prefix="/api")
+app.include_router(drafts_router, prefix="/api")
 app.include_router(notifications_router, prefix="/api")
 app.include_router(influencers_router, prefix="/api")
 app.include_router(follow_up_router, prefix="/api")

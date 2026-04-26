@@ -4,6 +4,7 @@ from app.models.mailbox import Mailbox
 from app.models.campaign import Campaign
 from app.models.template import Template
 from app.models.email import Email
+from app.models.email_draft import EmailDraft, EmailDraftStatus
 from app.models.tag import Tag
 from app.models.influencer_tag import InfluencerTag
 from app.models.note import Note
@@ -31,6 +32,8 @@ __all__ = [
     "Campaign",
     "Template",
     "Email",
+    "EmailDraft",
+    "EmailDraftStatus",
     "Tag",
     "InfluencerTag",
     "Note",

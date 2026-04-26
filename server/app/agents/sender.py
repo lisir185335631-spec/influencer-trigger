@@ -16,6 +16,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.database import AsyncSessionLocal
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.email import Email, EmailStatus, EmailType
+from app.models.email_draft import EmailDraft, EmailDraftStatus
 from app.models.influencer import Influencer, InfluencerStatus
 from app.models.mailbox import Mailbox, MailboxStatus
 from app.models.template import Template
@@ -116,14 +117,35 @@ async def run_sender_agent(
     influencer_ids: list[int],
     template_id: int,
 ) -> None:
-    """Main Sender Agent — runs as a FastAPI BackgroundTask."""
+    """Main Sender Agent — runs as a FastAPI BackgroundTask.
+
+    Two modes (chosen by Campaign.use_drafts):
+    - **Template mode** (default): renders the campaign template via Jinja2
+      per influencer. Salutation-level personalization (4 placeholders).
+    - **Draft mode**: reads pre-generated subject/body_html from the
+      email_drafts table (one row per influencer in this campaign). LLM
+      content has already been reviewed and possibly edited by the user;
+      this branch does NOT call the LLM and does NOT touch Jinja2 — it
+      just delivers what's already in the draft.
+    """
     async with AsyncSessionLocal() as db:
-        # Load template
-        tmpl = await db.get(Template, template_id)
-        if not tmpl:
-            logger.error("Template %d not found; aborting campaign %d", template_id, campaign_id)
-            await _mark_campaign_failed(db, campaign_id)
+        # Load campaign first — its `use_drafts` flag selects the mode.
+        campaign = await db.get(Campaign, campaign_id)
+        if not campaign:
+            logger.error("Campaign %d not found; aborting", campaign_id)
             return
+
+        use_drafts = bool(campaign.use_drafts)
+
+        # Template only required in template mode. In draft mode the draft
+        # row already contains the rendered subject + body_html.
+        tmpl = None
+        if not use_drafts:
+            tmpl = await db.get(Template, template_id)
+            if not tmpl:
+                logger.error("Template %d not found; aborting campaign %d", template_id, campaign_id)
+                await _mark_campaign_failed(db, campaign_id)
+                return
 
         # Load all active mailboxes
         result = await db.execute(
@@ -140,11 +162,9 @@ async def run_sender_agent(
         rotator = MailboxRotator(mailboxes)
 
         # Mark campaign running
-        campaign = await db.get(Campaign, campaign_id)
-        if campaign:
-            campaign.status = CampaignStatus.running
-            campaign.started_at = datetime.now(timezone.utc)
-            await db.commit()
+        campaign.status = CampaignStatus.running
+        campaign.started_at = datetime.now(timezone.utc)
+        await db.commit()
 
         sent_count = success_count = failed_count = 0
         total = len(influencer_ids)
@@ -184,7 +204,39 @@ async def run_sender_agent(
                 await db.commit()
                 continue
 
-            rendered_subject, rendered_body = _render_template(tmpl.body_html, tmpl.subject, influencer)
+            # Pick subject + body source based on campaign mode.
+            draft = None
+            if use_drafts:
+                draft_q = await db.execute(
+                    select(EmailDraft)
+                    .where(
+                        EmailDraft.campaign_id == campaign_id,
+                        EmailDraft.influencer_id == inf_id,
+                        EmailDraft.status.in_([
+                            EmailDraftStatus.ready,
+                            EmailDraftStatus.edited,
+                        ]),
+                    )
+                )
+                draft = draft_q.scalar_one_or_none()
+                if not draft:
+                    # Caller (drafts API) only handed us influencer_ids whose
+                    # drafts were sendable; if we get here the row was edited
+                    # to a non-sendable state mid-flight. Skip silently.
+                    logger.info(
+                        "Campaign %d: no sendable draft for influencer %d; skipping",
+                        campaign_id, inf_id,
+                    )
+                    failed_count += 1
+                    continue
+                rendered_subject = draft.subject
+                rendered_body = draft.body_html
+                draft.status = EmailDraftStatus.sending
+                await db.commit()
+            else:
+                rendered_subject, rendered_body = _render_template(
+                    tmpl.body_html, tmpl.subject, influencer,
+                )
 
             # Send with 1 retry on failure
             success = False
@@ -200,12 +252,14 @@ async def run_sender_agent(
 
             sent_count += 1
 
-            # Persist email record
+            # Persist email record (FK back to draft when present — supports
+            # audit trail "which draft produced this email").
             email_record = Email(
                 influencer_id=inf_id,
                 campaign_id=campaign_id,
                 mailbox_id=mailbox.id,
                 template_id=template_id,
+                draft_id=draft.id if draft else None,
                 email_type=EmailType.initial,
                 subject=rendered_subject,
                 body_html=rendered_body,
@@ -214,6 +268,21 @@ async def run_sender_agent(
                 sent_at=datetime.now(timezone.utc) if success else None,
             )
             db.add(email_record)
+            await db.flush()  # need email_record.id to FK-link the draft
+
+            # Close out the draft side of the relationship.
+            if draft:
+                draft.email_id = email_record.id
+                draft.status = (
+                    EmailDraftStatus.sent if success else EmailDraftStatus.failed
+                )
+                draft.sent_at = (
+                    datetime.now(timezone.utc) if success else None
+                )
+                if not success:
+                    draft.error_message = (
+                        f"Send failed: {err}" if 'err' in locals() else "Send failed"
+                    )
 
             if success:
                 success_count += 1

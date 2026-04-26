@@ -34,6 +34,10 @@ class Email(Base):
     campaign_id: Mapped[int | None] = mapped_column(ForeignKey("campaigns.id", ondelete="SET NULL"), nullable=True, index=True)
     mailbox_id: Mapped[int | None] = mapped_column(ForeignKey("mailboxes.id", ondelete="SET NULL"), nullable=True, index=True)
     template_id: Mapped[int | None] = mapped_column(ForeignKey("templates.id", ondelete="SET NULL"), nullable=True)
+    # Source draft (if this email was sent from a personalized draft, not
+    # straight Jinja2 template render). SET NULL on draft delete so archiving
+    # drafts doesn't cascade to historical emails.
+    draft_id: Mapped[int | None] = mapped_column(ForeignKey("email_drafts.id", ondelete="SET NULL"), nullable=True, index=True)
 
     email_type: Mapped[EmailType] = mapped_column(Enum(EmailType), default=EmailType.initial, nullable=False)
     subject: Mapped[str] = mapped_column(String(512), nullable=False)
