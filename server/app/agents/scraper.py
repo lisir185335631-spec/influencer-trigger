@@ -2393,26 +2393,31 @@ async def _scrape_tiktok_via_clockworks(
         profile_url = (am.get("profileUrl") or "").strip()
         avatar_url = (am.get("originalAvatarUrl") or am.get("avatar") or "").strip() or None
 
-        # Pick first plain email from bio. Many creators put `mailto:` style
-        # addresses in their TikTok bio for biz contact (probed 2026-04-26:
-        # 27% of dog-training creators in our sample). The bio is provably
-        # owned by the creator so unlike scrapeEmails=True external-link
-        # harvesting, bio-only extraction has no third-party leakage.
-        emails = _PLAIN_EMAIL_RE.findall(bio)
-        email = emails[0] if emails else None
+        # Pick first valid (non-junk + MX-OK) email from bio. Many creators
+        # put `mailto:` style addresses in their TikTok bio for biz contact
+        # (probed 2026-04-26: 27% of dog-training creators in our sample).
+        # The bio is provably owned by the creator so unlike scrapeEmails=True
+        # external-link harvesting, bio-only extraction has no third-party
+        # leakage.
+        bio_emails = _PLAIN_EMAIL_RE.findall(bio)
+        email, _j, _m = await pick_first_valid_email(bio_emails)
+        junk_skipped += _j
         email_source = "bio" if email else None
 
-        # Caption fallback: when bio has no email, scan accumulated video
-        # captions for this creator. Captions are the creator's own posts
-        # so attribution is safe (same trust level as bio). This adds a
-        # marginal +5-10% to hit rate at zero extra Apify cost.
+        # Caption fallback: when bio has no valid email, aggregate emails
+        # from all accumulated video captions for this creator and pick
+        # first valid. Captions are the creator's own posts so attribution
+        # is safe (same trust level as bio). This adds a marginal +5-10%
+        # hit rate at zero extra Apify cost.
         if not email:
+            cap_pool: list[str] = []
             for caption in captions_by_user.get(username.lower(), []):
-                cap_emails = _PLAIN_EMAIL_RE.findall(caption)
-                if cap_emails:
-                    email = cap_emails[0]
+                cap_pool.extend(_PLAIN_EMAIL_RE.findall(caption))
+            if cap_pool:
+                email, _j, _m = await pick_first_valid_email(cap_pool)
+                junk_skipped += _j
+                if email:
                     email_source = "caption"
-                    break
 
         if on_progress:
             fol = (
@@ -2427,19 +2432,7 @@ async def _scrape_tiktok_via_clockworks(
             no_email_skipped += 1
             continue
 
-        is_junk, reason = is_junk_email(email)
-        if is_junk:
-            logger.info(
-                "[TikTok/v2 %s] dropped junk email %r from @%s: %s",
-                round_label, email, username, reason,
-            )
-            junk_skipped += 1
-            continue
-
-        domain = email.split("@", 1)[1]
-        if not await _mx_valid(domain):
-            continue
-
+        # email is already validated (junk + MX checked inside the helper)
         display_name = full_name or f"@{username}"
         is_new = await on_found(
             email,
@@ -2701,13 +2694,13 @@ async def _scrape_twitter_via_apify(
             bio_obj = a.get("profile_bio") or {}
             bio = (bio_obj.get("description") or "").strip()
 
-            # Stage 1: bio regex (cheap path)
-            email = None
-            email_source = None
+            # Stage 1: bio regex (cheap path) — pick first VALID email
+            # (helper handles junk + MX so a junk emails[0] won't drop
+            # the rest of the list).
             bio_emails = _PLAIN_EMAIL_RE.findall(bio)
-            if bio_emails:
-                email = bio_emails[0]
-                email_source = "bio"
+            email, _j, _m = await pick_first_valid_email(bio_emails)
+            junk_skipped += _j
+            email_source = "bio" if email else None
 
             # Stage 2: cascade — visit the bio's external URL with
             # Playwright + harvest. Only fires when bio had no email AND
@@ -2759,28 +2752,20 @@ async def _scrape_twitter_via_apify(
                             logger.debug("[Twitter %s] cascade visit failed for %s: %s", round_label, eu, e)
                             continue
                         if url_emails:
-                            email = url_emails[0]
-                            email_source = "url"
-                            cascade_hits += 1
-                            break
+                            # pick first valid; if helper rejects all in
+                            # this URL, try the next URL (don't break out)
+                            email, _j, _m = await pick_first_valid_email(url_emails)
+                            junk_skipped += _j
+                            if email:
+                                email_source = "url"
+                                cascade_hits += 1
+                                break
 
             if not email:
                 no_email_skipped += 1
                 continue
 
-            is_junk, reason = is_junk_email(email)
-            if is_junk:
-                logger.info(
-                    "[Twitter %s] dropped junk email %r from @%s: %s",
-                    round_label, email, uname, reason,
-                )
-                junk_skipped += 1
-                continue
-
-            domain = email.split("@", 1)[1]
-            if not await _mx_valid(domain):
-                continue
-
+            # email is already validated (junk + MX checked in helper)
             display = display_name or f"@{uname}"
             is_new = await on_found(
                 email,
@@ -3052,15 +3037,26 @@ async def _scrape_facebook_via_apify(
                 info_text = ""
             bio_blob = (intro + ("\n" + info_text if info_text else "")).strip()
 
-            # Stage 1: explicit email field on the page object
-            email = (p.get("email") or "").strip() or None
-            email_source = "page_email" if email else None
+            # Stage 1: explicit email field on the page object — validate
+            # via helper (the actor's `email` field has historically been
+            # a noreply@ address occasionally, so junk-filter still applies).
+            email = None
+            email_source = None
+            page_email = (p.get("email") or "").strip()
+            if page_email:
+                e1, _j, _m = await pick_first_valid_email([page_email])
+                junk_skipped += _j
+                if e1:
+                    email = e1
+                    email_source = "page_email"
 
-            # Stage 2: regex on intro/info
+            # Stage 2: regex on intro/info — first valid wins
             if not email:
                 regex_emails = _PLAIN_EMAIL_RE.findall(bio_blob)
-                if regex_emails:
-                    email = regex_emails[0]
+                e2, _j, _m = await pick_first_valid_email(regex_emails)
+                junk_skipped += _j
+                if e2:
+                    email = e2
                     email_source = "intro"
 
             # Stage 3: cascade — visit page's website with Playwright.
@@ -3173,27 +3169,18 @@ async def _scrape_facebook_via_apify(
                         except (asyncio.CancelledError, Exception):
                             pass
                     if url_emails:
-                        email = url_emails[0]
-                        email_source = "site"
-                        cascade_hits += 1
+                        e3, _j, _m = await pick_first_valid_email(url_emails)
+                        junk_skipped += _j
+                        if e3:
+                            email = e3
+                            email_source = "site"
+                            cascade_hits += 1
 
             if not email:
                 no_email_skipped += 1
                 continue
 
-            is_junk, reason = is_junk_email(email)
-            if is_junk:
-                logger.info(
-                    "[Facebook %s] dropped junk email %r from %s: %s",
-                    round_label, email, page_name, reason,
-                )
-                junk_skipped += 1
-                continue
-
-            domain = email.split("@", 1)[1]
-            if not await _mx_valid(domain):
-                continue
-
+            # email is already validated (junk + MX checked in helper)
             display = title or page_name
             is_new = await on_found(
                 email,
