@@ -115,11 +115,7 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
       onClick={onClose}
     >
       <div
-        // max-w-[90vw] matches the wide content area used by the
-        // mailbox-pool table on the sibling tab — the user wants the
-        // picker to feel as roomy as that surface rather than the
-        // half-width modal it was at max-w-4xl.
-        className="bg-white rounded-xl shadow-xl w-full max-w-[90vw] max-h-[90vh] flex flex-col"
+        className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -489,7 +485,12 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
   // ── No influencers selected — show selector entry point ─────────────────
   if (phase === 'setup' && influencerIds.length === 0) {
     return (
-      <div className="max-w-xl">
+      // No max-w on the placeholder branch — the empty-state card should
+      // stretch to match the mailbox-pool table on the sibling tab so
+      // the two surfaces feel equally roomy. The setup form / sending
+      // / done branches below keep max-w-xl because narrow form columns
+      // read better than 1700px-wide inputs.
+      <div>
         <h2 className="text-base font-semibold text-gray-900 mb-2">{t('emails.batch.title')}</h2>
         <p className="text-sm text-gray-500 mb-6">
           {t('emails.batch.subtitle')}
