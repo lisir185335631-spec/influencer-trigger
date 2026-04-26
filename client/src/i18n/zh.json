@@ -347,6 +347,32 @@
     "importFailed": "导入失败",
     "skip": "— 跳过 —"
   },
+  "sendPanel": {
+    "openPicker": "选择网红收件人",
+    "pickHint": "在下方挑选要发送的网红",
+    "changeRecipients": "更换收件人"
+  },
+  "influencerPicker": {
+    "title": "选择网红收件人",
+    "subtitle": "已选 {{count}} 个",
+    "searchPlaceholder": "按昵称 / 邮箱搜索",
+    "searchButton": "搜索",
+    "allPlatforms": "全部平台",
+    "clearSelection": "清空已选",
+    "loading": "加载中…",
+    "empty": "无匹配的网红",
+    "toggleAllVisible": "全选当前页",
+    "col": {
+      "recipient": "收件人",
+      "platform": "平台",
+      "followers": "粉丝",
+      "industry": "行业",
+      "status": "状态"
+    },
+    "pageOf": "{{current}} / {{total}} 页 · 共 {{count}} 条",
+    "cancel": "取消",
+    "confirm": "确认 ({{count}})"
+  },
   "drafts": {
     "panelTitle": "AI 个性化草稿模式（推荐）",
     "panelHint": "为每个网红基于其平台/粉丝/简介/抓取理由生成专属话术，发送前可逐条审阅修改",
@@ -680,6 +706,10 @@
     }
   },
   "mailboxes": {
+    "tabs": {
+      "send": "批量发送",
+      "pool": "邮箱池配置"
+    },
     "title": "发送邮箱",
     "subtitle": "SMTP 配置的发送账户",
     "addMailbox": "添加邮箱",

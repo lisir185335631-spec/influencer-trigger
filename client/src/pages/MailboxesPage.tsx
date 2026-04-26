@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Plus, Pencil, Trash2, Zap, X, CheckCircle, XCircle, Loader2 } from 'lucide-react'
 import { Mailbox, MailboxCreate, MailboxUpdate, mailboxesApi } from '../api/mailboxes'
+import SendPanel from '../components/SendPanel'
 
 // ─── Status badge ────────────────────────────────────────────────────────────
 
@@ -290,7 +291,10 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
 
 type TestState = { status: 'idle' | 'loading' | 'ok' | 'error'; msg: string }
 
-export default function MailboxesPage() {
+// Original mailbox-pool admin function preserved verbatim — only renamed
+// from `MailboxesPage` to `MailboxPoolPanel` so it can sit inside a tab.
+// Default export below adds the tab shell (send vs pool).
+function MailboxPoolPanel() {
   const { t } = useTranslation()
   const [mailboxes, setMailboxes] = useState<Mailbox[]>([])
   const [loading, setLoading] = useState(true)
@@ -366,7 +370,11 @@ export default function MailboxesPage() {
   }
 
   return (
-    <div className="p-6 space-y-4">
+    // Outer wrapper used to be `p-6` because this was the page root; now
+    // it's a tab body inside the page wrapper which already pads, so we
+    // drop the padding to avoid double indent. space-y-4 retained for
+    // internal vertical rhythm.
+    <div className="space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
@@ -500,6 +508,47 @@ export default function MailboxesPage() {
           onSaved={handleSaved}
         />
       )}
+    </div>
+  )
+}
+
+// ─── Default export: tab shell ───────────────────────────────────────────────
+// "邮件发送" sidebar entry routes here. The page now hosts two
+// concerns rather than one:
+//   1. send  — batch send / draft creation (the user's primary action)
+//   2. pool  — SMTP/IMAP mailbox pool admin (the original page contents)
+// "send" is the default tab on entry; users who specifically need to manage
+// SMTP credentials switch to "pool". Routing intentionally stays on
+// /mailboxes so existing bookmarks + sidebar config keep working.
+
+type MailboxesTab = 'send' | 'pool'
+
+export default function MailboxesPage() {
+  const { t } = useTranslation()
+  const [activeTab, setActiveTab] = useState<MailboxesTab>('send')
+
+  return (
+    <div className="p-6">
+      <div className="flex border-b border-gray-200 mb-6">
+        {([
+          { key: 'send', label: t('mailboxes.tabs.send') },
+          { key: 'pool', label: t('mailboxes.tabs.pool') },
+        ] as { key: MailboxesTab; label: string }[]).map(({ key, label }) => (
+          <button
+            key={key}
+            onClick={() => setActiveTab(key)}
+            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
+              activeTab === key
+                ? 'border-gray-900 text-gray-900'
+                : 'border-transparent text-gray-500 hover:text-gray-700'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {activeTab === 'send' ? <SendPanel /> : <MailboxPoolPanel />}
     </div>
   )
 }

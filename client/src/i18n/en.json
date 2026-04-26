@@ -347,6 +347,32 @@
     "importFailed": "Import failed",
     "skip": "— skip —"
   },
+  "sendPanel": {
+    "openPicker": "Pick recipients",
+    "pickHint": "Choose influencers to send to below",
+    "changeRecipients": "Change recipients"
+  },
+  "influencerPicker": {
+    "title": "Pick recipients",
+    "subtitle": "{{count}} selected",
+    "searchPlaceholder": "Search by name / email",
+    "searchButton": "Search",
+    "allPlatforms": "All platforms",
+    "clearSelection": "Clear selection",
+    "loading": "Loading…",
+    "empty": "No matching influencers",
+    "toggleAllVisible": "Toggle all on this page",
+    "col": {
+      "recipient": "Recipient",
+      "platform": "Platform",
+      "followers": "Followers",
+      "industry": "Industry",
+      "status": "Status"
+    },
+    "pageOf": "Page {{current}} / {{total}} · {{count}} total",
+    "cancel": "Cancel",
+    "confirm": "Confirm ({{count}})"
+  },
   "drafts": {
     "panelTitle": "AI personalized drafts (recommended)",
     "panelHint": "Generate per-recipient outreach copy from each influencer's platform / followers / bio / match reason; review and edit before send",
@@ -680,6 +706,10 @@
     }
   },
   "mailboxes": {
+    "tabs": {
+      "send": "Batch send",
+      "pool": "Mailbox pool"
+    },
     "title": "Mailboxes",
     "subtitle": "Sending accounts with SMTP configuration",
     "addMailbox": "Add Mailbox",
