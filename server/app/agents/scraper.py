@@ -2399,7 +2399,11 @@ async def _scrape_tiktok_via_clockworks(
         # The bio is provably owned by the creator so unlike scrapeEmails=True
         # external-link harvesting, bio-only extraction has no third-party
         # leakage.
-        bio_emails = _PLAIN_EMAIL_RE.findall(bio)
+        # _extract_emails handles both plain and obfuscated forms (e.g.
+        # `support [at] example [dot] com`) so creators using the common
+        # anti-scrape obfuscation aren't silently missed. Same regex used
+        # by YouTube / IG / aggregator paths — single source of truth.
+        bio_emails = _extract_emails(bio)
         email, _j, _m = await pick_first_valid_email(bio_emails)
         junk_skipped += _j
         email_source = "bio" if email else None
@@ -2412,7 +2416,7 @@ async def _scrape_tiktok_via_clockworks(
         if not email:
             cap_pool: list[str] = []
             for caption in captions_by_user.get(username.lower(), []):
-                cap_pool.extend(_PLAIN_EMAIL_RE.findall(caption))
+                cap_pool.extend(_extract_emails(caption))
             if cap_pool:
                 email, _j, _m = await pick_first_valid_email(cap_pool)
                 junk_skipped += _j
@@ -2696,8 +2700,9 @@ async def _scrape_twitter_via_apify(
 
             # Stage 1: bio regex (cheap path) — pick first VALID email
             # (helper handles junk + MX so a junk emails[0] won't drop
-            # the rest of the list).
-            bio_emails = _PLAIN_EMAIL_RE.findall(bio)
+            # the rest of the list). _extract_emails handles obfuscated
+            # forms (`[at]` / `[dot]`) as well as plain.
+            bio_emails = _extract_emails(bio)
             email, _j, _m = await pick_first_valid_email(bio_emails)
             junk_skipped += _j
             email_source = "bio" if email else None
@@ -3050,9 +3055,11 @@ async def _scrape_facebook_via_apify(
                     email = e1
                     email_source = "page_email"
 
-            # Stage 2: regex on intro/info — first valid wins
+            # Stage 2: regex on intro/info — first valid wins. Use the
+            # full extractor (handles obfuscated `[at]` / `[dot]` forms
+            # as well as plain) for parity with the rest of the codebase.
             if not email:
-                regex_emails = _PLAIN_EMAIL_RE.findall(bio_blob)
+                regex_emails = _extract_emails(bio_blob)
                 e2, _j, _m = await pick_first_valid_email(regex_emails)
                 junk_skipped += _j
                 if e2:
