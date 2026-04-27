@@ -31,8 +31,8 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'sidebar.templates', to: '/templates', icon: FileText },
   { label: 'sidebar.mailboxes', to: '/mailboxes', icon: Inbox },
   { label: 'sidebar.emails', to: '/emails', icon: Mail },
-  { label: 'sidebar.import', to: '/import', icon: FileUp },
   { label: 'sidebar.followUp', to: '/followup', icon: RefreshCw },
+  { label: 'sidebar.import', to: '/import', icon: FileUp },
   { label: 'sidebar.holidays', to: '/holidays', icon: Gift },
 ]
 

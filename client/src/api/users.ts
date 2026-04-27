@@ -39,9 +39,15 @@ export const usersApi = {
   update: (id: number, body: UserUpdateRequest): Promise<UserItem> =>
     apiClient.put(`/users/${id}`, body).then((r) => r.data),
 
+  // Soft-delete — sets is_active=false; reversible via enable().
   disable: (id: number): Promise<void> =>
     apiClient.delete(`/users/${id}`).then(() => undefined),
 
   enable: (id: number): Promise<UserItem> =>
     apiClient.put(`/users/${id}`, { is_active: true }).then((r) => r.data),
+
+  // Hard-delete — permanently removes the user row. Use with confirm
+  // modal; FK rows (created_by / login_history etc.) keep author=null.
+  hardDelete: (id: number): Promise<void> =>
+    apiClient.post(`/users/${id}/hard-delete`).then(() => undefined),
 }

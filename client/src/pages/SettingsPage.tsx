@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Eye, EyeOff } from 'lucide-react'
 import { useAuthContext } from '../stores/AuthContext'
 import {
   getSettings,
@@ -10,6 +11,7 @@ import {
   SystemSettingsUpdate,
   ApifyPlatform,
   getYouTubeCookiesStatus,
+  getYouTubeCookiesRaw,
   saveYouTubeCookies,
   deleteYouTubeCookies,
   YouTubeCookiesStatus,
@@ -94,6 +96,14 @@ export default function SettingsPage() {
   // so we only PUT webhook_serverchan when the user has actually edited it
   // — otherwise we'd write "****abcd" back to the DB and break the push.
   const serverchanDirty = useRef(false)
+  // Per-secret-input reveal toggle (👁 / 👁‍🗨). Keys:
+  //   apify-tiktok / apify-instagram / apify-twitter / apify-facebook
+  //   serverchan / webhook-feishu / webhook-slack
+  // Default false → input renders as type="password" (•••••);
+  // true → type="text" (full plaintext).
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({})
+  const toggleReveal = (key: string) =>
+    setRevealed((prev) => ({ ...prev, [key]: !prev[key] }))
   const [apifyTest, setApifyTest] = useState<Record<ApifyPlatform, ApifyTestState>>({
     tiktok: { status: 'idle' },
     instagram: { status: 'idle' },
@@ -106,6 +116,36 @@ export default function SettingsPage() {
   // and has its own GET/POST/DELETE endpoints.
   const [cookiesStatus, setCookiesStatus] = useState<YouTubeCookiesStatus | null>(null)
   const [cookiesRaw, setCookiesRaw] = useState('')
+  // Reveal toggle for the YouTube cookies textarea. When false (default)
+  // the textarea is the normal "paste new cookies here" input. When true
+  // we fetch the saved file content via /youtube-cookies/raw and put it
+  // in the textarea read-only — so users can see what's stored without
+  // risking an in-place edit that would silently corrupt the cookie set
+  // on Save (cookies are huge JSON; one stray keystroke breaks them).
+  const [cookiesRevealed, setCookiesRevealed] = useState(false)
+  const [cookiesRevealing, setCookiesRevealing] = useState(false)
+
+  // Eye-toggle for YouTube cookies. Closed → empty editable textarea.
+  // Open → fetch raw + fill textarea + readonly. Closing again wipes
+  // the textarea so the user doesn't end up trying to "edit-then-save"
+  // a value they intended only to view.
+  const handleToggleCookiesReveal = async () => {
+    if (cookiesRevealed) {
+      setCookiesRevealed(false)
+      setCookiesRaw('')
+      return
+    }
+    setCookiesRevealing(true)
+    try {
+      const raw = await getYouTubeCookiesRaw()
+      setCookiesRaw(raw)
+      setCookiesRevealed(true)
+    } catch {
+      window.alert(t('settings.youtubeCookies.revealFailed'))
+    } finally {
+      setCookiesRevealing(false)
+    }
+  }
   const [cookieSave, setCookieSave] = useState<CookieSaveState>({ kind: 'idle' })
   const [showInstructions, setShowInstructions] = useState(false)
   const [cookiesDeleting, setCookiesDeleting] = useState(false)
@@ -152,12 +192,12 @@ export default function SettingsPage() {
     if (!form) return
     setSaveStatus('saving')
     try {
+      // follow-up strategy + scrape_concurrency intentionally omitted —
+      // their UI was removed from this page; FollowUpPage owns the
+      // follow-up settings, and scrape_concurrency is .env / DB-driven.
+      // Backend partial-update treats absent fields as unchanged, so DB
+      // values for those columns survive a save here.
       const patch: SystemSettingsUpdate = {
-        follow_up_enabled: form.follow_up_enabled,
-        interval_days: form.interval_days,
-        max_count: form.max_count,
-        hour_utc: form.hour_utc,
-        scrape_concurrency: form.scrape_concurrency,
         webhook_feishu: form.webhook_feishu,
         webhook_slack: form.webhook_slack,
         // Actors are not secrets — always send them so cleared/edited values
@@ -331,7 +371,7 @@ export default function SettingsPage() {
   }
 
   return (
-    <div className="p-6 max-w-2xl">
+    <div className="p-6 max-w-7xl">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-lg font-semibold text-gray-900">{t('settings.title')}</h1>
         <button
@@ -357,136 +397,28 @@ export default function SettingsPage() {
         </button>
       </div>
 
-      {/* Follow-up strategy */}
-      <section className="mb-8">
-        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-4">
-          {t('settings.followUp.title')}
-        </h2>
-        {/* Two-phase cadence note: this page only exposes phase-2 (cold)
-            interval/count. Full configuration (incl. phase-1 intensive) is
-            on /follow-up. Without this hint, users would assume "interval"
-            here controls the very first follow-up timing too. */}
-        <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-100 rounded text-xs text-amber-800">
-          {t('settings.followUp.phase2OnlyHint')}
-        </div>
-        <div className="space-y-4">
-          <div className="flex items-center justify-between py-3 border-b border-gray-50">
-            <div>
-              <div className="text-sm font-medium text-gray-800">{t('settings.followUp.enable')}</div>
-              <div className="text-xs text-gray-400 mt-0.5">
-                {t('settings.followUp.enableHint')}
-              </div>
-            </div>
-            <button
-              onClick={() =>
-                handleChange('follow_up_enabled', !form.follow_up_enabled)
-              }
-              className={`relative inline-flex h-5 w-9 items-center rounded-full transition-colors ${
-                form.follow_up_enabled ? 'bg-gray-900' : 'bg-gray-200'
-              }`}
-            >
-              <span
-                className={`inline-block h-3.5 w-3.5 transform rounded-full bg-white shadow transition-transform ${
-                  form.follow_up_enabled ? 'translate-x-5' : 'translate-x-1'
-                }`}
-              />
-            </button>
-          </div>
-
-          <div className="flex items-center justify-between py-3 border-b border-gray-50">
-            <div>
-              <div className="text-sm font-medium text-gray-800">{t('settings.followUp.interval')}</div>
-              <div className="text-xs text-gray-400 mt-0.5">
-                {t('settings.followUp.intervalHint')}
-              </div>
-            </div>
-            <input
-              type="number"
-              min={1}
-              max={365}
-              value={form.interval_days}
-              onChange={(e) =>
-                handleChange('interval_days', parseInt(e.target.value) || 1)
-              }
-              className="w-20 text-right border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-gray-400"
-            />
-          </div>
-
-          <div className="flex items-center justify-between py-3 border-b border-gray-50">
-            <div>
-              <div className="text-sm font-medium text-gray-800">{t('settings.followUp.max')}</div>
-              <div className="text-xs text-gray-400 mt-0.5">
-                {t('settings.followUp.maxHint')}
-              </div>
-            </div>
-            <input
-              type="number"
-              min={1}
-              max={50}
-              value={form.max_count}
-              onChange={(e) =>
-                handleChange('max_count', parseInt(e.target.value) || 1)
-              }
-              className="w-20 text-right border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-gray-400"
-            />
-          </div>
-
-          <div className="flex items-center justify-between py-3 border-b border-gray-50">
-            <div>
-              <div className="text-sm font-medium text-gray-800">{t('settings.followUp.sendTime')}</div>
-              <div className="text-xs text-gray-400 mt-0.5">
-                {t('settings.followUp.sendTimeHint')}
-              </div>
-            </div>
-            <input
-              type="number"
-              min={0}
-              max={23}
-              value={form.hour_utc}
-              onChange={(e) =>
-                handleChange('hour_utc', parseInt(e.target.value) || 0)
-              }
-              className="w-20 text-right border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-gray-400"
-            />
-          </div>
-        </div>
-      </section>
-
-      {/* Scrape config */}
-      <section className="mb-8">
-        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-4">
-          {t('settings.scrape.title')}
-        </h2>
-        <div className="flex items-center justify-between py-3 border-b border-gray-50">
-          <div>
-            <div className="text-sm font-medium text-gray-800">{t('settings.scrape.concurrency')}</div>
-            <div className="text-xs text-gray-400 mt-0.5">
-              {t('settings.scrape.concurrencyHint')}
-            </div>
-          </div>
-          <input
-            type="number"
-            min={1}
-            max={50}
-            value={form.scrape_concurrency}
-            onChange={(e) =>
-              handleChange('scrape_concurrency', parseInt(e.target.value) || 1)
-            }
-            className="w-20 text-right border border-gray-200 rounded px-2 py-1 text-sm focus:outline-none focus:border-gray-400"
-          />
-        </div>
-      </section>
+      {/* Follow-up strategy and scrape concurrency sections were removed:
+          full follow-up cadence lives on the dedicated /followup page,
+          and scrape concurrency is driven from .env / DB directly with
+          no day-to-day UI tuning need. The backend fields stay in
+          SystemSettings so the GET still returns them and the rest of
+          the form works unchanged — just no inputs here. */}
 
       {/* Apify per-platform configuration */}
       <section className="mb-8">
-        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+        <h2 className="inline-block text-sm font-medium uppercase tracking-wide mb-2 px-3 py-1 rounded bg-blue-50 text-blue-700">
           {t('settings.apify.title')}
         </h2>
         <div className="text-xs text-gray-400 mb-4">
           {t('settings.apify.subtitle')}
         </div>
 
-        <div className="space-y-6">
+        {/* 2×2 grid — turns the four platform cards into a square-ish
+            block instead of a 1300px tall column, which lets the YouTube
+            cookies + Webhook block below sit side-by-side at similar
+            heights for an actually-symmetric page layout. Falls back to
+            single column on narrow viewports. */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
           {APIFY_PLATFORMS.map((p) => {
             const tokenSet = form[p.tokenSetField]
             const tokenValue = form[p.tokenField]
@@ -537,25 +469,29 @@ export default function SettingsPage() {
                     <label className="text-xs text-gray-500 block mb-1">
                       {t('settings.apify.tokenLabel')}
                     </label>
-                    <input
-                      type="password"
-                      autoComplete="off"
-                      value={tokenValue}
-                      placeholder={
-                        tokenSet && !dirty
-                          ? t('settings.apify.tokenMasked')
-                          : t('settings.apify.tokenPlaceholder')
-                      }
-                      onChange={(e) =>
-                        handleApifyTokenChange(p.key, e.target.value)
-                      }
-                      className="w-full border border-gray-200 rounded px-3 py-2 text-sm font-mono focus:outline-none focus:border-gray-400 placeholder-gray-300"
-                    />
-                    {tokenSet && !dirty && (
-                      <div className="text-xs text-gray-400 mt-1">
-                        {t('settings.apify.tokenMaskedHint', { masked: tokenValue })}
-                      </div>
-                    )}
+                    {/* Token now arrives as plain text from the API for
+                        manager+ — eye toggle gates plaintext visibility
+                        in the UI without needing a separate hint string. */}
+                    <div className="relative">
+                      <input
+                        type={revealed[`apify-${p.key}`] ? 'text' : 'password'}
+                        autoComplete="off"
+                        value={tokenValue}
+                        placeholder={t('settings.apify.tokenPlaceholder')}
+                        onChange={(e) =>
+                          handleApifyTokenChange(p.key, e.target.value)
+                        }
+                        className="w-full border border-gray-200 rounded pl-3 pr-9 py-2 text-sm font-mono focus:outline-none focus:border-gray-400 placeholder-gray-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => toggleReveal(`apify-${p.key}`)}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                        aria-label={t(revealed[`apify-${p.key}`] ? 'common.hidePassword' : 'common.revealPassword')}
+                      >
+                        {revealed[`apify-${p.key}`] ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
                   </div>
 
                   <div>
@@ -597,9 +533,14 @@ export default function SettingsPage() {
         </div>
       </section>
 
+      {/* YouTube cookies + Webhook 通知 wrapper — 2-column grid so the two
+          medium-height sections sit side-by-side instead of stacking. The
+          grid itself owns the bottom margin so internal sections don't
+          need their own. */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
       {/* YouTube cookies */}
-      <section className="mb-8">
-        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-2">
+      <section>
+        <h2 className="inline-block text-sm font-medium uppercase tracking-wide mb-2 px-3 py-1 rounded bg-amber-50 text-amber-700">
           {t('settings.youtubeCookies.title')}
         </h2>
         <div className="text-xs text-gray-400 mb-4">
@@ -698,21 +639,47 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Paste textarea */}
+        {/* Reveal toggle — moved above the textarea to a dedicated row so
+            it never collides with the textarea scrollbar / resize handle.
+            Only renders when cookies are already configured (no point
+            "revealing" an empty file). Text label for clarity vs the
+            other secret fields where icon-only fits in a small input. */}
+        {cookiesStatus?.configured && (
+          <div className="mt-3 flex justify-end">
+            <button
+              type="button"
+              onClick={handleToggleCookiesReveal}
+              disabled={cookiesRevealing}
+              className="inline-flex items-center gap-1 text-xs text-gray-500 hover:text-gray-800 disabled:opacity-50"
+            >
+              {cookiesRevealed ? <EyeOff size={12} /> : <Eye size={12} />}
+              {t(cookiesRevealed ? 'common.hidePassword' : 'common.revealPassword')}
+            </button>
+          </div>
+        )}
+
+        {/* Paste textarea. When `cookiesRevealed`, contents are the live
+            saved file (read-only view); otherwise it's an empty
+            paste-new editor. */}
         <textarea
           value={cookiesRaw}
           onChange={(e) => setCookiesRaw(e.target.value)}
           placeholder={t('settings.youtubeCookies.placeholder')}
           rows={6}
           spellCheck={false}
-          className="mt-3 w-full border border-gray-200 rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-gray-400 placeholder-gray-300 resize-y"
+          readOnly={cookiesRevealed}
+          className={`mt-2 w-full border rounded px-3 py-2 text-xs font-mono focus:outline-none focus:border-gray-400 placeholder-gray-300 resize-y ${
+            cookiesRevealed
+              ? 'border-amber-200 bg-amber-50/40 text-gray-700'
+              : 'border-gray-200'
+          }`}
         />
 
         {/* Save row */}
         <div className="mt-3 flex items-center gap-3">
           <button
             onClick={handleSaveCookies}
-            disabled={!cookiesRaw.trim() || cookieSave.kind === 'saving'}
+            disabled={!cookiesRaw.trim() || cookieSave.kind === 'saving' || cookiesRevealed}
             className={`px-4 py-2 rounded text-sm font-medium transition-colors ${
               cookieSave.kind === 'saving'
                 ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
@@ -738,8 +705,8 @@ export default function SettingsPage() {
       </section>
 
       {/* Webhook notifications */}
-      <section className="mb-8">
-        <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-4">
+      <section>
+        <h2 className="inline-block text-sm font-medium uppercase tracking-wide mb-4 px-3 py-1 rounded bg-emerald-50 text-emerald-700">
           {t('settings.webhook.title')}
         </h2>
         <div className="space-y-4">
@@ -767,13 +734,23 @@ export default function SettingsPage() {
                   : t('settings.webhook.test.button')}
               </button>
             </div>
-            <input
-              type="url"
-              placeholder={t('settings.webhook.feishuPlaceholder')}
-              value={form.webhook_feishu}
-              onChange={(e) => handleChange('webhook_feishu', e.target.value)}
-              className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300"
-            />
+            <div className="relative">
+              <input
+                type={revealed['webhook-feishu'] ? 'url' : 'password'}
+                placeholder={t('settings.webhook.feishuPlaceholder')}
+                value={form.webhook_feishu}
+                onChange={(e) => handleChange('webhook_feishu', e.target.value)}
+                className="w-full border border-gray-200 rounded pl-3 pr-9 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300"
+              />
+              <button
+                type="button"
+                onClick={() => toggleReveal('webhook-feishu')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                aria-label={t(revealed['webhook-feishu'] ? 'common.hidePassword' : 'common.revealPassword')}
+              >
+                {revealed['webhook-feishu'] ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
           </div>
 
           {/* Slack */}
@@ -800,21 +777,29 @@ export default function SettingsPage() {
                   : t('settings.webhook.test.button')}
               </button>
             </div>
-            <input
-              type="url"
-              placeholder={t('settings.webhook.slackPlaceholder')}
-              value={form.webhook_slack}
-              onChange={(e) => handleChange('webhook_slack', e.target.value)}
-              className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300"
-            />
+            <div className="relative">
+              <input
+                type={revealed['webhook-slack'] ? 'url' : 'password'}
+                placeholder={t('settings.webhook.slackPlaceholder')}
+                value={form.webhook_slack}
+                onChange={(e) => handleChange('webhook_slack', e.target.value)}
+                className="w-full border border-gray-200 rounded pl-3 pr-9 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300"
+              />
+              <button
+                type="button"
+                onClick={() => toggleReveal('webhook-slack')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                aria-label={t(revealed['webhook-slack'] ? 'common.hidePassword' : 'common.revealPassword')}
+              >
+                {revealed['webhook-slack'] ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
           </div>
 
           {/* Server 酱 (WeChat) — uses a SendKey rather than a URL; the
-              backend builds the sct.ftqq.com endpoint from it. The SendKey
-              is treated as a secret: GET returns it masked, the input shows
-              empty when configured (so users can paste cleanly without
-              "****abcd" pollution), and we only PUT when the user has
-              actually edited the field (serverchanDirty flag). */}
+              backend builds the sct.ftqq.com endpoint from it. Returned in
+              plaintext for manager+ via the role-gated reveal in
+              _build_settings_out — eye toggle controls UI visibility. */}
           <div className="py-3 border-b border-gray-50">
             <div className="flex items-center justify-between mb-2">
               <div className="flex items-center gap-2">
@@ -832,12 +817,7 @@ export default function SettingsPage() {
               </div>
               <button
                 onClick={() => handleTest('serverchan')}
-                disabled={
-                  // Test uses the in-form value; if user hasn't touched the
-                  // input and DB has no key, there's nothing to test.
-                  (!serverchanDirty.current && !form.webhook_serverchan_set) ||
-                  testStatus.serverchan === 'testing'
-                }
+                disabled={!form.webhook_serverchan || testStatus.serverchan === 'testing'}
                 className={`text-xs px-3 py-1 rounded border transition-colors ${
                   testStatus.serverchan === 'ok'
                     ? 'border-green-200 text-green-600 bg-green-50'
@@ -855,36 +835,35 @@ export default function SettingsPage() {
                   : t('settings.webhook.test.button')}
               </button>
             </div>
-            <input
-              type="password"
-              autoComplete="off"
-              // When DB has a SendKey but user hasn't started editing, show
-              // an empty input — paste-into-empty is much safer than typing
-              // after the masked "****abcd" string. Once the user types
-              // anything, dirty flips to true and value tracks the form.
-              value={
-                form.webhook_serverchan_set && !serverchanDirty.current
-                  ? ''
-                  : form.webhook_serverchan
-              }
-              placeholder={
-                form.webhook_serverchan_set && !serverchanDirty.current
-                  ? t('settings.webhook.serverchanMasked', { masked: form.webhook_serverchan })
-                  : t('settings.webhook.serverchanPlaceholder')
-              }
-              onChange={(e) => {
-                serverchanDirty.current = true
-                handleChange('webhook_serverchan', e.target.value)
-                setTestStatus((prev) => ({ ...prev, serverchan: 'idle' }))
-              }}
-              className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300 font-mono"
-            />
+            <div className="relative">
+              <input
+                type={revealed['serverchan'] ? 'text' : 'password'}
+                autoComplete="off"
+                value={form.webhook_serverchan}
+                placeholder={t('settings.webhook.serverchanPlaceholder')}
+                onChange={(e) => {
+                  serverchanDirty.current = true
+                  handleChange('webhook_serverchan', e.target.value)
+                  setTestStatus((prev) => ({ ...prev, serverchan: 'idle' }))
+                }}
+                className="w-full border border-gray-200 rounded pl-3 pr-9 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300 font-mono"
+              />
+              <button
+                type="button"
+                onClick={() => toggleReveal('serverchan')}
+                className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                aria-label={t(revealed['serverchan'] ? 'common.hidePassword' : 'common.revealPassword')}
+              >
+                {revealed['serverchan'] ? <EyeOff size={14} /> : <Eye size={14} />}
+              </button>
+            </div>
             <div className="text-xs text-gray-400 mt-1">
               {t('settings.webhook.serverchanHint')}
             </div>
           </div>
         </div>
       </section>
+      </div>
 
       <div className="pt-2 text-xs text-gray-400">
         {t('settings.footer')}

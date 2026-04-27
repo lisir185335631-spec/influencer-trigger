@@ -13,7 +13,6 @@ from app.database import AsyncSessionLocal
 from app.models.feature_flag import FeatureFlag
 from app.models.system_settings import SystemSettings
 from app.schemas.auth import TokenData
-from app.services.settings_service import mask_token
 
 router = APIRouter(prefix="/settings", tags=["admin-settings"])
 
@@ -119,13 +118,19 @@ def _flag_out(f: FeatureFlag) -> FeatureFlagOut:
 # ─── System Settings ──────────────────────────────────────────────────────────
 
 def _system_settings_out(row: SystemSettings) -> SystemSettingsOut:
-    """Shared serializer — masks Server 酱 SendKey before sending to client."""
+    """Shared serializer.
+
+    Admin endpoint: caller is already admin (require_admin dep), so we
+    return secrets in plaintext so the SettingsAdminPage "👁 reveal" eye
+    toggle can show the real value. The frontend is responsible for the
+    default-hidden UX; the API trusts admin role and returns full values.
+    """
     serverchan_raw = getattr(row, "webhook_serverchan", "") or ""
     return SystemSettingsOut(
         scrape_concurrency=row.scrape_concurrency,
         webhook_feishu=row.webhook_feishu or "",
         webhook_slack=row.webhook_slack or "",
-        webhook_serverchan=mask_token(serverchan_raw),
+        webhook_serverchan=serverchan_raw,
         webhook_serverchan_set=bool(serverchan_raw),
         webhook_default_url=getattr(row, "webhook_default_url", "") or "",
         default_daily_quota=getattr(row, "default_daily_quota", 100) or 100,

@@ -1,5 +1,4 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
   emailsApi,
@@ -9,7 +8,6 @@ import {
 } from '../api/emails'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
 import { WS_URL } from '../api/websocket'
-import SendPanel from '../components/SendPanel'
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -327,43 +325,16 @@ function StatusDashboard() {
 }
 
 // ── Main page ─────────────────────────────────────────────────────────────────
-
-type Tab = 'status' | 'send'
+// Single-purpose monitor page. The previous "批量发送" tab was a duplicate of
+// the standalone "邮件发送" menu (/mailboxes); folding it into here muddied
+// the page's job, so it was removed. The legacy `?influencer_ids=...`
+// jump-in entry pointed at that tab and had no remaining callers, so it
+// went with it.
 
 export default function EmailsPage() {
-  const { t } = useTranslation()
-  const [searchParams] = useSearchParams()
-  const hasInfluencerIds = !!searchParams.get('influencer_ids')
-
-  const [activeTab, setActiveTab] = useState<Tab>(hasInfluencerIds ? 'send' : 'status')
-
-  useEffect(() => {
-    if (hasInfluencerIds) setActiveTab('send')
-  }, [hasInfluencerIds])
-
   return (
     <div className="p-6">
-      {/* Tab bar */}
-      <div className="flex border-b border-gray-200 mb-6">
-        {([
-          { key: 'status', label: t('emails.tabStatus') },
-          { key: 'send',   label: t('emails.tabBatchSend') },
-        ] as { key: Tab; label: string }[]).map(({ key, label }) => (
-          <button
-            key={key}
-            onClick={() => setActiveTab(key)}
-            className={`px-4 py-2 text-sm font-medium border-b-2 -mb-px transition-colors ${
-              activeTab === key
-                ? 'border-gray-900 text-gray-900'
-                : 'border-transparent text-gray-500 hover:text-gray-700'
-            }`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
-
-      {activeTab === 'status' ? <StatusDashboard /> : <SendPanel />}
+      <StatusDashboard />
     </div>
   )
 }

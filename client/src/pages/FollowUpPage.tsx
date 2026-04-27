@@ -411,11 +411,11 @@ function LogsTable() {
 export default function FollowUpPage() {
   const { t } = useTranslation()
   return (
-    <div className="p-6 space-y-5 max-w-5xl mx-auto">
+    <div className="p-6 space-y-5 max-w-7xl mx-auto">
       {/* Page title */}
       <div>
         <h1 className="text-lg font-semibold text-gray-900">{t('followUp.title')}</h1>
-        <p className="text-xs text-gray-400 mt-0.5">
+        <p className="text-xs text-gray-400 mt-0.5 whitespace-pre-line">
           {t('followUp.subtitle')}
         </p>
       </div>

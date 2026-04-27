@@ -109,6 +109,13 @@ export const getYouTubeCookiesStatus = () =>
     .get<YouTubeCookiesStatus>('/settings/youtube-cookies/status')
     .then((r) => r.data)
 
+// Manager+ only — fetches the saved YouTube cookies file as raw JSON to
+// power the SettingsPage eye-toggle reveal. Returns "" if no file exists.
+export const getYouTubeCookiesRaw = () =>
+  apiClient
+    .get<{ raw: string }>('/settings/youtube-cookies/raw')
+    .then((r) => r.data.raw)
+
 export const saveYouTubeCookies = (raw: string) =>
   apiClient
     .post<YouTubeCookiesStatus>('/settings/youtube-cookies', { raw })

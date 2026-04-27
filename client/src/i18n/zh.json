@@ -3,6 +3,8 @@
     "loading": "加载中…",
     "cancel": "取消",
     "save": "保存",
+    "revealPassword": "显示密码",
+    "hidePassword": "隐藏密码",
     "delete": "删除",
     "edit": "编辑",
     "create": "创建",
@@ -457,8 +459,6 @@
     }
   },
   "emails": {
-    "tabStatus": "邮件状态",
-    "tabBatchSend": "批量发送",
     "stats": {
       "totalSent": "发送总量",
       "delivered": "已送达",
@@ -775,7 +775,7 @@
   },
   "followUp": {
     "title": "自动追发",
-    "subtitle": "为未回复网红配置两阶段自动追发：首发后第 3 / 5 / 7 天密集追发 3 次，之后每月追发 1 次共 6 次，全程 9 次追发约 7 个月（含首发共 10 封邮件）。每封由 GPT-4o 基于该网红资料生成不同角度的内容，最后一封自动归档。",
+    "subtitle": "为未回复网红配置两阶段自动追发：\n首发后第 3 / 5 / 7 天密集追发 3 次，之后每月追发 1 次共 6 次，全程 9 次追发约 7 个月（含首发共 10 封邮件）。\n每封由 GPT-4o 基于该网红资料生成不同角度的内容，最后一封自动归档。",
     "strategy": {
       "title": "追发策略",
       "autoFollowUp": "自动追发",
@@ -930,7 +930,12 @@
       "disableTooltip": "停用成员",
       "enableTooltip": "启用成员",
       "disable": "停用",
-      "enable": "启用"
+      "enable": "启用",
+      "delete": "删除",
+      "deleteTooltip": "永久删除该成员（不可撤销）",
+      "deleteConfirmTitle": "永久删除 {{name}}?",
+      "deleteConfirm": "此操作不可撤销。该用户的账号会被永久删除,无法恢复。\n\n该用户创建的内容(草稿、活动、模板等)会保留,但作者归零。\n\n如果只是临时下线,请用「停用」(可重新启用)。",
+      "deleteFailed": "删除失败,请重试"
     },
     "modal": {
       "title": "添加团队成员",
@@ -1022,7 +1027,8 @@
       "delete": "清除已配置 cookies",
       "deleting": "清除中…",
       "saveError": "保存失败：{{message}}",
-      "deleteConfirm": "确定要清除已保存的 cookies？清除后 YouTube 抓取将退回匿名模式，命中率会显著下降。"
+      "deleteConfirm": "确定要清除已保存的 cookies？清除后 YouTube 抓取将退回匿名模式，命中率会显著下降。",
+      "revealFailed": "读取 cookies 文件失败,请稍后重试"
     },
     "webhook": {
       "title": "Webhook 通知",

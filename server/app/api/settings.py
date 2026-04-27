@@ -61,31 +61,46 @@ async def get_db():  # type: ignore[return]
         yield db
 
 
-def _build_settings_out(sys, fu) -> SettingsOut:
-    """Shared serializer — masks Apify tokens before sending to client."""
+def _build_settings_out(sys, fu, current_user: TokenData) -> SettingsOut:
+    """Shared serializer.
+
+    Role-gated secrets:
+    - manager / admin → see full plaintext values (so the SettingsPage
+      "👁 reveal" toggle can show the real token / SendKey / webhook URL)
+    - operator        → keep masked (****abcd) so an F12 / curl on
+      /api/settings can't exfiltrate live credentials
+
+    The SettingsPage UI already redirects operator at the page level, but
+    the API still has to enforce the rule because curl bypasses the UI.
+    """
+    is_privileged = current_user.role in ("admin", "manager")
+
+    def reveal_or_mask(val: str | None) -> str:
+        return (val or "") if is_privileged else mask_token(val or "")
+
     return SettingsOut(
         follow_up_enabled=fu.enabled,
         interval_days=fu.interval_days,
         max_count=fu.max_count,
         hour_utc=fu.hour_utc,
         scrape_concurrency=sys.scrape_concurrency,
-        webhook_feishu=sys.webhook_feishu,
-        webhook_slack=sys.webhook_slack,
-        # Mask the SendKey before sending to the client — same defence as
-        # apify_*_token. Client uses webhook_serverchan_set to know if a
-        # value exists in DB.
-        webhook_serverchan=mask_token(sys.webhook_serverchan or ""),
+        # Webhook URLs contain a secret path segment — apply the same
+        # role-gated reveal as Apify tokens / SendKey, even though they're
+        # technically URLs not tokens.
+        webhook_feishu=reveal_or_mask(sys.webhook_feishu),
+        webhook_slack=reveal_or_mask(sys.webhook_slack),
+        webhook_serverchan=reveal_or_mask(sys.webhook_serverchan),
         webhook_serverchan_set=bool(sys.webhook_serverchan),
-        apify_tiktok_token=mask_token(sys.apify_tiktok_token or ""),
+        apify_tiktok_token=reveal_or_mask(sys.apify_tiktok_token),
         apify_tiktok_token_set=bool(sys.apify_tiktok_token),
         apify_tiktok_actor=sys.apify_tiktok_actor or "",
-        apify_ig_token=mask_token(sys.apify_ig_token or ""),
+        apify_ig_token=reveal_or_mask(sys.apify_ig_token),
         apify_ig_token_set=bool(sys.apify_ig_token),
         apify_ig_actor=sys.apify_ig_actor or "",
-        apify_twitter_token=mask_token(sys.apify_twitter_token or ""),
+        apify_twitter_token=reveal_or_mask(sys.apify_twitter_token),
         apify_twitter_token_set=bool(sys.apify_twitter_token),
         apify_twitter_actor=sys.apify_twitter_actor or "",
-        apify_facebook_token=mask_token(sys.apify_facebook_token or ""),
+        apify_facebook_token=reveal_or_mask(sys.apify_facebook_token),
         apify_facebook_token_set=bool(sys.apify_facebook_token),
         apify_facebook_actor=sys.apify_facebook_actor or "",
     )
@@ -99,7 +114,7 @@ async def get_settings(
     """Return merged system settings."""
     sys = await get_or_create_system_settings(db)
     fu = await get_or_create_settings(db)
-    return _build_settings_out(sys, fu)
+    return _build_settings_out(sys, fu, current_user)
 
 
 @router.put("", response_model=SettingsOut)
@@ -147,7 +162,7 @@ async def update_settings(
         except Exception as exc:
             logger.warning("Failed to reschedule follow-up job: %s", exc)
 
-    return _build_settings_out(sys, fu)
+    return _build_settings_out(sys, fu, current_user)
 
 
 @router.post("/test-apify-actor", response_model=TestApifyActorResponse)
@@ -413,6 +428,36 @@ async def get_youtube_cookies_status(
     current_user: TokenData = Depends(get_current_user),
 ) -> YouTubeCookiesStatus:
     return _read_status()
+
+
+class YouTubeCookiesRawOut(BaseModel):
+    raw: str
+
+
+@router.get("/youtube-cookies/raw", response_model=YouTubeCookiesRawOut)
+async def get_youtube_cookies_raw(
+    current_user: TokenData = Depends(require_manager_or_above),
+) -> YouTubeCookiesRawOut:
+    """Read the saved YouTube cookies file as raw JSON.
+
+    Manager+ only — these cookies contain SAPISID / __Secure-3PSID /
+    LOGIN_INFO live session credentials; anyone with them can impersonate
+    the YouTube account that exported them. The frontend uses this to
+    power the eye-toggle "show full cookie" feature on SettingsPage and
+    keeps the textarea read-only when revealed to prevent accidental
+    in-place edits from corrupting the saved set.
+
+    Returns empty string when no cookies file exists yet (rather than
+    404) so the frontend can show "(no cookies configured)" instead of
+    surfacing a network error.
+    """
+    if not _YT_COOKIES_PATH.exists():
+        return YouTubeCookiesRawOut(raw="")
+    try:
+        return YouTubeCookiesRawOut(raw=_YT_COOKIES_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning("Reading youtube-cookies.json raw failed: %s", e)
+        raise HTTPException(status_code=500, detail="读取 cookies 文件失败")
 
 
 @router.post("/youtube-cookies", response_model=YouTubeCookiesStatus)

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { CheckCircle, ChevronDown, ChevronUp, Pencil, Plus, Save, Trash2, X, XCircle } from 'lucide-react'
+import { CheckCircle, ChevronDown, ChevronUp, Eye, EyeOff, Pencil, Plus, Save, Trash2, X, XCircle } from 'lucide-react'
 import {
   type FeatureFlagCreate,
   type FeatureFlagOut,
@@ -179,6 +179,11 @@ function SystemTab({ settings, onSaved }: SystemTabProps) {
   // GET returns the SendKey masked ("****abcd"); only PUT it when the user
   // has actually edited the field, otherwise we'd write the mask back to DB.
   const serverchanDirty = useRef(false)
+  // Per-secret reveal toggle (eye icon). Keys: webhook-feishu / webhook-slack
+  // / serverchan. Default false → input is type="password" (•••••).
+  const [revealed, setRevealed] = useState<Record<string, boolean>>({})
+  const toggleReveal = (key: string) =>
+    setRevealed((prev) => ({ ...prev, [key]: !prev[key] }))
 
   const handleSave = async () => {
     setSaving(true)
@@ -252,27 +257,48 @@ function SystemTab({ settings, onSaved }: SystemTabProps) {
       <div className="grid grid-cols-2 gap-4">
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">{t('admin.settings.system.feishuWebhook')}</label>
-          <input
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            value={form.webhook_feishu}
-            onChange={e => setForm(f => ({ ...f, webhook_feishu: e.target.value }))}
-            placeholder="https://open.feishu.cn/..."
-          />
+          <div className="relative">
+            <input
+              type={revealed['webhook-feishu'] ? 'text' : 'password'}
+              className="w-full border border-gray-200 rounded-lg pl-3 pr-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={form.webhook_feishu}
+              onChange={e => setForm(f => ({ ...f, webhook_feishu: e.target.value }))}
+              placeholder="https://open.feishu.cn/..."
+            />
+            <button
+              type="button"
+              onClick={() => toggleReveal('webhook-feishu')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+              aria-label={t(revealed['webhook-feishu'] ? 'common.hidePassword' : 'common.revealPassword')}
+            >
+              {revealed['webhook-feishu'] ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-600 mb-1">{t('admin.settings.system.slackWebhook')}</label>
-          <input
-            className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
-            value={form.webhook_slack}
-            onChange={e => setForm(f => ({ ...f, webhook_slack: e.target.value }))}
-            placeholder="https://hooks.slack.com/..."
-          />
+          <div className="relative">
+            <input
+              type={revealed['webhook-slack'] ? 'text' : 'password'}
+              className="w-full border border-gray-200 rounded-lg pl-3 pr-9 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500"
+              value={form.webhook_slack}
+              onChange={e => setForm(f => ({ ...f, webhook_slack: e.target.value }))}
+              placeholder="https://hooks.slack.com/..."
+            />
+            <button
+              type="button"
+              onClick={() => toggleReveal('webhook-slack')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+              aria-label={t(revealed['webhook-slack'] ? 'common.hidePassword' : 'common.revealPassword')}
+            >
+              {revealed['webhook-slack'] ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
         </div>
       </div>
 
-      {/* Server 酱 SendKey — secret, masked on read; same dirty-gate pattern
-          as Apify tokens / user-side SettingsPage to avoid writing the
-          masked placeholder back to DB. */}
+      {/* Server 酱 SendKey — admin endpoint returns plaintext; eye toggle
+          gates UI visibility (default hidden behind type="password"). */}
       <div>
         <label className="block text-xs font-medium text-gray-600 mb-1">
           {t('admin.settings.system.serverchanWebhook')}
@@ -282,25 +308,27 @@ function SystemTab({ settings, onSaved }: SystemTabProps) {
               : t('admin.settings.system.serverchanNotConfigured')}
           </span>
         </label>
-        <input
-          type="password"
-          autoComplete="off"
-          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
-          value={
-            form.webhook_serverchan_set && !serverchanDirty.current
-              ? ''
-              : form.webhook_serverchan
-          }
-          placeholder={
-            form.webhook_serverchan_set && !serverchanDirty.current
-              ? t('admin.settings.system.serverchanMasked', { masked: form.webhook_serverchan })
-              : 'SCT123ABC...'
-          }
-          onChange={e => {
-            serverchanDirty.current = true
-            setForm(f => ({ ...f, webhook_serverchan: e.target.value }))
-          }}
-        />
+        <div className="relative">
+          <input
+            type={revealed['serverchan'] ? 'text' : 'password'}
+            autoComplete="off"
+            className="w-full border border-gray-200 rounded-lg pl-3 pr-9 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+            value={form.webhook_serverchan}
+            placeholder="SCT123ABC..."
+            onChange={e => {
+              serverchanDirty.current = true
+              setForm(f => ({ ...f, webhook_serverchan: e.target.value }))
+            }}
+          />
+          <button
+            type="button"
+            onClick={() => toggleReveal('serverchan')}
+            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+            aria-label={t(revealed['serverchan'] ? 'common.hidePassword' : 'common.revealPassword')}
+          >
+            {revealed['serverchan'] ? <EyeOff size={14} /> : <Eye size={14} />}
+          </button>
+        </div>
         <p className="mt-1 text-xs text-gray-400">
           {t('admin.settings.system.serverchanHint')}
         </p>

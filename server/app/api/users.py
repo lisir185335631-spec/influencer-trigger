@@ -87,3 +87,29 @@ async def disable_user_endpoint(
     if not user:
         raise HTTPException(status_code=404, detail="User not found")
     await update_user(db, user, is_active=False)
+
+
+@router.post("/users/{user_id}/hard-delete", status_code=status.HTTP_204_NO_CONTENT)
+async def hard_delete_user_endpoint(
+    user_id: int,
+    db: AsyncSession = Depends(get_db),
+    current_user: TokenData = Depends(require_admin),
+):
+    """Permanently delete a user row (irreversible).
+
+    Differs from DELETE /users/{id} (which only sets is_active=false and
+    can be reversed). All FKs to users.id are declared nullable +
+    ondelete=SET NULL, so historical records (templates / scrape_tasks /
+    notes / login_history / etc.) survive — their author column simply
+    becomes None.
+
+    Same self-protection as the soft-delete: an admin cannot wipe their
+    own account out of the system.
+    """
+    if user_id == current_user.user_id:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    user = await get_user_by_id(db, user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+    await db.delete(user)
+    await db.commit()

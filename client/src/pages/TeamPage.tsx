@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { UserPlus, Ban, CheckCircle, X } from 'lucide-react'
+import { UserPlus, Ban, CheckCircle, X, Trash2, AlertTriangle, Loader2 } from 'lucide-react'
 import { useAuthContext } from '../stores/AuthContext'
 import { usersApi, UserItem, UserRole, UserCreateRequest } from '../api/users'
 
@@ -181,6 +181,11 @@ export default function TeamPage() {
   const [loading, setLoading] = useState(true)
   const [showAdd, setShowAdd] = useState(false)
   const [actionLoading, setActionLoading] = useState<number | null>(null)
+  // Hard-delete confirmation flow — null = idle; UserItem = modal open
+  // for that user. `deleting` blocks the modal's confirm button + cancel
+  // affordances while the PATCH is in flight.
+  const [deleteTarget, setDeleteTarget] = useState<UserItem | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   // Derive current user id from users list by username
   const currentUserId =
@@ -232,8 +237,27 @@ export default function TeamPage() {
     setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
   }
 
+  // Permanently remove the user row (via /users/{id}/hard-delete).
+  // Reuses backend's "cannot delete yourself" guard, but the button is
+  // also hidden client-side for the current user so the modal never
+  // even opens for self-deletion.
+  const handleHardDelete = async () => {
+    if (!deleteTarget) return
+    setDeleting(true)
+    try {
+      await usersApi.hardDelete(deleteTarget.id)
+      setUsers((prev) => prev.filter((u) => u.id !== deleteTarget.id))
+      setTotal((c) => c - 1)
+      setDeleteTarget(null)
+    } catch {
+      window.alert(t('team.table.deleteFailed'))
+    } finally {
+      setDeleting(false)
+    }
+  }
+
   return (
-    <div className="p-6 max-w-4xl">
+    <div className="p-6 max-w-7xl">
       {/* Header */}
       <div className="flex items-center justify-between mb-6">
         <div>
@@ -324,24 +348,36 @@ export default function TeamPage() {
                   </td>
                   <td className="px-4 py-3 text-right">
                     {user.id !== currentUserId && (
-                      <button
-                        onClick={() => handleToggleActive(user)}
-                        disabled={actionLoading === user.id}
-                        title={user.is_active ? t('team.table.disableTooltip') : t('team.table.enableTooltip')}
-                        className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40 transition-colors"
-                      >
-                        {user.is_active ? (
-                          <>
-                            <Ban size={13} />
-                            {t('team.table.disable')}
-                          </>
-                        ) : (
-                          <>
-                            <CheckCircle size={13} />
-                            {t('team.table.enable')}
-                          </>
-                        )}
-                      </button>
+                      <div className="inline-flex items-center gap-3">
+                        <button
+                          onClick={() => handleToggleActive(user)}
+                          disabled={actionLoading === user.id || deleting}
+                          title={user.is_active ? t('team.table.disableTooltip') : t('team.table.enableTooltip')}
+                          className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-gray-700 disabled:opacity-40 transition-colors"
+                        >
+                          {user.is_active ? (
+                            <>
+                              <Ban size={13} />
+                              {t('team.table.disable')}
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle size={13} />
+                              {t('team.table.enable')}
+                            </>
+                          )}
+                        </button>
+                        {/* Hard delete — destructive, opens confirm modal */}
+                        <button
+                          onClick={() => setDeleteTarget(user)}
+                          disabled={actionLoading === user.id || deleting}
+                          title={t('team.table.deleteTooltip')}
+                          className="inline-flex items-center gap-1 text-xs text-gray-400 hover:text-red-600 disabled:opacity-40 transition-colors"
+                        >
+                          <Trash2 size={13} />
+                          {t('team.table.delete')}
+                        </button>
+                      </div>
                     )}
                   </td>
                 </tr>
@@ -368,6 +404,92 @@ export default function TeamPage() {
           }}
         />
       )}
+
+      {deleteTarget && (
+        <ConfirmHardDeleteModal
+          user={deleteTarget}
+          loading={deleting}
+          onCancel={() => setDeleteTarget(null)}
+          onConfirm={handleHardDelete}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Hard-delete confirmation modal ────────────────────────────────────────────
+// Same look-and-feel as CRMPage's ConfirmDeleteModal so destructive
+// surfaces stay consistent. ESC and outside-click both cancel (unless an
+// action is in-flight, in which case both are blocked to prevent the
+// dialog from being dismissed mid-PATCH).
+
+function ConfirmHardDeleteModal({
+  user,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  user: UserItem
+  loading: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { t } = useTranslation()
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !loading) onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [loading, onCancel])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+      onClick={() => !loading && onCancel()}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        role="alertdialog"
+        aria-modal="true"
+        className="bg-white rounded-xl shadow-xl w-full max-w-md"
+      >
+        <div className="p-5">
+          <div className="flex gap-3">
+            <div className="shrink-0 w-10 h-10 rounded-full bg-red-50 flex items-center justify-center">
+              <AlertTriangle size={20} className="text-red-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-semibold text-gray-900 mb-1">
+                {t('team.table.deleteConfirmTitle', { name: user.username })}
+              </h2>
+              <p className="text-sm text-gray-500 leading-relaxed whitespace-pre-line">
+                {t('team.table.deleteConfirm')}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+          >
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="inline-flex items-center gap-1 px-4 py-1.5 text-xs bg-red-600 text-white rounded hover:bg-red-700 disabled:opacity-50 transition-colors"
+          >
+            {loading && <Loader2 size={12} className="animate-spin" />}
+            {t('team.table.delete')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }
