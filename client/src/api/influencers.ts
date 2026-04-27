@@ -104,6 +104,9 @@ export interface InfluencerUpdate {
   bio?: string
   status?: string
   priority?: string
+  // Used by the "重启从头" action on InfluencerDetailPage to reset cadence
+  // counter; for normal edits (nickname/etc.) leave undefined.
+  follow_up_count?: number
 }
 
 export async function listInfluencers(params?: {
@@ -119,8 +122,10 @@ export async function listInfluencers(params?: {
   industry?: string
   reply_intent?: string
   sort_by?: string
+  ids?: number[]
+  exclude_status?: string[]
 }): Promise<InfluencerListResponse> {
-  const { tag_ids, sort_by, ...rest } = params ?? {}
+  const { tag_ids, sort_by, ids, exclude_status, ...rest } = params ?? {}
   const queryParams: Record<string, unknown> = { ...rest }
   // axios serializes arrays as tag_ids[]=1 by default; use paramsSerializer to send tag_ids=1&tag_ids=2
   const res = await apiClient.get('/influencers', {
@@ -135,6 +140,8 @@ export async function listInfluencers(params?: {
       }
       if (tag_ids?.length) tag_ids.forEach((id) => sp.append('tag_ids', String(id)))
       if (sort_by) sp.append('sort_by', sort_by)
+      if (ids?.length) ids.forEach((id) => sp.append('ids', String(id)))
+      if (exclude_status?.length) exclude_status.forEach((s) => sp.append('exclude_status', s))
       return sp.toString()
     },
   })

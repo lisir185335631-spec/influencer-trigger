@@ -29,6 +29,7 @@ async def update_system_settings(
     scrape_concurrency: Optional[int] = None,
     webhook_feishu: Optional[str] = None,
     webhook_slack: Optional[str] = None,
+    webhook_serverchan: Optional[str] = None,
     apify_tiktok_token: Optional[str] = None,
     apify_tiktok_actor: Optional[str] = None,
     apify_ig_token: Optional[str] = None,
@@ -51,6 +52,8 @@ async def update_system_settings(
         settings.webhook_feishu = webhook_feishu
     if webhook_slack is not None:
         settings.webhook_slack = webhook_slack
+    if webhook_serverchan is not None:
+        settings.webhook_serverchan = webhook_serverchan.strip()
     if apify_tiktok_token is not None:
         settings.apify_tiktok_token = apify_tiktok_token.strip()
     if apify_tiktok_actor is not None:

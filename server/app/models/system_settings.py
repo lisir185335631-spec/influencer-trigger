@@ -16,6 +16,9 @@ class SystemSettings(Base):
     scrape_concurrency: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
     webhook_feishu: Mapped[str] = mapped_column(String, default="", nullable=False)
     webhook_slack: Mapped[str] = mapped_column(String, default="", nullable=False)
+    # Server 酱 SendKey for WeChat push (sct.ftqq.com). Webhook service falls
+    # back to the SERVERCHAN_SEND_KEY env var when this column is empty.
+    webhook_serverchan: Mapped[str] = mapped_column(String(512), default="", nullable=False, server_default="")
     webhook_default_url: Mapped[str] = mapped_column(String(512), default="", nullable=False)
     default_daily_quota: Mapped[int] = mapped_column(Integer, default=100, nullable=False)
     security_config: Mapped[Optional[str]] = mapped_column(Text, nullable=True)

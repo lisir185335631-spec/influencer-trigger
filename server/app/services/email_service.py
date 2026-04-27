@@ -71,6 +71,7 @@ async def list_emails(
     status: str | None = None,
     page: int = 1,
     page_size: int = 20,
+    email_type: str | None = None,
 ) -> tuple[list[dict], int]:
     base_q = (
         select(
@@ -81,6 +82,8 @@ async def list_emails(
             Email.subject,
             Email.sent_at,
             Email.updated_at,
+            Email.email_type,
+            Influencer.follow_up_count.label("follow_up_count"),
             Influencer.nickname.label("influencer_name"),
             Influencer.email.label("influencer_email"),
             Influencer.platform.label("influencer_platform"),
@@ -96,6 +99,9 @@ async def list_emails(
         base_q = base_q.where(Influencer.platform == platform)
     if status is not None:
         base_q = base_q.where(Email.status == status)
+    if email_type is not None:
+        # initial / follow_up / holiday — UI can filter to "show only follow-ups"
+        base_q = base_q.where(Email.email_type == email_type)
 
     count_q = select(func.count()).select_from(base_q.subquery())
     total = (await db.execute(count_q)).scalar_one()
@@ -103,4 +109,7 @@ async def list_emails(
     items_q = base_q.order_by(Email.updated_at.desc()).offset((page - 1) * page_size).limit(page_size)
     rows = (await db.execute(items_q)).mappings().all()
 
+    # EmailType / EmailStatus are str-mixin enums (`class X(str, enum.Enum)`),
+    # so Pydantic v2 accepts the instances directly into `str` schema fields
+    # without coercion. No manual enum.value extraction needed.
     return [dict(r) for r in rows], total

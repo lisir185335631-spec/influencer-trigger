@@ -79,6 +79,7 @@ export default function SettingsPage() {
   const [testStatus, setTestStatus] = useState<TestStatus>({
     feishu: 'idle',
     slack: 'idle',
+    serverchan: 'idle',
   })
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -89,6 +90,10 @@ export default function SettingsPage() {
   // — the server would write the literal "****abcd" string and break the
   // scraper. Only fields in this set get included in the PUT payload.
   const apifyTokenDirty = useRef<Set<ApifyPlatform>>(new Set())
+  // Same defence for Server 酱 SendKey: GET returns the masked value,
+  // so we only PUT webhook_serverchan when the user has actually edited it
+  // — otherwise we'd write "****abcd" back to the DB and break the push.
+  const serverchanDirty = useRef(false)
   const [apifyTest, setApifyTest] = useState<Record<ApifyPlatform, ApifyTestState>>({
     tiktok: { status: 'idle' },
     instagram: { status: 'idle' },
@@ -176,9 +181,15 @@ export default function SettingsPage() {
       if (apifyTokenDirty.current.has('facebook')) {
         patch.apify_facebook_token = form.apify_facebook_token
       }
+      // Server 酱 SendKey: same dirty-gate as apify tokens — sending the
+      // masked "****abcd" back would corrupt the DB row.
+      if (serverchanDirty.current) {
+        patch.webhook_serverchan = form.webhook_serverchan
+      }
       const updated = await updateSettings(patch)
       setForm(updated)
       apifyTokenDirty.current.clear()
+      serverchanDirty.current = false
       setSaveStatus('saved')
       setTimeout(() => setSaveStatus('idle'), 2500)
     } catch {
@@ -284,9 +295,13 @@ export default function SettingsPage() {
     }
   }
 
-  const handleTest = async (platform: 'feishu' | 'slack') => {
+  const handleTest = async (platform: 'feishu' | 'slack' | 'serverchan') => {
     const url =
-      platform === 'feishu' ? form?.webhook_feishu : form?.webhook_slack
+      platform === 'feishu'
+        ? form?.webhook_feishu
+        : platform === 'slack'
+        ? form?.webhook_slack
+        : form?.webhook_serverchan
     if (!url) return
     setTestStatus((prev) => ({ ...prev, [platform]: 'testing' }))
     try {
@@ -347,6 +362,13 @@ export default function SettingsPage() {
         <h2 className="text-sm font-medium text-gray-500 uppercase tracking-wide mb-4">
           {t('settings.followUp.title')}
         </h2>
+        {/* Two-phase cadence note: this page only exposes phase-2 (cold)
+            interval/count. Full configuration (incl. phase-1 intensive) is
+            on /follow-up. Without this hint, users would assume "interval"
+            here controls the very first follow-up timing too. */}
+        <div className="mb-3 px-3 py-2 bg-amber-50 border border-amber-100 rounded text-xs text-amber-800">
+          {t('settings.followUp.phase2OnlyHint')}
+        </div>
         <div className="space-y-4">
           <div className="flex items-center justify-between py-3 border-b border-gray-50">
             <div>
@@ -785,6 +807,81 @@ export default function SettingsPage() {
               onChange={(e) => handleChange('webhook_slack', e.target.value)}
               className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300"
             />
+          </div>
+
+          {/* Server 酱 (WeChat) — uses a SendKey rather than a URL; the
+              backend builds the sct.ftqq.com endpoint from it. The SendKey
+              is treated as a secret: GET returns it masked, the input shows
+              empty when configured (so users can paste cleanly without
+              "****abcd" pollution), and we only PUT when the user has
+              actually edited the field (serverchanDirty flag). */}
+          <div className="py-3 border-b border-gray-50">
+            <div className="flex items-center justify-between mb-2">
+              <div className="flex items-center gap-2">
+                <span
+                  className={`inline-block w-2 h-2 rounded-full ${
+                    form.webhook_serverchan_set ? 'bg-green-500' : 'bg-gray-300'
+                  }`}
+                />
+                <div className="text-sm font-medium text-gray-800">{t('settings.webhook.serverchan')}</div>
+                <span className="text-xs text-gray-400">
+                  {form.webhook_serverchan_set
+                    ? t('settings.apify.statusConfigured')
+                    : t('settings.apify.statusNotConfigured')}
+                </span>
+              </div>
+              <button
+                onClick={() => handleTest('serverchan')}
+                disabled={
+                  // Test uses the in-form value; if user hasn't touched the
+                  // input and DB has no key, there's nothing to test.
+                  (!serverchanDirty.current && !form.webhook_serverchan_set) ||
+                  testStatus.serverchan === 'testing'
+                }
+                className={`text-xs px-3 py-1 rounded border transition-colors ${
+                  testStatus.serverchan === 'ok'
+                    ? 'border-green-200 text-green-600 bg-green-50'
+                    : testStatus.serverchan === 'fail'
+                    ? 'border-red-200 text-red-600 bg-red-50'
+                    : 'border-gray-200 text-gray-500 hover:border-gray-400 disabled:opacity-40 disabled:cursor-not-allowed'
+                }`}
+              >
+                {testStatus.serverchan === 'testing'
+                  ? t('settings.webhook.test.sending')
+                  : testStatus.serverchan === 'ok'
+                  ? t('settings.webhook.test.success')
+                  : testStatus.serverchan === 'fail'
+                  ? t('settings.webhook.test.failed')
+                  : t('settings.webhook.test.button')}
+              </button>
+            </div>
+            <input
+              type="password"
+              autoComplete="off"
+              // When DB has a SendKey but user hasn't started editing, show
+              // an empty input — paste-into-empty is much safer than typing
+              // after the masked "****abcd" string. Once the user types
+              // anything, dirty flips to true and value tracks the form.
+              value={
+                form.webhook_serverchan_set && !serverchanDirty.current
+                  ? ''
+                  : form.webhook_serverchan
+              }
+              placeholder={
+                form.webhook_serverchan_set && !serverchanDirty.current
+                  ? t('settings.webhook.serverchanMasked', { masked: form.webhook_serverchan })
+                  : t('settings.webhook.serverchanPlaceholder')
+              }
+              onChange={(e) => {
+                serverchanDirty.current = true
+                handleChange('webhook_serverchan', e.target.value)
+                setTestStatus((prev) => ({ ...prev, serverchan: 'idle' }))
+              }}
+              className="w-full border border-gray-200 rounded px-3 py-2 text-sm focus:outline-none focus:border-gray-400 placeholder-gray-300 font-mono"
+            />
+            <div className="text-xs text-gray-400 mt-1">
+              {t('settings.webhook.serverchanHint')}
+            </div>
           </div>
         </div>
       </section>

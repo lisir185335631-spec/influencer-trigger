@@ -350,7 +350,10 @@
   "sendPanel": {
     "openPicker": "选择网红收件人",
     "pickHint": "在下方挑选要发送的网红",
-    "changeRecipients": "更换收件人"
+    "changeRecipients": "更换收件人",
+    "selectedLoadFailed": "已选网红资料加载失败",
+    "retry": "重试",
+    "someUnavailable": "{{count}} 位已不可用（可能已删除）"
   },
   "influencerPicker": {
     "title": "选择网红收件人",
@@ -363,6 +366,7 @@
     "loading": "加载中…",
     "empty": "无匹配的网红",
     "toggleAllVisible": "全选当前页",
+    "includeContacted": "显示已联系网红",
     "col": {
       "recipient": "收件人",
       "platform": "平台",
@@ -467,12 +471,19 @@
       "allCampaigns": "全部活动",
       "allPlatforms": "全部平台",
       "allStatuses": "全部状态",
+      "allTypes": "全部类型",
+      "types": {
+        "initial": "首发",
+        "follow_up": "追发",
+        "holiday": "节日"
+      },
       "clearFilters": "清除筛选"
     },
     "emailCount": "{{count}} 封邮件",
     "table": {
       "influencer": "网红",
       "email": "邮箱",
+      "emailType": "邮件类型",
       "campaign": "活动",
       "sentAt": "发送时间",
       "status": "状态",
@@ -610,6 +621,17 @@
     "tabTags": "标签",
     "tabNotes": "备注",
     "tabCollaborations": "合作",
+    "actions": {
+      "pauseFollowUp": "暂停追发",
+      "pauseFollowUpHint": "停止本网红的自动追发；已发送的不撤回",
+      "resumeFollowUp": "恢复追发",
+      "resumeFollowUpHint": "从当前追发轮次继续(不重置 follow_up_count)",
+      "restart": "重启从头",
+      "restartHint": "重置为新网红 + 追发计数归零；之后需在邮件发送页重新挑选发首发",
+      "restartConfirmTitle": "重启 {{name}} 的追发?",
+      "confirmRestart": "确认重启?\n\n网红状态会回到「new」,追发计数清零(follow_up_count = 0),后续需要在「邮件发送」页面重新挑选并发首发,才会进入新的追发循环。\n\n此操作不影响已发送邮件的历史记录。",
+      "actionFailed": "操作失败,请重试"
+    },
     "info": {
       "platform": "平台",
       "email": "邮箱",
@@ -753,16 +775,26 @@
   },
   "followUp": {
     "title": "自动追发",
-    "subtitle": "为未回复网红配置自动月度追发，每次追发使用 GPT-4o 生成不同角度的内容。",
+    "subtitle": "为未回复网红配置两阶段自动追发：首发后第 3 / 5 / 7 天密集追发 3 次，之后每月追发 1 次共 6 次，全程 9 次追发约 7 个月（含首发共 10 封邮件）。每封由 GPT-4o 基于该网红资料生成不同角度的内容，最后一封自动归档。",
     "strategy": {
       "title": "追发策略",
       "autoFollowUp": "自动追发",
-      "intervalLabel": "追发间隔（天）",
-      "intervalHint": "距上次邮件多少天后触发追发",
-      "maxLabel": "最大追发次数",
-      "maxHint": "超过此次数后网红将被归档",
-      "sendTimeLabel": "发送时间（UTC 小时）",
+      "phase1Title": "阶段 1 — 密集追发",
+      "phase1CountLabel": "阶段 1 次数",
+      "phase1IntervalLabel": "阶段 1 间隔（天）",
+      "phase2Title": "阶段 2 — 冷追发",
+      "intervalLabel": "阶段 2 间隔（天）",
+      "maxLabel": "阶段 2 次数",
+      "sendTimeLabel": "每日扫描时刻（UTC 小时）",
       "sendTimeHint": "每天在此 UTC 时间执行追发检查",
+      "timelineDayLabel": "Day {{day}}",
+      "timelineEventInitial": "首发邮件",
+      "timelineEventPhase1": "密集追发 #{{n}}",
+      "timelineEventPhase1End": "密集追发 #{{n}}（密集阶段结束）",
+      "timelineEventPhase2": "月度追发 #{{n}}",
+      "timelineEventPhase2End": "月度追发 #{{n}}（最后一封）",
+      "timelineEventArchive": "归档,永远不再发",
+      "timelineSummary": "合计 1 首发 + {{count}} 次追发 = {{total}} 封,约 {{months}} 个月",
       "lastUpdated": "最后更新：{{date}}",
       "saving": "保存中…",
       "saved": "设置已保存",
@@ -925,12 +957,13 @@
     },
     "followUp": {
       "title": "追发策略",
+      "phase2OnlyHint": "ⓘ 此处仅控制阶段 2（冷追发）的间隔/次数。完整追发节奏（含阶段 1 密集追发）请前往「自动追发」页面配置。",
       "enable": "启用自动追发",
       "enableHint": "开启后定时检查并发送追发邮件",
-      "interval": "追发间隔天数",
-      "intervalHint": "距上次邮件多少天后触发追发",
-      "max": "最大追发次数",
-      "maxHint": "每位网红最多追发几封邮件",
+      "interval": "阶段 2 间隔天数",
+      "intervalHint": "冷阶段每次追发间隔",
+      "max": "阶段 2 最大次数",
+      "maxHint": "冷阶段追发次数；总次数 = 阶段 1 + 阶段 2",
       "sendTime": "执行时间（UTC 小时）",
       "sendTimeHint": "每天定时执行追发检查的 UTC 小时（0–23）"
     },
@@ -995,8 +1028,12 @@
       "title": "Webhook 通知",
       "feishu": "飞书 Webhook",
       "slack": "Slack Webhook",
+      "serverchan": "Server 酱（微信推送）",
       "feishuPlaceholder": "https://open.feishu.cn/open-apis/bot/v2/hook/…",
       "slackPlaceholder": "https://hooks.slack.com/services/…",
+      "serverchanPlaceholder": "SCT123ABC...（在 sct.ftqq.com 注册后获取 SendKey）",
+      "serverchanMasked": "已配置：{{masked}}（输入新值即覆盖；留空保持不变）",
+      "serverchanHint": "网红回复邮件时通过 Server 酱推送到您的微信。访问 https://sct.ftqq.com 注册获取 SendKey。",
       "test": {
         "sending": "发送中…",
         "success": "✓ 发送成功",
@@ -1458,6 +1495,11 @@
         "defaultWebhook": "默认 Webhook 地址",
         "feishuWebhook": "飞书 Webhook",
         "slackWebhook": "Slack Webhook",
+        "serverchanWebhook": "Server 酱 SendKey（微信推送）",
+        "serverchanConfigured": "已配置",
+        "serverchanNotConfigured": "未配置",
+        "serverchanMasked": "已配置：{{masked}}（输入新值即覆盖；留空保持不变）",
+        "serverchanHint": "网红回复邮件时通过 Server 酱推送到您的微信。访问 https://sct.ftqq.com 注册获取 SendKey。",
         "defaultQuota": "默认日发送限额（封/天）",
         "saveButton": "保存配置",
         "saved": "已保存！"

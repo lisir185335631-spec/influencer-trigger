@@ -177,14 +177,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
 
     # Load follow-up settings and schedule monthly follow-up job
-    from app.services.follow_up_service import get_or_create_settings, monthly_follow_up_check
+    from app.services.follow_up_service import get_or_create_settings, daily_follow_up_check
     async with AsyncSessionLocal() as db:
         fu_settings = await get_or_create_settings(db)
 
     scheduler.add_job(
-        monthly_follow_up_check,
+        daily_follow_up_check,
         CronTrigger(hour=fu_settings.hour_utc, minute=0, timezone="UTC"),
-        id="monthly_follow_up",
+        id="daily_follow_up",
         replace_existing=True,
     )
     logger.info("Follow-up scheduler job registered at %02d:00 UTC", fu_settings.hour_utc)

@@ -84,10 +84,14 @@ async def list_emails_endpoint(
     status_filter: Optional[str] = Query(None, alias="status"),
     page: int = Query(1, ge=1),
     page_size: int = Query(20, ge=1, le=100),
+    email_type: Optional[str] = Query(None),
     db: AsyncSession = Depends(get_db),
     _: TokenData = Depends(get_current_user),
 ) -> EmailListResponse:
-    items_dicts, total = await list_emails(db, campaign_id, platform, status_filter, page, page_size)
+    items_dicts, total = await list_emails(
+        db, campaign_id, platform, status_filter, page, page_size,
+        email_type=email_type,
+    )
     total_pages = max(1, (total + page_size - 1) // page_size)
     return EmailListResponse(
         items=[EmailListItem(**item) for item in items_dicts],

@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import {
@@ -37,6 +37,9 @@ function StatusBadge({ status }: { status: string }) {
 
 const PLATFORMS = ['tiktok', 'instagram', 'youtube', 'twitter', 'facebook', 'other']
 const STATUSES  = ['pending', 'sent', 'delivered', 'opened', 'clicked', 'replied', 'bounced', 'failed']
+// Mirrors backend EmailType enum (initial / follow_up / holiday). Adding a
+// new type later requires backend + this list — keep in sync intentionally.
+const EMAIL_TYPES = ['initial', 'follow_up', 'holiday']
 const PAGE_SIZE = 20
 
 function StatusDashboard() {
@@ -48,9 +51,10 @@ function StatusDashboard() {
   const [loading, setLoading]   = useState(true)
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
 
-  const [campaignFilter, setCampaignFilter] = useState<number | ''>('')
-  const [platformFilter, setPlatformFilter] = useState('')
-  const [statusFilter,   setStatusFilter]   = useState('')
+  const [campaignFilter, setCampaignFilter]   = useState<number | ''>('')
+  const [platformFilter, setPlatformFilter]   = useState('')
+  const [statusFilter,   setStatusFilter]     = useState('')
+  const [typeFilter,     setTypeFilter]       = useState('')
 
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
@@ -63,6 +67,7 @@ function StatusDashboard() {
           campaign_id: campaignFilter || undefined,
           platform:    platformFilter || undefined,
           status:      statusFilter   || undefined,
+          email_type:  typeFilter     || undefined,
           page,
           page_size:   PAGE_SIZE,
         }),
@@ -75,7 +80,7 @@ function StatusDashboard() {
     } finally {
       setLoading(false)
     }
-  }, [campaignFilter, platformFilter, statusFilter, page])
+  }, [campaignFilter, platformFilter, statusFilter, typeFilter, page])
 
   useEffect(() => { loadData() }, [loadData])
 
@@ -83,10 +88,31 @@ function StatusDashboard() {
     emailsApi.listCampaigns().then(setCampaigns).catch(() => {})
   }, [])
 
+  // Debounced reload: a burst of WS events (e.g. scheduler dispatching 50
+  // follow-ups in one scan → 50 follow_up:sent broadcasts) collapses into
+  // a single trailing-edge loadData call ~700ms later. Without this the
+  // monitor page can hammer /emails and /stats per row, which is wasteful
+  // and (in extreme cases) can stutter the UI.
+  const reloadTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Cancel any pending reload on unmount so we don't setState on an
+  // unmounted component when the user navigates away mid-debounce.
+  useEffect(() => () => {
+    if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+  }, [])
+
   // Real-time updates via WebSocket
   const handleWs = useCallback((msg: WsMessage) => {
-    if (msg.event === 'email:status_change') {
-      loadData()
+    // Reload on any event that mutates email rows visible in this list.
+    // follow_up:sent fires when the auto-follow-up scheduler dispatches
+    // a new email — without this branch, follow-ups would only show after
+    // a manual reload or the next status_change event.
+    if (msg.event === 'email:status_change' || msg.event === 'follow_up:sent') {
+      if (reloadTimerRef.current) clearTimeout(reloadTimerRef.current)
+      reloadTimerRef.current = setTimeout(() => {
+        loadData()
+        reloadTimerRef.current = null
+      }, 700)
     }
   }, [loadData])
   useWebSocket(WS_URL, handleWs)
@@ -95,6 +121,7 @@ function StatusDashboard() {
     setCampaignFilter('')
     setPlatformFilter('')
     setStatusFilter('')
+    setTypeFilter('')
     setPage(1)
   }
 
@@ -102,6 +129,7 @@ function StatusDashboard() {
   const handleCampaignFilter = (v: number | '') => { setCampaignFilter(v); setPage(1) }
   const handlePlatformFilter = (v: string)       => { setPlatformFilter(v); setPage(1) }
   const handleStatusFilter   = (v: string)       => { setStatusFilter(v);   setPage(1) }
+  const handleTypeFilter     = (v: string)       => { setTypeFilter(v);     setPage(1) }
 
   const statCards = stats ? [
     { label: t('emails.stats.totalSent'),  value: stats.total_sent, color: 'text-gray-900' },
@@ -165,7 +193,18 @@ function StatusDashboard() {
           ))}
         </select>
 
-        {(campaignFilter !== '' || platformFilter || statusFilter) && (
+        <select
+          value={typeFilter}
+          onChange={e => handleTypeFilter(e.target.value)}
+          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          <option value="">{t('emails.filter.allTypes')}</option>
+          {EMAIL_TYPES.map(typ => (
+            <option key={typ} value={typ}>{t(`emails.filter.types.${typ}`)}</option>
+          ))}
+        </select>
+
+        {(campaignFilter !== '' || platformFilter || statusFilter || typeFilter) && (
           <button
             onClick={resetFilters}
             className="text-xs text-gray-400 hover:text-gray-600 px-2"
@@ -186,6 +225,7 @@ function StatusDashboard() {
             <tr className="bg-gray-50 border-b border-gray-100">
               <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.influencer')}</th>
               <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.email')}</th>
+              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.emailType')}</th>
               <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.campaign')}</th>
               <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.sentAt')}</th>
               <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.status')}</th>
@@ -196,7 +236,7 @@ function StatusDashboard() {
             {loading && items.length === 0 && (
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-50">
-                  {Array.from({ length: 6 }).map((_, j) => (
+                  {Array.from({ length: 7 }).map((_, j) => (
                     <td key={j} className="px-4 py-3">
                       <div className="h-4 bg-gray-100 rounded animate-pulse" />
                     </td>
@@ -206,7 +246,7 @@ function StatusDashboard() {
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-12 text-sm text-gray-400">
+                <td colSpan={7} className="text-center py-12 text-sm text-gray-400">
                   {t('emails.noEmails')}
                 </td>
               </tr>
@@ -220,6 +260,30 @@ function StatusDashboard() {
                   )}
                 </td>
                 <td className="px-4 py-3 text-gray-500 font-mono text-xs">{item.influencer_email}</td>
+                <td className="px-4 py-3 text-xs">
+                  {/* Show "follow-up #N" inline so operators don't have to
+                      cross-reference the influencer detail page. Initial
+                      and holiday don't have a counter. */}
+                  {/* Reuses the same emails.filter.types.* keys as the
+                      filter dropdown — single source of truth, no risk of
+                      filter and table drifting apart. */}
+                  {item.email_type === 'follow_up' ? (
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700">
+                      {t('emails.filter.types.follow_up')}
+                      <span className="font-mono text-[10px] text-amber-600">
+                        #{item.follow_up_count}
+                      </span>
+                    </span>
+                  ) : item.email_type === 'holiday' ? (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-pink-50 text-pink-700">
+                      {t('emails.filter.types.holiday')}
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">
+                      {t('emails.filter.types.initial')}
+                    </span>
+                  )}
+                </td>
                 <td className="px-4 py-3 text-gray-500">{item.campaign_name || '—'}</td>
                 <td className="px-4 py-3 text-gray-400 text-xs">
                   {item.sent_at ? new Date(item.sent_at).toLocaleString() : '—'}

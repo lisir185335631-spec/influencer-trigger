@@ -65,6 +65,9 @@ class Settings(BaseSettings):
     # Webhook notifications
     feishu_webhook_url: str = ""
     slack_webhook_url: str = ""
+    # Server 酱 SendKey for WeChat push (sct.ftqq.com). Used as fallback when
+    # the SystemSettings DB row has no webhook_serverchan configured.
+    serverchan_send_key: str = ""
 
     # Brave Search API (powers Instagram scraper's Google-Dork entry)
     brave_search_api_key: str = ""

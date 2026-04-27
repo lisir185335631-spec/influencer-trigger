@@ -56,6 +56,13 @@ class EmailListItem(BaseModel):
     influencer_name: Optional[str] = None
     influencer_email: str
     influencer_platform: Optional[str] = None
+    # email_type tells the UI whether this is the initial outreach, an
+    # automated follow-up, or a holiday greeting — so operators viewing the
+    # monitor list can distinguish "first contact" from "follow-up #N".
+    email_type: str
+    # Snapshot of the influencer's follow_up_count at list-time. Combined
+    # with email_type it lets the UI render "follow-up #2/9" inline.
+    follow_up_count: int
     campaign_id: Optional[int] = None
     campaign_name: Optional[str] = None
     status: str

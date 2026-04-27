@@ -6,6 +6,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { ExternalLink } from 'lucide-react'
 import { templatesApi, Template } from '../api/templates'
 import {
   emailsApi,
@@ -19,6 +20,115 @@ import {
 } from '../api/influencers'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
 import { WS_URL } from '../api/websocket'
+import AvatarBadge from './AvatarBadge'
+
+// ── Shared CRM-style row helpers ──────────────────────────────────────────────
+// Mirrors CRMPage's column rendering so the picker modal and the selected-
+// recipients panel below show the exact same shape of data the user sees on
+// the dedicated /crm page. Duplicated rather than imported to keep CRMPage
+// untouched (it owns its own delete/edit lifecycle that we don't want to
+// pull into the send flow).
+
+function formatFollowers(n: number | null | undefined): string {
+  if (n == null) return '—'
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`
+  return String(n)
+}
+
+function PlatformBadge({ platform }: { platform: string | null }) {
+  if (!platform) return <span className="text-gray-400 text-xs">—</span>
+  const colors: Record<string, string> = {
+    instagram: 'bg-pink-50 text-pink-700',
+    youtube: 'bg-red-50 text-red-700',
+    tiktok: 'bg-gray-900 text-white',
+    twitter: 'bg-sky-50 text-sky-700',
+    facebook: 'bg-blue-50 text-blue-700',
+  }
+  const cls = colors[platform] ?? 'bg-gray-100 text-gray-600'
+  return (
+    <span className={`inline-block px-1.5 py-0.5 text-[11px] font-medium rounded capitalize ${cls}`}>
+      {platform}
+    </span>
+  )
+}
+
+// CRM-shaped data cells for one influencer row, NOT wrapped in <tr> so the
+// caller can prepend its own checkbox / sequence number cell. Keeps the
+// 8 data columns visually identical between picker and selected panel.
+function InfluencerDataCells({ inf }: { inf: InfluencerListItem }) {
+  return (
+    <>
+      <td className="px-4 py-3 text-left align-middle" style={{ verticalAlign: 'middle' }}>
+        <div className="flex items-center gap-1.5">
+          <AvatarBadge url={inf.avatar_url} name={inf.nickname} size={24} />
+          <span className="text-xs font-medium text-gray-800 truncate max-w-[120px]">
+            {inf.nickname || '—'}
+          </span>
+          {inf.profile_url && (
+            <a
+              href={inf.profile_url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="text-gray-300 hover:text-gray-600 transition-colors shrink-0"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <ExternalLink size={10} />
+            </a>
+          )}
+        </div>
+      </td>
+      <td className="px-4 py-3 text-center align-middle" style={{ verticalAlign: 'middle' }}>
+        <PlatformBadge platform={inf.platform} />
+      </td>
+      <td className="px-4 py-3 text-center text-xs text-gray-700 font-mono align-middle" style={{ verticalAlign: 'middle' }}>
+        {inf.email}
+      </td>
+      <td className="px-4 py-3 text-center text-xs font-medium text-gray-800 align-middle" style={{ verticalAlign: 'middle' }}>
+        {formatFollowers(inf.followers)}
+      </td>
+      <td className="px-4 py-3 text-center text-xs text-gray-400 align-middle whitespace-pre-wrap max-w-[260px]" style={{ verticalAlign: 'middle' }}>
+        {inf.bio || '—'}
+      </td>
+      <td className="px-3 py-2 text-center text-sm align-middle" style={{ verticalAlign: 'middle' }}>
+        {inf.relevance_score != null ? (
+          <span className={`inline-block px-2 py-0.5 rounded text-xs font-medium ${
+            inf.relevance_score >= 0.7 ? 'bg-green-50 text-green-700' :
+            inf.relevance_score >= 0.4 ? 'bg-yellow-50 text-yellow-700' :
+            'bg-gray-50 text-gray-500'
+          }`}>
+            {(inf.relevance_score * 100).toFixed(0)}%
+          </span>
+        ) : (
+          <span className="text-gray-300">—</span>
+        )}
+      </td>
+      <td
+        className="px-3 py-2 text-center text-sm text-gray-600 align-middle whitespace-pre-wrap max-w-[200px]"
+        style={{ verticalAlign: 'middle' }}
+        title={inf.match_reason || ''}
+      >
+        {inf.match_reason ? inf.match_reason : <span className="text-gray-300">—</span>}
+      </td>
+    </>
+  )
+}
+
+// CRM-shaped table header columns matching InfluencerDataCells. Caller
+// prepends its own leading <th> (checkbox / sequence) before these.
+function InfluencerHeaderCells({ t }: { t: (key: string) => string }) {
+  return (
+    <>
+      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.name')}</th>
+      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.platform')}</th>
+      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.email')}</th>
+      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.followers')}</th>
+      <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('scrapeDetail.table.bio')}</th>
+      <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">{t('scrapeDetail.table.relevance')}</th>
+      <th className="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase">{t('scrapeDetail.table.matchReason')}</th>
+    </>
+  )
+}
 
 // ── Influencer picker modal ───────────────────────────────────────────────────
 // Self-contained selector for use inside SendPanel — lets users pick recipients
@@ -51,6 +161,10 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
   const [selectedIds, setSelectedIds] = useState<Set<number>>(
     () => new Set(initiallySelected),
   )
+  // Default OFF: hide influencers who've already received outreach so the user
+  // doesn't accidentally re-blast them. Toggle ON to surface the full pool —
+  // covers the edge case "I want to re-target this lead with a fresh angle".
+  const [includeContacted, setIncludeContacted] = useState(false)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -60,6 +174,10 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
         page_size: PICKER_PAGE_SIZE,
         search: search || undefined,
         platform: platform || undefined,
+        // Hide already-contacted unless the user opts in. Replied + archived
+        // are also hidden by default — they belong to the email-monitoring
+        // workflow, not the cold-outreach picker.
+        exclude_status: includeContacted ? undefined : ['contacted', 'replied', 'archived'],
       })
       setItems(resp.items)
       setTotalPages(resp.total_pages)
@@ -67,7 +185,7 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
     } finally {
       setLoading(false)
     }
-  }, [page, search, platform])
+  }, [page, search, platform, includeContacted])
 
   useEffect(() => { reload() }, [reload])
 
@@ -115,7 +233,7 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
       onClick={onClose}
     >
       <div
-        className="bg-white rounded-xl shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col"
+        className="bg-white rounded-xl shadow-xl w-full max-w-6xl max-h-[90vh] flex flex-col"
         onClick={e => e.stopPropagation()}
       >
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -162,6 +280,15 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
           >
             {t('influencerPicker.searchButton')}
           </button>
+          <label className="inline-flex items-center gap-1.5 px-2 py-1.5 text-xs text-gray-600 cursor-pointer select-none whitespace-nowrap">
+            <input
+              type="checkbox"
+              checked={includeContacted}
+              onChange={e => { setPage(1); setIncludeContacted(e.target.checked) }}
+              className="rounded border-gray-300"
+            />
+            {t('influencerPicker.includeContacted')}
+          </label>
           {selectedIds.size > 0 && (
             <button
               onClick={() => setSelectedIds(new Set())}
@@ -173,11 +300,11 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
         </div>
 
         {/* Table */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-auto">
           <table className="w-full text-sm">
-            <thead className="bg-gray-50 sticky top-0">
+            <thead className="bg-gray-50 sticky top-0 z-10">
               <tr>
-                <th className="px-3 py-2 w-10 text-left">
+                <th className="px-3 py-3 w-10 text-center">
                   <input
                     type="checkbox"
                     checked={allVisibleSelected}
@@ -185,33 +312,22 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
                     aria-label={t('influencerPicker.toggleAllVisible')}
                   />
                 </th>
-                <th className="text-left px-3 py-2 font-medium text-gray-500 text-xs">
-                  {t('influencerPicker.col.recipient')}
+                <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 w-14">
+                  {t('crm.table.id')}
                 </th>
-                <th className="text-left px-3 py-2 font-medium text-gray-500 text-xs">
-                  {t('influencerPicker.col.platform')}
-                </th>
-                <th className="text-right px-3 py-2 font-medium text-gray-500 text-xs">
-                  {t('influencerPicker.col.followers')}
-                </th>
-                <th className="text-left px-3 py-2 font-medium text-gray-500 text-xs">
-                  {t('influencerPicker.col.industry')}
-                </th>
-                <th className="text-left px-3 py-2 font-medium text-gray-500 text-xs">
-                  {t('influencerPicker.col.status')}
-                </th>
+                <InfluencerHeaderCells t={t} />
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {loading && items.length === 0 ? (
-                <tr><td colSpan={6} className="px-3 py-12 text-center text-gray-400 text-xs">
+                <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400 text-xs">
                   {t('influencerPicker.loading')}
                 </td></tr>
               ) : items.length === 0 ? (
-                <tr><td colSpan={6} className="px-3 py-12 text-center text-gray-400 text-xs">
+                <tr><td colSpan={9} className="px-3 py-12 text-center text-gray-400 text-xs">
                   {t('influencerPicker.empty')}
                 </td></tr>
-              ) : items.map(inf => {
+              ) : items.map((inf, idx) => {
                 const checked = selectedIds.has(inf.id)
                 return (
                   <tr
@@ -219,7 +335,7 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
                     className={`cursor-pointer hover:bg-blue-50/50 ${checked ? 'bg-blue-50' : ''}`}
                     onClick={() => toggleOne(inf.id)}
                   >
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 text-center align-middle" style={{ verticalAlign: 'middle' }}>
                       {/* Both onChange and the row's onClick fire toggleOne.
                           The checkbox's onClick stopPropagation prevents
                           the row's onClick from re-firing — so a click on
@@ -233,20 +349,10 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
                         onClick={e => e.stopPropagation()}
                       />
                     </td>
-                    <td className="px-3 py-2">
-                      <div className="font-medium text-gray-900 text-sm truncate max-w-[260px]">
-                        {inf.nickname || '—'}
-                      </div>
-                      <div className="text-xs text-gray-400 truncate max-w-[260px]">{inf.email}</div>
+                    <td className="px-3 py-2 text-center text-xs font-mono text-gray-500 align-middle" style={{ verticalAlign: 'middle' }}>
+                      {(page - 1) * PICKER_PAGE_SIZE + idx + 1}
                     </td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{inf.platform || '—'}</td>
-                    <td className="px-3 py-2 text-right text-xs text-gray-700 tabular-nums">
-                      {inf.followers ? inf.followers.toLocaleString() : '—'}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-500 truncate max-w-[140px]">
-                      {inf.industry || '—'}
-                    </td>
-                    <td className="px-3 py-2 text-xs text-gray-500">{inf.status}</td>
+                    <InfluencerDataCells inf={inf} />
                   </tr>
                 )
               })}
@@ -290,6 +396,181 @@ function InfluencerPicker({ onClose, onConfirm, initiallySelected = [] }: Influe
           </div>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Selected recipients panel ─────────────────────────────────────────────────
+// Replaces the count-only pill that used to sit above the campaign form.
+// Shows the same CRM-grade columns the user sees on the /crm page, paginated
+// 10 per page, so they can verify exactly who they're about to send to AND
+// know what data the LLM will use when crafting per-recipient copy. Always
+// fetches by `ids` from the backend — works equally for in-page picker
+// selection and URL `?influencer_ids=` jump-in entry.
+
+const SELECTED_PAGE_SIZE = 10
+
+interface SelectedRecipientsTableProps {
+  influencerIds: number[]
+  onChangeRecipients: () => void
+}
+
+function SelectedRecipientsTable({ influencerIds, onChangeRecipients }: SelectedRecipientsTableProps) {
+  const { t } = useTranslation()
+  const [items, setItems] = useState<InfluencerListItem[]>([])
+  const [page, setPage] = useState(1)
+  const [loading, setLoading] = useState(false)
+  // Surface fetch failures explicitly with a retry — silently emptying the
+  // table left users wondering why their selection had "vanished".
+  const [error, setError] = useState(false)
+  const [reloadTick, setReloadTick] = useState(0)
+  // Track how many of the picked ids the backend actually resolved. If a
+  // user picked 8 but one was archived/deleted between picker and now,
+  // serverTotal=7 → we surface that gap instead of showing "8 selected"
+  // beside a 7-row table.
+  const [serverTotal, setServerTotal] = useState<number | null>(null)
+  const effectiveTotal = serverTotal ?? influencerIds.length
+  const unavailableCount = Math.max(0, influencerIds.length - effectiveTotal)
+  const totalPages = Math.max(1, Math.ceil(effectiveTotal / SELECTED_PAGE_SIZE))
+
+  // Snap page back into range when the user changes the selection (e.g.
+  // re-opens the picker and removes ids), or when total selection shrinks.
+  useEffect(() => {
+    if (page > totalPages) setPage(totalPages)
+  }, [page, totalPages])
+
+  // Fetch one page worth of full influencer rows by ids. The backend
+  // applies the same id-set filter, so total returned == ids.length and
+  // the slice we want lands in the first `page_size` rows of `page=N`.
+  useEffect(() => {
+    let cancelled = false
+    if (influencerIds.length === 0) {
+      setItems([])
+      setServerTotal(0)
+      setError(false)
+      return
+    }
+    setLoading(true)
+    setError(false)
+    listInfluencers({
+      ids: influencerIds,
+      page,
+      page_size: SELECTED_PAGE_SIZE,
+    })
+      .then(resp => {
+        if (!cancelled) {
+          setItems(resp.items)
+          setServerTotal(resp.total)
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setItems([])
+          setServerTotal(null)
+          setError(true)
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+    // reloadTick lets the retry button force a refetch with the same args
+  }, [influencerIds, page, reloadTick])
+
+  return (
+    <div className="mb-6">
+      {/* Header: count + change recipients link */}
+      <div className="flex items-center justify-between mb-2">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-semibold">
+            {influencerIds.length}
+          </span>
+          <span className="text-sm text-gray-700">
+            {t('emails.batch.influencersSelected', { count: influencerIds.length })}
+          </span>
+          {/* Picked vs resolved gap — surfaces archived/deleted ids so the
+              user knows the table won't show all picks. Sender will skip
+              missing ids on its own; this is just transparency. */}
+          {unavailableCount > 0 && (
+            <span className="text-xs text-amber-600">
+              · {t('sendPanel.someUnavailable', { count: unavailableCount })}
+            </span>
+          )}
+        </div>
+        <button
+          onClick={onChangeRecipients}
+          className="text-xs text-blue-700 hover:text-blue-900 underline"
+        >
+          {t('sendPanel.changeRecipients')}
+        </button>
+      </div>
+
+      {/* CRM-style table */}
+      <div className="bg-white rounded-xl border border-gray-100 overflow-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-b border-gray-100 bg-gray-50/60">
+              <th className="px-3 py-3 text-center text-xs font-medium text-gray-500 w-14">
+                {t('crm.table.id')}
+              </th>
+              <InfluencerHeaderCells t={t} />
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-gray-50">
+            {loading && items.length === 0 ? (
+              <tr><td colSpan={8} className="px-3 py-12 text-center text-gray-400 text-xs">
+                {t('common.loading')}
+              </td></tr>
+            ) : error ? (
+              <tr><td colSpan={8} className="px-3 py-12 text-center text-xs">
+                <div className="text-red-500 mb-2">
+                  {t('sendPanel.selectedLoadFailed')}
+                </div>
+                <button
+                  onClick={() => setReloadTick(n => n + 1)}
+                  className="px-3 py-1 text-xs border border-gray-200 rounded hover:bg-gray-50 text-gray-600"
+                >
+                  {t('sendPanel.retry')}
+                </button>
+              </td></tr>
+            ) : items.length === 0 ? (
+              <tr><td colSpan={8} className="px-3 py-12 text-center text-gray-400 text-xs">
+                {t('common.noDataYet')}
+              </td></tr>
+            ) : items.map((inf, idx) => (
+              <tr key={inf.id} className="bg-white hover:bg-gray-50/60 transition-colors">
+                <td className="px-3 py-3 text-center text-xs font-mono text-gray-500 align-middle" style={{ verticalAlign: 'middle' }}>
+                  {(page - 1) * SELECTED_PAGE_SIZE + idx + 1}
+                </td>
+                <InfluencerDataCells inf={inf} />
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {/* Pagination footer — only when more than one page */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-end gap-3 text-xs text-gray-500 pt-2">
+          <button
+            onClick={() => setPage(p => Math.max(1, p - 1))}
+            disabled={page <= 1}
+            className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            ‹ {t('common.prev')}
+          </button>
+          <span className="text-gray-400">
+            {t('common.pageOf', { current: page, total: totalPages })}
+          </span>
+          <button
+            onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+            disabled={page >= totalPages}
+            className="px-2 py-1 rounded hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+          >
+            {t('common.next')} ›
+          </button>
+        </div>
+      )}
     </div>
   )
 }
@@ -532,20 +813,10 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
         <h2 className="text-base font-semibold text-gray-900 mb-1">{t('emails.batch.title')}</h2>
         <p className="text-sm text-gray-500 mb-6">{t('emails.batch.configureHint')}</p>
 
-        <div className="flex items-center gap-2 mb-6 p-3 bg-blue-50 rounded-lg border border-blue-100">
-          <span className="inline-flex items-center justify-center w-6 h-6 rounded-full bg-blue-500 text-white text-xs font-semibold">
-            {influencerIds.length}
-          </span>
-          <span className="text-sm text-blue-700 flex-1">
-            {t('emails.batch.influencersSelected', { count: influencerIds.length })}
-          </span>
-          <button
-            onClick={() => setPickerOpen(true)}
-            className="text-xs text-blue-700 hover:text-blue-900 underline"
-          >
-            {t('sendPanel.changeRecipients')}
-          </button>
-        </div>
+        <SelectedRecipientsTable
+          influencerIds={influencerIds}
+          onChangeRecipients={() => setPickerOpen(true)}
+        />
 
         <div className="mb-4">
           <label className="block text-base font-semibold text-gray-900 mb-1">

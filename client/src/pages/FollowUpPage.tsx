@@ -48,23 +48,88 @@ function SettingsPanel() {
   const [saved, setSaved]       = useState(false)
   const [error, setError]       = useState('')
 
-  // Local form state
-  const [enabled, setEnabled]           = useState(true)
-  const [intervalDays, setIntervalDays] = useState(30)
-  const [maxCount, setMaxCount]         = useState(6)
-  const [hourUtc, setHourUtc]           = useState(10)
+  // Cadence state — locked to spec defaults (3 phase-1 + 6 phase-2 = 9
+  // follow-ups over ~7 months). UI no longer exposes inputs for these;
+  // values stay at their useState initial values for the lifetime of the
+  // component. Setters are deliberately omitted — see handleSave below for
+  // why we still keep the state instead of using bare consts.
+  const [enabled, setEnabled] = useState(true)
+  const [phase1Count]         = useState(3)
+  const [phase1IntervalDays]  = useState(2)
+  const [intervalDays]        = useState(30)
+  const [maxCount]            = useState(6)
+  const [hourUtc, setHourUtc] = useState(10)
+
+  // Cadence preview — recomputed from the live form state so the user sees
+  // the impact of every input change in real time.
+  // totalDays = days from initial send → final follow-up (= when the
+  // influencer is auto-archived). Use Math.ceil so "186 days" rounds up to
+  // 7 months instead of 6 — the archive date is past the 6-month mark, so
+  // "约 7 个月" is closer to user expectation than "约 6 个月".
+  const totalCount  = phase1Count + maxCount
+  const totalDays   = phase1Count * phase1IntervalDays + maxCount * intervalDays
+  const totalMonths = Math.max(1, Math.ceil(totalDays / 30))
+
+  // Build a list of dated events for the timeline preview. The timeline
+  // is the ONLY surface that shows the cadence — the numeric inputs that
+  // used to live in a collapsible were removed; cadence is now read-only
+  // and locked to spec. Each event carries a `kind` so the renderer can
+  // highlight phase boundaries and the archive row.
+  //
+  // Day numbering uses 1-based indexing to match the original spec wording
+  // ("第 1 天首发, 第 3/5/7 天密集追发"). With phase1_interval_days=2 and
+  // initial on Day 1, the first follow-up lands on Day 3 — matching spec.
+  type TimelineEvent = { day: number; label: string; kind: 'initial' | 'p1' | 'p1end' | 'p2' | 'p2end' | 'archive' }
+  const events: TimelineEvent[] = []
+  let cursor = 1
+  events.push({ day: cursor, label: t('followUp.strategy.timelineEventInitial'), kind: 'initial' })
+  for (let i = 1; i <= phase1Count; i++) {
+    cursor += phase1IntervalDays
+    events.push({
+      day: cursor,
+      label: t(
+        i === phase1Count
+          ? 'followUp.strategy.timelineEventPhase1End'
+          : 'followUp.strategy.timelineEventPhase1',
+        { n: i },
+      ),
+      kind: i === phase1Count ? 'p1end' : 'p1',
+    })
+  }
+  for (let i = 1; i <= maxCount; i++) {
+    cursor += intervalDays
+    events.push({
+      day: cursor,
+      label: t(
+        i === maxCount
+          ? 'followUp.strategy.timelineEventPhase2End'
+          : 'followUp.strategy.timelineEventPhase2',
+        { n: i },
+      ),
+      kind: i === maxCount ? 'p2end' : 'p2',
+    })
+  }
+  events.push({ day: cursor + 1, label: t('followUp.strategy.timelineEventArchive'), kind: 'archive' })
 
   useEffect(() => {
     followUpApi.getSettings()
       .then((s) => {
         setSettings(s)
-        setEnabled(s.enabled)
-        setIntervalDays(s.interval_days)
-        setMaxCount(s.max_count)
-        setHourUtc(s.hour_utc)
+        setEnabled(s.enabled ?? true)
+        // Cadence (phase1_count / phase1_interval_days / max_count /
+        // interval_days) is INTENTIONALLY not read from the response —
+        // the UI no longer exposes it as configurable, so the React state
+        // stays at its useState initial values (3 / 2 / 6 / 30 = spec).
+        // handleSave below sends these state values back, so any drift in
+        // DB (e.g. left over from prior tweaks) gets overwritten back to
+        // spec on the next save.
+        setHourUtc(s.hour_utc ?? 10)
       })
       .catch(() => setError(t('followUp.strategy.loadFailed')))
       .finally(() => setLoading(false))
+    // Run-once on mount. `t` is referentially stable (i18next pattern),
+    // so omitting it from deps doesn't risk a stale closure here.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   const handleSave = async () => {
@@ -72,8 +137,16 @@ function SettingsPanel() {
     setError('')
     setSaved(false)
     try {
+      // ⚠ Side effect: phase1_count / phase1_interval_days / interval_days /
+      // max_count are sent every save with their locked spec values. Any
+      // out-of-band write to those columns (admin script, future tooling)
+      // gets silently overwritten the next time anyone clicks Save here.
+      // Intentional — keeps the cadence anchored to the spec — but if you
+      // ever add another writer for these fields, decide carefully who wins.
       const updated = await followUpApi.updateSettings({
         enabled,
+        phase1_count: phase1Count,
+        phase1_interval_days: phase1IntervalDays,
         interval_days: intervalDays,
         max_count: maxCount,
         hour_utc: hourUtc,
@@ -122,40 +195,37 @@ function SettingsPanel() {
       </div>
 
       {/* Form */}
-      <div className="px-6 py-5 grid grid-cols-1 sm:grid-cols-3 gap-5">
-        {/* Interval */}
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1.5">
-            {t('followUp.strategy.intervalLabel')}
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={365}
-            value={intervalDays}
-            onChange={(e) => setIntervalDays(Number(e.target.value))}
-            className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gray-400 transition-colors"
-          />
-          <p className="mt-1 text-xs text-gray-400">{t('followUp.strategy.intervalHint')}</p>
+      <div className="px-6 py-5 space-y-5">
+        {/* Timeline preview — primary view. Replaces the old "preview banner
+            of numbers"; users now see the actual fire dates instead of
+            having to mentally compute them from interval × count. */}
+        <div className="bg-emerald-50 border border-emerald-100 rounded-md px-4 py-3">
+          <ol className="space-y-1.5">
+            {events.map((ev, i) => (
+              <li key={`${ev.kind}-${i}`} className="flex items-baseline gap-3 text-sm">
+                <span className="font-mono text-xs text-emerald-700 min-w-[64px] tabular-nums">
+                  {t('followUp.strategy.timelineDayLabel', { day: ev.day })}
+                </span>
+                <span className={
+                  ev.kind === 'archive' ? 'text-emerald-900 font-medium' :
+                  ev.kind === 'initial' ? 'text-emerald-900 font-medium' :
+                  'text-emerald-800'
+                }>
+                  {ev.label}
+                </span>
+              </li>
+            ))}
+          </ol>
+          <div className="mt-3 pt-2 border-t border-emerald-100 text-xs text-emerald-700">
+            {t('followUp.strategy.timelineSummary', {
+              count: totalCount,
+              total: totalCount + 1,
+              months: totalMonths,
+            })}
+          </div>
         </div>
 
-        {/* Max count */}
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1.5">
-            {t('followUp.strategy.maxLabel')}
-          </label>
-          <input
-            type="number"
-            min={1}
-            max={50}
-            value={maxCount}
-            onChange={(e) => setMaxCount(Number(e.target.value))}
-            className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gray-400 transition-colors"
-          />
-          <p className="mt-1 text-xs text-gray-400">{t('followUp.strategy.maxHint')}</p>
-        </div>
-
-        {/* Hour UTC */}
+        {/* Daily check time — when the scheduler runs each day */}
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1.5">
             {t('followUp.strategy.sendTimeLabel')}
@@ -163,7 +233,7 @@ function SettingsPanel() {
           <select
             value={hourUtc}
             onChange={(e) => setHourUtc(Number(e.target.value))}
-            className="w-full border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gray-400 transition-colors bg-white"
+            className="w-full sm:w-1/3 border border-gray-200 rounded-md px-3 py-2 text-sm focus:outline-none focus:border-gray-400 transition-colors bg-white"
           >
             {Array.from({ length: 24 }, (_, h) => (
               <option key={h} value={h}>
@@ -173,6 +243,7 @@ function SettingsPanel() {
           </select>
           <p className="mt-1 text-xs text-gray-400">{t('followUp.strategy.sendTimeHint')}</p>
         </div>
+
       </div>
 
       {/* Footer */}

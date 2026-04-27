@@ -14,6 +14,10 @@ import {
   X,
   CheckCircle,
   Circle,
+  Pause,
+  Play,
+  RotateCcw,
+  Loader2,
 } from 'lucide-react'
 import {
   getInfluencerDetail,
@@ -22,9 +26,12 @@ import {
   addNote,
   createTag,
   deleteTag,
+  updateInfluencer,
   type InfluencerDetail,
+  type InfluencerUpdate,
   type TagOut,
 } from '../api/influencers'
+import { useAuthContext } from '../stores/AuthContext'
 
 type TabKey = 'emails' | 'tags' | 'notes' | 'collaborations'
 
@@ -454,6 +461,88 @@ function CollaborationsTab({ inf }: { inf: InfluencerDetail }) {
   )
 }
 
+// ── Restart confirmation modal ────────────────────────────────────────────────
+// In-app replacement for the previous window.confirm() — same look & feel
+// as the CRMPage delete-confirmation dialog so the destructive surfaces
+// stay consistent. ESC and outside-click both cancel (unless the action
+// is in flight, in which case both are blocked to prevent the user from
+// dismissing the dialog while the PATCH is mid-air).
+
+function ConfirmRestartModal({
+  inf,
+  loading,
+  onCancel,
+  onConfirm,
+}: {
+  inf: InfluencerDetail
+  loading: boolean
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  const { t } = useTranslation()
+  const name = inf.nickname || inf.email || String(inf.id)
+
+  useEffect(() => {
+    function onKey(e: KeyboardEvent) {
+      if (e.key === 'Escape' && !loading) onCancel()
+    }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [loading, onCancel])
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 px-4"
+      onClick={() => !loading && onCancel()}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        role="alertdialog"
+        aria-modal="true"
+        className="bg-white rounded-xl shadow-xl w-full max-w-md"
+      >
+        <div className="p-5">
+          <div className="flex gap-3">
+            <div className="shrink-0 w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center">
+              <RotateCcw size={20} className="text-amber-600" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <h2 className="text-base font-semibold text-gray-900 mb-1">
+                {t('influencer.actions.restartConfirmTitle', { name })}
+              </h2>
+              {/* whitespace-pre-line preserves the \n line breaks in the
+                  i18n string — same source text as the old confirm()
+                  payload, but rendered with proper paragraph spacing. */}
+              <p className="text-sm text-gray-500 leading-relaxed whitespace-pre-line">
+                {t('influencer.actions.confirmRestart')}
+              </p>
+            </div>
+          </div>
+        </div>
+        <div className="flex items-center justify-end gap-2 px-5 py-3 border-t border-gray-100 bg-gray-50/50">
+          <button
+            type="button"
+            onClick={onCancel}
+            disabled={loading}
+            className="px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-50"
+          >
+            {t('common.cancel')}
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            disabled={loading}
+            className="inline-flex items-center gap-1 px-4 py-1.5 text-xs bg-amber-600 text-white rounded hover:bg-amber-700 disabled:opacity-50 transition-colors"
+          >
+            {loading && <Loader2 size={12} className="animate-spin" />}
+            {t('influencer.actions.restart')}
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Empty state ───────────────────────────────────────────────────────────────
 
 function Empty({ text }: { text: string }) {
@@ -470,11 +559,24 @@ export default function InfluencerDetailPage() {
   const { t } = useTranslation()
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
+  // Role gate: "重启从头" mutates follow_up_count which the backend now
+  // restricts to manager+ (see /influencers/{id} PATCH). Hide the button
+  // for operators rather than show-then-403 to keep the UX clean.
+  const { role } = useAuthContext()
+  const canResetCadence = role === 'admin' || role === 'manager'
   const [inf, setInf] = useState<InfluencerDetail | null>(null)
   const [allTags, setAllTags] = useState<TagOut[]>([])
   const [activeTab, setActiveTab] = useState<TabKey>('emails')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  // Tracks which quick-action is in flight; null = idle. Used to disable
+  // all 3 buttons during a PATCH so a fast double-click doesn't dispatch
+  // duplicate writes (and to give a visible disabled state).
+  const [actionPending, setActionPending] = useState<'pause' | 'resume' | 'restart' | null>(null)
+  // "Restart from beginning" is destructive enough to warrant an in-app
+  // confirmation modal instead of a native browser confirm() (which can't
+  // be styled and renders \n inconsistently across browsers).
+  const [showRestartConfirm, setShowRestartConfirm] = useState(false)
 
   async function loadData() {
     if (!id) return
@@ -495,6 +597,50 @@ export default function InfluencerDetailPage() {
   useEffect(() => {
     loadData()
   }, [id])
+
+  // Quick-action handlers — pause / resume / restart the auto follow-up
+  // cadence for this single influencer. All three reuse the existing
+  // PATCH /influencers/{id} endpoint; backend's update_influencer applies
+  // partial setattr so we only send the fields we want to change.
+  // pause / resume execute immediately; restart routes through the
+  // confirmation modal first (see runStatusUpdate for the actual PATCH).
+  function handleStatusAction(action: 'pause' | 'resume' | 'restart') {
+    if (!inf || actionPending) return
+    if (action === 'restart') {
+      setShowRestartConfirm(true)
+      return
+    }
+    void runStatusUpdate(action)
+  }
+
+  // Execute the PATCH for any of the three actions. Extracted from the
+  // entry point so the confirmation modal can call it directly after the
+  // user clicks "Confirm restart".
+  async function runStatusUpdate(action: 'pause' | 'resume' | 'restart') {
+    if (!inf) return
+    let payload: InfluencerUpdate
+    if (action === 'pause') {
+      // status=archived: follow_up_service skips this row on next scan
+      payload = { status: 'archived' }
+    } else if (action === 'resume') {
+      // status=contacted: re-enters the cadence at the current
+      // follow_up_count (so phase-2 progress is preserved)
+      payload = { status: 'contacted' }
+    } else {
+      // restart: status=new + counter=0; user must re-pick this lead in
+      // the SendPanel to actually trigger the next initial outreach
+      payload = { status: 'new', follow_up_count: 0 }
+    }
+    setActionPending(action)
+    try {
+      await updateInfluencer(inf.id, payload)
+      await loadData()
+    } catch {
+      window.alert(t('influencer.actions.actionFailed'))
+    } finally {
+      setActionPending(null)
+    }
+  }
 
   if (loading) {
     return (
@@ -519,7 +665,7 @@ export default function InfluencerDetailPage() {
 
   return (
     <div className="p-6 flex flex-col gap-5 max-w-6xl">
-      {/* Header */}
+      {/* Header — breadcrumb + manual-intervention quick actions */}
       <div className="flex items-center gap-3">
         <button
           onClick={() => navigate('/crm')}
@@ -532,6 +678,48 @@ export default function InfluencerDetailPage() {
         <span className="text-sm text-gray-900 font-medium">
           {inf.nickname ?? inf.email}
         </span>
+
+        {/* Right-aligned quick actions. Buttons render conditionally so the
+            available action always matches the influencer's current status —
+            avoids "pause" when there's nothing to pause, etc. */}
+        <div className="ml-auto flex items-center gap-2">
+          {inf.status === 'contacted' && (
+            <button
+              onClick={() => handleStatusAction('pause')}
+              disabled={actionPending !== null}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs text-amber-700 bg-amber-50 hover:bg-amber-100 border border-amber-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={t('influencer.actions.pauseFollowUpHint')}
+            >
+              <Pause size={13} />
+              {t('influencer.actions.pauseFollowUp')}
+            </button>
+          )}
+          {inf.status === 'archived' && (
+            <button
+              onClick={() => handleStatusAction('resume')}
+              disabled={actionPending !== null}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={t('influencer.actions.resumeFollowUpHint')}
+            >
+              <Play size={13} />
+              {t('influencer.actions.resumeFollowUp')}
+            </button>
+          )}
+          {/* Restart resets follow_up_count → manager+ only (backend
+              enforces same rule via 403). Operators can still
+              pause/resume because those only change `status`. */}
+          {canResetCadence && (
+            <button
+              onClick={() => handleStatusAction('restart')}
+              disabled={actionPending !== null}
+              className="flex items-center gap-1 px-3 py-1.5 text-xs text-gray-600 bg-gray-50 hover:bg-gray-100 border border-gray-200 rounded-md transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+              title={t('influencer.actions.restartHint')}
+            >
+              <RotateCcw size={13} />
+              {t('influencer.actions.restart')}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="flex gap-5 items-start">
@@ -587,6 +775,20 @@ export default function InfluencerDetailPage() {
           </div>
         </div>
       </div>
+
+      {/* Restart confirmation modal — destructive cadence reset, deserves
+          an in-app modal rather than a styling-poor browser confirm() */}
+      {showRestartConfirm && (
+        <ConfirmRestartModal
+          inf={inf}
+          loading={actionPending === 'restart'}
+          onCancel={() => setShowRestartConfirm(false)}
+          onConfirm={async () => {
+            setShowRestartConfirm(false)
+            await runStatusUpdate('restart')
+          }}
+        />
+      )}
     </div>
   )
 }

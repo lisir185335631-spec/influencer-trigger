@@ -71,6 +71,11 @@ def _build_settings_out(sys, fu) -> SettingsOut:
         scrape_concurrency=sys.scrape_concurrency,
         webhook_feishu=sys.webhook_feishu,
         webhook_slack=sys.webhook_slack,
+        # Mask the SendKey before sending to the client — same defence as
+        # apify_*_token. Client uses webhook_serverchan_set to know if a
+        # value exists in DB.
+        webhook_serverchan=mask_token(sys.webhook_serverchan or ""),
+        webhook_serverchan_set=bool(sys.webhook_serverchan),
         apify_tiktok_token=mask_token(sys.apify_tiktok_token or ""),
         apify_tiktok_token_set=bool(sys.apify_tiktok_token),
         apify_tiktok_actor=sys.apify_tiktok_actor or "",
@@ -110,6 +115,7 @@ async def update_settings(
         scrape_concurrency=body.scrape_concurrency,
         webhook_feishu=body.webhook_feishu,
         webhook_slack=body.webhook_slack,
+        webhook_serverchan=body.webhook_serverchan,
         apify_tiktok_token=body.apify_tiktok_token,
         apify_tiktok_actor=body.apify_tiktok_actor,
         apify_ig_token=body.apify_ig_token,
@@ -135,7 +141,7 @@ async def update_settings(
             from app.scheduler import scheduler
             from apscheduler.triggers.cron import CronTrigger
             scheduler.reschedule_job(
-                "monthly_follow_up",
+                "daily_follow_up",
                 trigger=CronTrigger(hour=fu.hour_utc, minute=0, timezone="UTC"),
             )
         except Exception as exc:
@@ -256,10 +262,11 @@ async def test_webhook(
     """Test a webhook URL by sending a test message."""
     platform = body.get("platform", "")
     url = body.get("url", "")
-    if platform not in ("feishu", "slack"):
-        raise HTTPException(status_code=400, detail="platform must be 'feishu' or 'slack'")
+    if platform not in ("feishu", "slack", "serverchan"):
+        raise HTTPException(status_code=400, detail="platform must be 'feishu', 'slack', or 'serverchan'")
     if not url:
-        raise HTTPException(status_code=400, detail="url is required")
+        # 'url' is the SendKey when platform == 'serverchan'
+        raise HTTPException(status_code=400, detail="url (or SendKey for serverchan) is required")
     ok = await test_webhook_url(platform, url)
     return {"success": ok, "platform": platform}
 

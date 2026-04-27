@@ -9,6 +9,10 @@ export interface SystemSettingsOut {
   scrape_concurrency: number
   webhook_feishu: string
   webhook_slack: string
+  // Masked SendKey on output (e.g. "****abcd"). Use webhook_serverchan_set
+  // to know whether DB has a real value.
+  webhook_serverchan: string
+  webhook_serverchan_set: boolean
   webhook_default_url: string
   default_daily_quota: number
   llm_key: LLMKeyStatus
@@ -19,6 +23,8 @@ export interface SystemSettingsPatch {
   default_daily_quota?: number
   webhook_feishu?: string
   webhook_slack?: string
+  // Omit (undefined) to leave unchanged; "" to clear; non-empty to set.
+  webhook_serverchan?: string
 }
 
 export interface FeatureFlagOut {

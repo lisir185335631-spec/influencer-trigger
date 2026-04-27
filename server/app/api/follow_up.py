@@ -33,10 +33,19 @@ async def get_db():  # type: ignore[return]
 # ---------------------------------------------------------------------------
 
 class FollowUpSettingsOut(BaseModel):
+    """Two-phase follow-up cadence settings.
+
+    Note on field naming: `interval_days` and `max_count` are LEGACY names
+    that semantically mean "phase-2 interval" and "phase-2 count" — kept
+    for API/DB backward compatibility. Phase 1 is the new explicitly-named
+    `phase1_*` pair.
+    """
     id: int
     enabled: bool
-    interval_days: int
-    max_count: int
+    phase1_count: int           # phase 1 (intensive): number of follow-ups
+    phase1_interval_days: int   # phase 1 (intensive): days between sends
+    interval_days: int          # phase 2 (cold): days between sends [legacy name]
+    max_count: int              # phase 2 (cold): number of follow-ups [legacy name]
     hour_utc: int
     created_at: str
     updated_at: str
@@ -46,9 +55,14 @@ class FollowUpSettingsOut(BaseModel):
 
 
 class FollowUpSettingsUpdate(BaseModel):
+    """Partial update — see FollowUpSettingsOut for field semantics."""
     enabled: Optional[bool] = None
+    phase1_count: Optional[int] = Field(None, ge=0, le=20)
+    phase1_interval_days: Optional[int] = Field(None, ge=1, le=365)
+    # legacy name — semantically phase-2 interval
     interval_days: Optional[int] = Field(None, ge=1, le=365)
-    max_count: Optional[int] = Field(None, ge=1, le=50)
+    # legacy name — semantically phase-2 count
+    max_count: Optional[int] = Field(None, ge=0, le=50)
     hour_utc: Optional[int] = Field(None, ge=0, le=23)
 
 
@@ -85,6 +99,8 @@ async def get_settings_endpoint(
     return FollowUpSettingsOut(
         id=settings.id,
         enabled=settings.enabled,
+        phase1_count=settings.phase1_count,
+        phase1_interval_days=settings.phase1_interval_days,
         interval_days=settings.interval_days,
         max_count=settings.max_count,
         hour_utc=settings.hour_utc,
@@ -105,6 +121,8 @@ async def update_settings_endpoint(
         interval_days=body.interval_days,
         max_count=body.max_count,
         hour_utc=body.hour_utc,
+        phase1_count=body.phase1_count,
+        phase1_interval_days=body.phase1_interval_days,
     )
 
     # Reschedule the APScheduler job if hour changed
@@ -114,7 +132,7 @@ async def update_settings_endpoint(
             from apscheduler.triggers.cron import CronTrigger
 
             scheduler.reschedule_job(
-                "monthly_follow_up",
+                "daily_follow_up",
                 trigger=CronTrigger(hour=settings.hour_utc, minute=0, timezone="UTC"),
             )
         except Exception as exc:
@@ -127,6 +145,8 @@ async def update_settings_endpoint(
     return FollowUpSettingsOut(
         id=settings.id,
         enabled=settings.enabled,
+        phase1_count=settings.phase1_count,
+        phase1_interval_days=settings.phase1_interval_days,
         interval_days=settings.interval_days,
         max_count=settings.max_count,
         hour_utc=settings.hour_utc,
@@ -157,7 +177,7 @@ async def trigger_follow_up(
 ) -> dict:
     """Manually trigger the follow-up check (runs in background)."""
     import asyncio
-    from app.services.follow_up_service import monthly_follow_up_check
+    from app.services.follow_up_service import daily_follow_up_check
 
-    asyncio.create_task(monthly_follow_up_check())
+    asyncio.create_task(daily_follow_up_check())
     return {"message": "Follow-up check triggered"}

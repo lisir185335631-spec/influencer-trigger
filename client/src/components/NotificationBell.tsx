@@ -119,7 +119,11 @@ export default function NotificationBell() {
     }
     setOpen(false)
     if (item.influencer_id) {
-      navigate('/crm')
+      // Jump straight to the influencer detail page (not the CRM list) so
+      // the user lands on the email timeline + manual-intervention buttons
+      // for the exact creator who replied — saves an extra click in the
+      // common case ("got reply notification → take action").
+      navigate(`/crm/${item.influencer_id}`)
     }
   }
 

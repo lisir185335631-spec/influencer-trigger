@@ -1,4 +1,4 @@
-from typing import Optional, List
+from typing import Literal, Optional, List
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
@@ -55,6 +55,12 @@ async def list_influencers_endpoint(
     industry: Optional[str] = Query(None),
     reply_intent: Optional[str] = Query(None),
     sort_by: Optional[str] = Query(None),
+    ids: List[int] = Query(default=[], max_length=1000),
+    # Literal whitelist: invalid values from a malformed client request 422
+    # at the FastAPI layer instead of silently no-op'ing the filter (which
+    # would mask "I selected 'declined' to hide them" bugs by returning
+    # everything).
+    exclude_status: List[Literal["new", "contacted", "replied", "archived"]] = Query(default=[]),
     db: AsyncSession = Depends(get_db),
     _: TokenData = Depends(get_current_user),
 ) -> InfluencerListResponse:
@@ -62,6 +68,8 @@ async def list_influencers_endpoint(
         db, page, page_size, status, platform, priority, search,
         tag_ids or None, followers_min, followers_max, industry, reply_intent,
         sort_by=sort_by,
+        ids=ids if ids else None,
+        exclude_status=exclude_status if exclude_status else None,
     )
     total_pages = max(1, (total + page_size - 1) // page_size)
     return InfluencerListResponse(
@@ -141,8 +149,19 @@ async def update_influencer_endpoint(
     influencer_id: int,
     body: InfluencerUpdate,
     db: AsyncSession = Depends(get_db),
-    _: TokenData = Depends(get_current_user),
+    current_user: TokenData = Depends(get_current_user),
 ) -> InfluencerDetail:
+    # Field-level authorization: operators can edit basic CRM fields
+    # (nickname / platform / bio / etc.) but NOT the follow-up cadence
+    # counter — `follow_up_count` directly controls whether the auto-
+    # follow-up scheduler keeps emailing this creator. Limit it to
+    # manager+ so a misclick (or compromised operator account) can't
+    # accidentally re-trigger or permanently silence outreach.
+    if body.follow_up_count is not None and current_user.role not in ("admin", "manager"):
+        raise HTTPException(
+            status_code=403,
+            detail="Only manager or admin can modify follow_up_count",
+        )
     inf = await update_influencer(db, influencer_id, body)
     if not inf:
         raise HTTPException(status_code=404, detail="Influencer not found")

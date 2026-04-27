@@ -1,23 +1,28 @@
 """
-Follow-up service — monthly automatic follow-up logic.
+Follow-up service — two-phase automatic follow-up logic.
 
-monthly_follow_up_check() is called by APScheduler daily at the configured
-UTC hour. It queries influencers that meet ALL of:
-  1. status = 'contacted'  (have been emailed but not replied)
-  2. last_email_sent_at < now() - interval_days
-  3. follow_up_count < max_count
-  4. No follow_up email already sent this calendar month
+daily_follow_up_check() is called by APScheduler daily at the configured
+UTC hour. Cadence is two-phase:
+  Phase 1 (intensive): first `phase1_count` follow-ups, `phase1_interval_days` apart
+                       (default 3 × 2 days → days 3/5/7).
+  Phase 2 (cold)     : next `max_count` follow-ups, `interval_days` apart
+                       (default 6 × 30 days → ~6 months).
+
+Per influencer, the next required interval is decided by current
+follow_up_count: phase 1 while count < phase1_count, phase 2 otherwise.
+Total cap = phase1_count + max_count (default 9). When reached, the
+influencer is auto-archived.
 
 For each qualifying influencer:
   - Generate differentiated content via Responder Agent
   - Send via SMTP (re-using sender helpers)
-  - Increment follow_up_count; archive when max reached
+  - Increment follow_up_count; archive when total cap reached
 """
 import logging
 import uuid
 from datetime import datetime, timezone, timedelta
 
-from sqlalchemy import select, update, exists
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.database import AsyncSessionLocal
@@ -30,6 +35,22 @@ from app.agents.sender import MailboxRotator, _send_one
 from app.websocket.manager import manager
 
 logger = logging.getLogger(__name__)
+
+
+def _required_interval_days(
+    follow_up_count: int,
+    phase1_count: int,
+    phase1_interval_days: int,
+    phase2_interval_days: int,
+) -> int:
+    """Decide the next-due interval for one influencer based on how many
+    follow-ups they've already received. Phase-1 cadence applies until the
+    influencer has consumed all phase-1 slots; after that, switch to the
+    cold (phase-2) interval.
+    """
+    if follow_up_count < phase1_count:
+        return phase1_interval_days
+    return phase2_interval_days
 
 
 # ---------------------------------------------------------------------------
@@ -54,6 +75,8 @@ async def update_settings(
     interval_days: int | None = None,
     max_count: int | None = None,
     hour_utc: int | None = None,
+    phase1_count: int | None = None,
+    phase1_interval_days: int | None = None,
 ) -> FollowUpSettings:
     """Update follow-up settings (partial update)."""
     values: dict = {}
@@ -65,6 +88,10 @@ async def update_settings(
         values["max_count"] = max_count
     if hour_utc is not None:
         values["hour_utc"] = hour_utc
+    if phase1_count is not None:
+        values["phase1_count"] = phase1_count
+    if phase1_interval_days is not None:
+        values["phase1_interval_days"] = phase1_interval_days
 
     if values:
         await db.execute(
@@ -127,45 +154,66 @@ async def list_follow_up_logs(
 # Core scheduler job
 # ---------------------------------------------------------------------------
 
-async def monthly_follow_up_check() -> None:
+async def daily_follow_up_check() -> None:
     """
     Daily scheduler job (runs at configured UTC hour).
-    Sends follow-up emails to qualifying influencers.
+    Sends follow-up emails to qualifying influencers using two-phase cadence.
+
+    Selection: status='contacted' AND follow_up_count < (phase1_count +
+    max_count) AND distance(last_email_sent_at, now) >= phase-aware
+    required-interval. The "one follow-up per calendar month" guard is
+    intentionally removed — phase-1 cadence requires multiple sends per
+    month early on; the per-influencer interval check is what spaces sends
+    correctly across both phases.
     """
-    logger.info("monthly_follow_up_check: starting run")
+    logger.info("daily_follow_up_check: starting run")
     async with AsyncSessionLocal() as db:
         settings = await get_or_create_settings(db)
         if not settings.enabled:
-            logger.info("monthly_follow_up_check: disabled, skipping")
+            logger.info("daily_follow_up_check: disabled, skipping")
             return
 
         now = datetime.now(timezone.utc)
-        cutoff_dt = now - timedelta(days=settings.interval_days)
-        month_start = now.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+        total_cap = settings.phase1_count + settings.max_count
 
-        # Subquery: influencer already has a follow_up email this month
-        follow_up_this_month_sub = (
-            select(Email.id)
-            .where(
-                Email.influencer_id == Influencer.id,
-                Email.email_type == EmailType.follow_up,
-                Email.sent_at >= month_start,
-            )
-            .correlate(Influencer)
-        )
-
+        # Cheap pre-filter at the SQL layer; the per-row interval check
+        # (which depends on each influencer's follow_up_count) happens in
+        # Python below — small scan size, no need to express the CASE WHEN
+        # in SQL.
         qualifying_q = (
             select(Influencer)
             .where(
                 Influencer.status == InfluencerStatus.contacted,
-                Influencer.last_email_sent_at < cutoff_dt,
-                Influencer.follow_up_count < settings.max_count,
-                ~exists(follow_up_this_month_sub),
+                Influencer.last_email_sent_at.isnot(None),
+                Influencer.follow_up_count < total_cap,
             )
         )
         result = await db.execute(qualifying_q)
-        influencers = list(result.scalars().all())
-        logger.info("monthly_follow_up_check: %d influencers qualify", len(influencers))
+        candidates = list(result.scalars().all())
+
+        # Per-row interval gate using the phase-aware helper.
+        influencers: list[Influencer] = []
+        for inf in candidates:
+            interval = _required_interval_days(
+                inf.follow_up_count,
+                settings.phase1_count,
+                settings.phase1_interval_days,
+                settings.interval_days,
+            )
+            if inf.last_email_sent_at is None:
+                continue
+            # Naive datetimes from SQLite default to UTC; coerce so the
+            # subtraction below doesn't blow up with tz-naive vs tz-aware.
+            last_sent = inf.last_email_sent_at
+            if last_sent.tzinfo is None:
+                last_sent = last_sent.replace(tzinfo=timezone.utc)
+            if (now - last_sent) >= timedelta(days=interval):
+                influencers.append(inf)
+
+        logger.info(
+            "daily_follow_up_check: %d/%d candidates due (cap=%d)",
+            len(influencers), len(candidates), total_cap,
+        )
 
         if not influencers:
             return
@@ -178,7 +226,7 @@ async def monthly_follow_up_check() -> None:
         )
         mailboxes = list(mb_result.scalars().all())
         if not mailboxes:
-            logger.warning("monthly_follow_up_check: no active mailboxes, aborting")
+            logger.warning("daily_follow_up_check: no active mailboxes, aborting")
             return
 
         rotator = MailboxRotator(mailboxes)
@@ -189,7 +237,7 @@ async def monthly_follow_up_check() -> None:
             await db.refresh(inf)
             if inf.status != InfluencerStatus.contacted:
                 logger.info(
-                    "monthly_follow_up_check: skipping %s (status now %s)",
+                    "daily_follow_up_check: skipping %s (status now %s)",
                     inf.email, inf.status.value,
                 )
                 continue
@@ -197,7 +245,7 @@ async def monthly_follow_up_check() -> None:
             mailbox = rotator.next()
             if mailbox is None:
                 logger.warning(
-                    "monthly_follow_up_check: all mailboxes at limit, stopping at %d/%d",
+                    "daily_follow_up_check: all mailboxes at limit, stopping at %d/%d",
                     sent_count, len(influencers),
                 )
                 break
@@ -241,11 +289,12 @@ async def monthly_follow_up_check() -> None:
                 mailbox.today_sent += 1
                 mailbox.this_hour_sent += 1
 
-                # Increment follow_up_count; archive if max reached
+                # Increment follow_up_count; archive if total cap reached
+                # (phase 1 + phase 2 combined).
                 new_count = inf.follow_up_count + 1
                 new_status = (
                     InfluencerStatus.archived
-                    if new_count >= settings.max_count
+                    if new_count >= total_cap
                     else inf.status
                 )
                 await db.execute(
@@ -258,7 +307,7 @@ async def monthly_follow_up_check() -> None:
                     )
                 )
                 logger.info(
-                    "monthly_follow_up_check: sent follow-up #%d to %s (status→%s)",
+                    "daily_follow_up_check: sent follow-up #%d to %s (status→%s)",
                     new_count, inf.email, new_status.value,
                 )
 
@@ -271,10 +320,10 @@ async def monthly_follow_up_check() -> None:
                 })
             else:
                 logger.error(
-                    "monthly_follow_up_check: failed to send follow-up to %s: %s",
+                    "daily_follow_up_check: failed to send follow-up to %s: %s",
                     inf.email, err,
                 )
 
             await db.commit()
 
-        logger.info("monthly_follow_up_check: completed, sent=%d", sent_count)
+        logger.info("daily_follow_up_check: completed, sent=%d", sent_count)

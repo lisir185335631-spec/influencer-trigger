@@ -102,11 +102,29 @@ async def list_influencers(
     industry: Optional[str] = None,
     reply_intent: Optional[str] = None,
     sort_by: Optional[str] = None,
+    ids: Optional[list[int]] = None,
+    exclude_status: Optional[list[str]] = None,
 ) -> tuple[list[InfluencerListItem], int]:
     query = select(Influencer)
 
+    # ids takes precedence as an "exact set" filter — used by SendPanel's
+    # "selected recipients" panel to hydrate full CRM-grade rows for the
+    # already-picked influencer ids. Empty list short-circuits to no rows
+    # (vs treating it as "no filter") so the UI never accidentally shows
+    # the entire pool when nothing is selected.
+    if ids is not None:
+        if not ids:
+            return [], 0
+        query = query.where(Influencer.id.in_(ids))
+
     if status:
         query = query.where(Influencer.status == status)
+    # exclude_status is the SendPanel picker's "hide already-contacted" filter
+    # — passes ['contacted','replied','archived'] by default so users only see
+    # fresh leads when picking recipients. The picker exposes a toggle that
+    # clears this filter when the user wants to re-target an existing lead.
+    if exclude_status:
+        query = query.where(~Influencer.status.in_(exclude_status))
     if platform:
         query = query.where(Influencer.platform == platform)
     if priority:

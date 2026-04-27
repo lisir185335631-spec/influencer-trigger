@@ -13,6 +13,7 @@ from app.database import AsyncSessionLocal
 from app.models.feature_flag import FeatureFlag
 from app.models.system_settings import SystemSettings
 from app.schemas.auth import TokenData
+from app.services.settings_service import mask_token
 
 router = APIRouter(prefix="/settings", tags=["admin-settings"])
 
@@ -28,6 +29,11 @@ class SystemSettingsOut(BaseModel):
     scrape_concurrency: int
     webhook_feishu: str
     webhook_slack: str
+    # Server 酱 SendKey is a secret — masked on output (e.g. "****abcd").
+    # Use webhook_serverchan_set to know whether DB has a value; the masked
+    # string itself is unsuitable for "configured?" checks.
+    webhook_serverchan: str
+    webhook_serverchan_set: bool
     webhook_default_url: str
     default_daily_quota: int
     llm_key: LLMKeyStatus
@@ -38,6 +44,8 @@ class SystemSettingsPatch(BaseModel):
     default_daily_quota: Optional[int] = Field(None, ge=0)
     webhook_feishu: Optional[str] = None
     webhook_slack: Optional[str] = None
+    # None = leave unchanged; "" = clear; other = set new value
+    webhook_serverchan: Optional[str] = None
 
 
 class FeatureFlagOut(BaseModel):
@@ -110,18 +118,26 @@ def _flag_out(f: FeatureFlag) -> FeatureFlagOut:
 
 # ─── System Settings ──────────────────────────────────────────────────────────
 
+def _system_settings_out(row: SystemSettings) -> SystemSettingsOut:
+    """Shared serializer — masks Server 酱 SendKey before sending to client."""
+    serverchan_raw = getattr(row, "webhook_serverchan", "") or ""
+    return SystemSettingsOut(
+        scrape_concurrency=row.scrape_concurrency,
+        webhook_feishu=row.webhook_feishu or "",
+        webhook_slack=row.webhook_slack or "",
+        webhook_serverchan=mask_token(serverchan_raw),
+        webhook_serverchan_set=bool(serverchan_raw),
+        webhook_default_url=getattr(row, "webhook_default_url", "") or "",
+        default_daily_quota=getattr(row, "default_daily_quota", 100) or 100,
+        llm_key=_llm_key_status(),
+    )
+
+
 @router.get("/system", response_model=SystemSettingsOut)
 async def get_system_settings(_: TokenData = Depends(require_admin)) -> SystemSettingsOut:
     async with AsyncSessionLocal() as db:
         row = await _get_or_create_system_settings(db)
-        return SystemSettingsOut(
-            scrape_concurrency=row.scrape_concurrency,
-            webhook_feishu=row.webhook_feishu or "",
-            webhook_slack=row.webhook_slack or "",
-            webhook_default_url=getattr(row, "webhook_default_url", "") or "",
-            default_daily_quota=getattr(row, "default_daily_quota", 100) or 100,
-            llm_key=_llm_key_status(),
-        )
+        return _system_settings_out(row)
 
 
 @router.patch("/system", response_model=SystemSettingsOut)
@@ -139,16 +155,11 @@ async def patch_system_settings(
             row.webhook_feishu = body.webhook_feishu
         if body.webhook_slack is not None:
             row.webhook_slack = body.webhook_slack
+        if body.webhook_serverchan is not None:
+            row.webhook_serverchan = body.webhook_serverchan.strip()
         await db.commit()
         await db.refresh(row)
-        return SystemSettingsOut(
-            scrape_concurrency=row.scrape_concurrency,
-            webhook_feishu=row.webhook_feishu or "",
-            webhook_slack=row.webhook_slack or "",
-            webhook_default_url=getattr(row, "webhook_default_url", "") or "",
-            default_daily_quota=getattr(row, "default_daily_quota", 100) or 100,
-            llm_key=_llm_key_status(),
-        )
+        return _system_settings_out(row)
 
 
 # ─── Feature Flags ─────────────────────────────────────────────────────────────

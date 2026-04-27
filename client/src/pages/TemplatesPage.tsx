@@ -7,7 +7,6 @@ import {
   Trash2,
   X,
   Loader2,
-  Sparkles,
   Eye,
   EyeOff,
   ChevronDown,
@@ -349,10 +348,7 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-xl mx-4 flex flex-col max-h-[90vh]">
         {/* Header */}
         <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100 shrink-0">
-          <div className="flex items-center gap-2">
-            <Sparkles size={15} className="text-violet-500" />
-            <h2 className="text-sm font-semibold text-gray-900">{t('templates.ai.title')}</h2>
-          </div>
+          <h2 className="text-sm font-semibold text-gray-900">{t('templates.ai.title')}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X size={16} />
           </button>
@@ -374,10 +370,8 @@ function GeneratePanel({ onClose, onSelect }: GeneratePanelProps) {
               disabled={generating || !industry.trim()}
               className="flex items-center gap-1.5 px-4 py-2 text-sm bg-violet-600 text-white rounded-lg hover:bg-violet-700 disabled:opacity-50 transition-colors whitespace-nowrap"
             >
-              {generating ? (
+              {generating && (
                 <Loader2 size={13} className="animate-spin" />
-              ) : (
-                <Sparkles size={13} />
               )}
               {t('templates.ai.generate')}
             </button>
@@ -516,7 +510,6 @@ export default function TemplatesPage() {
             onClick={() => setGeneratePanel(true)}
             className="flex items-center gap-1.5 px-3 py-2 text-sm text-violet-700 bg-violet-50 hover:bg-violet-100 rounded-lg border border-violet-200 transition-colors"
           >
-            <Sparkles size={14} />
             {t('templates.aiGenerate')}
           </button>
           <button

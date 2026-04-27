@@ -1,6 +1,6 @@
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 # ── Tag schemas ─────────────────────────────────────────────────────────────
@@ -102,6 +102,17 @@ class InfluencerUpdate(BaseModel):
     bio: Optional[str] = None
     status: Optional[str] = None
     priority: Optional[str] = None
+    # Used by the InfluencerDetail "重启从头" button to reset cadence back
+    # to follow-up #0 — combined with status='new' it puts the influencer
+    # back into the picker as a fresh lead. Range-bounded so a malformed or
+    # adversarial PATCH can't corrupt the counter:
+    #   ge=0   — negative would make the cadence's "count < total_cap" SQL
+    #            check permanently true, causing infinite follow-ups
+    #   le=100 — well above any plausible spec (default total_cap=9); keeps
+    #            the door open for custom cadences without permitting absurd
+    #            values that would silently disable follow-ups (e.g. 9999999
+    #            would always exceed any sane cap → influencer never re-fired)
+    follow_up_count: Optional[int] = Field(None, ge=0, le=100)
 
 
 class InfluencerListItem(BaseModel):

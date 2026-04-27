@@ -3,6 +3,8 @@ import apiClient from './client'
 export interface FollowUpSettings {
   id: number
   enabled: boolean
+  phase1_count: number
+  phase1_interval_days: number
   interval_days: number
   max_count: number
   hour_utc: number
@@ -12,6 +14,8 @@ export interface FollowUpSettings {
 
 export interface FollowUpSettingsUpdate {
   enabled?: boolean
+  phase1_count?: number
+  phase1_interval_days?: number
   interval_days?: number
   max_count?: number
   hour_utc?: number

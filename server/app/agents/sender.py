@@ -355,6 +355,19 @@ async def run_sender_agent(
                 "current_email": influencer.email,
             })
 
+            # Also broadcast a row-level event so any open monitor list (which
+            # subscribes to email:status_change for delivery / open / reply
+            # transitions) picks up the new send too. Without this, the
+            # initial-send row only appears after the user manually reloads
+            # — visually inconsistent with follow_up:sent behaviour, which
+            # already lights up the list in real time.
+            await manager.broadcast("email:status_change", {
+                "email_id": email_record.id,
+                "influencer_id": inf_id,
+                "status": email_record.status.value,
+                "campaign_id": campaign_id,
+            })
+
             # Random delay before next send (30-60 s), skip after last item
             if i < total - 1:
                 delay = random.uniform(30, 60)

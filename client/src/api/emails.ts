@@ -44,6 +44,11 @@ export interface EmailListItem {
   influencer_name: string | null
   influencer_email: string
   influencer_platform: string | null
+  // 'initial' | 'follow_up' | 'holiday' — exposed as plain string so we
+  // don't have to keep the union in sync with backend EmailType enum.
+  email_type: string
+  // Snapshot of the influencer's follow_up_count at list-time.
+  follow_up_count: number
   campaign_id: number | null
   campaign_name: string | null
   status: string
@@ -73,6 +78,7 @@ export interface EmailListParams {
   campaign_id?: number
   platform?: string
   status?: string
+  email_type?: string
   page?: number
   page_size?: number
 }

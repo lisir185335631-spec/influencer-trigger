@@ -8,6 +8,11 @@ export interface SystemSettings {
   scrape_concurrency: number
   webhook_feishu: string
   webhook_slack: string
+  // Masked SendKey on output (e.g. "****abcd"). Use webhook_serverchan_set
+  // to know whether DB has a real value — the masked string itself is not
+  // suitable for "configured?" checks.
+  webhook_serverchan: string
+  webhook_serverchan_set: boolean
   // Apify per-platform configuration. Tokens come back masked (e.g.
   // "****abcd"); use *_token_set to know if a value exists in DB.
   apify_tiktok_token: string
@@ -32,6 +37,7 @@ export interface SystemSettingsUpdate {
   scrape_concurrency?: number
   webhook_feishu?: string
   webhook_slack?: string
+  webhook_serverchan?: string
   // For Apify: omit (undefined) to leave unchanged; "" to clear.
   apify_tiktok_token?: string
   apify_tiktok_actor?: string
@@ -60,10 +66,16 @@ export const getSettings = () =>
 export const updateSettings = (body: SystemSettingsUpdate) =>
   apiClient.put<SystemSettings>('/settings', body).then((r) => r.data)
 
-export const testWebhook = (platform: 'feishu' | 'slack', url: string) =>
+export const testWebhook = (
+  platform: 'feishu' | 'slack' | 'serverchan',
+  url: string,
+) =>
   apiClient
     .post<{ success: boolean; platform: string }>('/settings/test-webhook', {
       platform,
+      // Server 酱 sends the SendKey here; backend re-uses the `url` param name
+      // for both URL-based webhooks and the SendKey to keep the payload shape
+      // identical across channels.
       url,
     })
     .then((r) => r.data)

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { CheckCircle, ChevronDown, ChevronUp, Pencil, Plus, Save, Trash2, X, XCircle } from 'lucide-react'
 import {
@@ -171,15 +171,39 @@ function SystemTab({ settings, onSaved }: SystemTabProps) {
     default_daily_quota: settings.default_daily_quota,
     webhook_feishu: settings.webhook_feishu,
     webhook_slack: settings.webhook_slack,
+    webhook_serverchan: settings.webhook_serverchan,
+    webhook_serverchan_set: settings.webhook_serverchan_set,
   })
   const [saving, setSaving] = useState(false)
   const [saved, setSaved] = useState(false)
+  // GET returns the SendKey masked ("****abcd"); only PUT it when the user
+  // has actually edited the field, otherwise we'd write the mask back to DB.
+  const serverchanDirty = useRef(false)
 
   const handleSave = async () => {
     setSaving(true)
     try {
-      const updated = await patchSystemSettings(form)
+      const patch: Parameters<typeof patchSystemSettings>[0] = {
+        webhook_default_url: form.webhook_default_url,
+        default_daily_quota: form.default_daily_quota,
+        webhook_feishu: form.webhook_feishu,
+        webhook_slack: form.webhook_slack,
+      }
+      if (serverchanDirty.current) {
+        patch.webhook_serverchan = form.webhook_serverchan
+      }
+      const updated = await patchSystemSettings(patch)
       onSaved(updated)
+      // Resync local form with server (gets fresh masked SendKey + set flag)
+      setForm({
+        webhook_default_url: updated.webhook_default_url,
+        default_daily_quota: updated.default_daily_quota,
+        webhook_feishu: updated.webhook_feishu,
+        webhook_slack: updated.webhook_slack,
+        webhook_serverchan: updated.webhook_serverchan,
+        webhook_serverchan_set: updated.webhook_serverchan_set,
+      })
+      serverchanDirty.current = false
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } finally {
@@ -244,6 +268,42 @@ function SystemTab({ settings, onSaved }: SystemTabProps) {
             placeholder="https://hooks.slack.com/..."
           />
         </div>
+      </div>
+
+      {/* Server 酱 SendKey — secret, masked on read; same dirty-gate pattern
+          as Apify tokens / user-side SettingsPage to avoid writing the
+          masked placeholder back to DB. */}
+      <div>
+        <label className="block text-xs font-medium text-gray-600 mb-1">
+          {t('admin.settings.system.serverchanWebhook')}
+          <span className="ml-2 text-[10px] text-gray-400 font-normal">
+            {form.webhook_serverchan_set
+              ? t('admin.settings.system.serverchanConfigured')
+              : t('admin.settings.system.serverchanNotConfigured')}
+          </span>
+        </label>
+        <input
+          type="password"
+          autoComplete="off"
+          className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm font-mono focus:outline-none focus:ring-2 focus:ring-indigo-500"
+          value={
+            form.webhook_serverchan_set && !serverchanDirty.current
+              ? ''
+              : form.webhook_serverchan
+          }
+          placeholder={
+            form.webhook_serverchan_set && !serverchanDirty.current
+              ? t('admin.settings.system.serverchanMasked', { masked: form.webhook_serverchan })
+              : 'SCT123ABC...'
+          }
+          onChange={e => {
+            serverchanDirty.current = true
+            setForm(f => ({ ...f, webhook_serverchan: e.target.value }))
+          }}
+        />
+        <p className="mt-1 text-xs text-gray-400">
+          {t('admin.settings.system.serverchanHint')}
+        </p>
       </div>
 
       {/* Default Daily Quota */}

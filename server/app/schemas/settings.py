@@ -20,6 +20,11 @@ class SettingsOut(BaseModel):
     # webhooks
     webhook_feishu: str
     webhook_slack: str
+    # Server 酱 SendKey is a secret — masked on output (e.g. "****abcd"); the
+    # UI uses *_set to know whether DB has a value, and only sends the field
+    # back on PUT when the user actually edits it.
+    webhook_serverchan: str
+    webhook_serverchan_set: bool
     # apify per-platform config
     # tokens are MASKED on output (e.g. "****abcd"); full value only on PUT.
     # The *_token_set boolean tells the UI whether DB has a value, since the
@@ -49,6 +54,7 @@ class SettingsUpdate(BaseModel):
     # webhooks (optional)
     webhook_feishu: Optional[str] = None
     webhook_slack: Optional[str] = None
+    webhook_serverchan: Optional[str] = None
     # apify per-platform config (optional). Token == "" clears it; token == None
     # leaves it unchanged. Same convention for actor. This lets the UI ship a
     # PUT with only the fields the user touched.
