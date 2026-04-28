@@ -472,13 +472,13 @@ function MailboxPoolPanel() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-gray-100">
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('mailboxes.table.account')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('mailboxes.table.smtp')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('mailboxes.table.status')}</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('mailboxes.table.todayDaily')}</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('mailboxes.table.bounceRate')}</th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('mailboxes.table.test')}</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 w-24">{t('mailboxes.table.actions')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('mailboxes.table.account')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('mailboxes.table.smtp')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('mailboxes.table.status')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('mailboxes.table.todayDaily')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('mailboxes.table.bounceRate')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500">{t('mailboxes.table.test')}</th>
+                <th className="px-4 py-3 text-center text-xs font-medium text-gray-500 w-24">{t('mailboxes.table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -486,32 +486,32 @@ function MailboxPoolPanel() {
                 const ts = testStates[m.id] ?? { status: 'idle', msg: '' }
                 return (
                   <tr key={m.id} className="hover:bg-gray-50/60 transition-colors">
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <p className="font-medium text-gray-900 text-xs">{m.email}</p>
                       {m.display_name && (
                         <p className="text-gray-400 text-xs mt-0.5">{m.display_name}</p>
                       )}
                     </td>
-                    <td className="px-4 py-3 text-xs text-gray-500">
+                    <td className="px-4 py-3 text-center text-xs text-gray-500">
                       {m.smtp_host}:{m.smtp_port}
                     </td>
-                    <td className="px-4 py-3">
+                    <td className="px-4 py-3 text-center">
                       <StatusBadge status={m.status} />
                     </td>
-                    <td className="px-4 py-3 text-right text-xs text-gray-700 tabular-nums">
+                    <td className="px-4 py-3 text-center text-xs text-gray-700 tabular-nums">
                       <span className={m.today_sent >= m.daily_limit ? 'text-red-500 font-medium' : ''}>
                         {m.today_sent}
                       </span>
                       <span className="text-gray-300 mx-1">/</span>
                       {m.daily_limit}
                     </td>
-                    <td className="px-4 py-3 text-right text-xs tabular-nums">
+                    <td className="px-4 py-3 text-center text-xs tabular-nums">
                       <span className={m.bounce_rate > 0.05 ? 'text-red-500' : 'text-gray-500'}>
                         {(m.bounce_rate * 100).toFixed(1)}%
                       </span>
                     </td>
                     {/* Test column — own field with status + (full) message */}
-                    <td className="px-4 py-3 align-top">
+                    <td className="px-4 py-3 text-center align-top">
                       <button
                         onClick={() => handleTest(m)}
                         disabled={ts.status === 'loading'}
@@ -548,8 +548,8 @@ function MailboxPoolPanel() {
                     </td>
 
                     {/* Actions column — icon-only edit + delete */}
-                    <td className="px-4 py-3 align-top">
-                      <div className="flex items-center justify-end gap-1">
+                    <td className="px-4 py-3 text-center align-top">
+                      <div className="flex items-center justify-center gap-1">
                         <button
                           onClick={() => setModal(m)}
                           title={t('common.edit')}
