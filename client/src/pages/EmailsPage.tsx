@@ -40,7 +40,7 @@ const STATUSES  = ['pending', 'sent', 'delivered', 'opened', 'clicked', 'replied
 // Mirrors backend EmailType enum (initial / follow_up / holiday). Adding a
 // new type later requires backend + this list — keep in sync intentionally.
 const EMAIL_TYPES = ['initial', 'follow_up', 'holiday']
-const PAGE_SIZE = 20
+const PAGE_SIZE = 10
 
 function StatusDashboard() {
   const { t } = useTranslation()
@@ -291,14 +291,14 @@ function StatusDashboard() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100">
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.influencer')}</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.email')}</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.emailType')}</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.campaign')}</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.sentAt')}</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.status')}</th>
+              <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.influencer')}</th>
+              <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.email')}</th>
+              <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.emailType')}</th>
+              <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.campaign')}</th>
+              <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.sentAt')}</th>
+              <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.status')}</th>
               <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{t('emails.table.serverchanStatus')}</th>
-              <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.lastUpdated')}</th>
+              <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.lastUpdated')}</th>
             </tr>
           </thead>
           <tbody>
@@ -322,14 +322,14 @@ function StatusDashboard() {
             )}
             {items.map(item => (
               <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
-                <td className="px-4 py-3 font-medium text-gray-800">
+                <td className="px-4 py-3 text-center font-medium text-gray-800">
                   {item.influencer_name || '—'}
                   {item.influencer_platform && (
                     <span className="ml-1.5 text-xs text-gray-400">{item.influencer_platform}</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-gray-500 font-mono text-xs">{item.influencer_email}</td>
-                <td className="px-4 py-3 text-xs">
+                <td className="px-4 py-3 text-center text-gray-500 font-mono text-xs">{item.influencer_email}</td>
+                <td className="px-4 py-3 text-center text-xs">
                   {/* Show "follow-up #N" inline so operators don't have to
                       cross-reference the influencer detail page. Initial
                       and holiday don't have a counter. */}
@@ -353,11 +353,11 @@ function StatusDashboard() {
                     </span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-gray-500">{item.campaign_name || '—'}</td>
-                <td className="px-4 py-3 text-gray-400 text-xs">
+                <td className="px-4 py-3 text-center text-gray-500">{item.campaign_name || '—'}</td>
+                <td className="px-4 py-3 text-center text-gray-400 text-xs">
                   {item.sent_at ? new Date(item.sent_at).toLocaleString() : '—'}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 text-center">
                   <StatusBadge status={item.status} />
                 </td>
                 <td className="px-4 py-3 text-center text-base">
@@ -372,7 +372,7 @@ function StatusDashboard() {
                     <span className="text-gray-300">—</span>
                   )}
                 </td>
-                <td className="px-4 py-3 text-gray-400 text-xs">
+                <td className="px-4 py-3 text-center text-gray-400 text-xs">
                   {new Date(item.updated_at).toLocaleString()}
                 </td>
               </tr>
