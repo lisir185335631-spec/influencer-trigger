@@ -422,7 +422,6 @@ export default function SettingsPage() {
           {APIFY_PLATFORMS.map((p) => {
             const tokenSet = form[p.tokenSetField]
             const tokenValue = form[p.tokenField]
-            const dirty = apifyTokenDirty.current.has(p.key)
             const test = apifyTest[p.key]
 
             return (
