@@ -31,6 +31,7 @@ from app.websocket.manager import manager
 from app.api.health import router as health_router
 from app.api.image_proxy import router as image_proxy_router
 from app.api.track import router as track_router
+from app.api.webhook_logs import router as webhook_logs_router
 # noqa: F401 — import models so create_all sees them
 import app.models.scrape_task_influencer  # noqa: F401
 import app.models.system_settings  # noqa: F401
@@ -41,6 +42,7 @@ import app.models.usage_metric  # noqa: F401
 import app.models.usage_budget  # noqa: F401
 import app.models.feature_flag  # noqa: F401
 import app.models.security_alert  # noqa: F401
+import app.models.webhook_push_log  # noqa: F401
 from app.api.auth import router as auth_router
 from app.api.mailboxes import router as mailboxes_router
 from app.api.templates import router as templates_router
@@ -268,6 +270,7 @@ app.add_middleware(AuditMiddleware)
 app.include_router(health_router, prefix="/api")
 app.include_router(image_proxy_router, prefix="/api")
 app.include_router(track_router, prefix="/api")
+app.include_router(webhook_logs_router, prefix="/api")
 app.include_router(auth_router, prefix="/api")
 app.include_router(mailboxes_router, prefix="/api")
 app.include_router(templates_router, prefix="/api")

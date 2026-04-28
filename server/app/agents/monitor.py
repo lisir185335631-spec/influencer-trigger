@@ -562,6 +562,8 @@ async def _classify_and_notify(
                 send_notification_webhooks(
                     notification_data["title"],
                     webhook_content,
+                    email_id=email_id,
+                    influencer_id=influencer_id,
                 )
             )
 

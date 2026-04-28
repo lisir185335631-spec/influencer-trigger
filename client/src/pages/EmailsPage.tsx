@@ -6,8 +6,10 @@ import {
   EmailListItem,
   EmailStats,
 } from '../api/emails'
+import { webhookLogsApi, WebhookLogStats } from '../api/webhook_logs'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
 import { WS_URL } from '../api/websocket'
+import WebhookPushLogsModal from '../components/WebhookPushLogsModal'
 
 // ── Status badge ─────────────────────────────────────────────────────────────
 
@@ -54,6 +56,12 @@ function StatusDashboard() {
   const [statusFilter,   setStatusFilter]     = useState('')
   const [typeFilter,     setTypeFilter]       = useState('')
 
+  // Server酱 push-stats card. Loaded once on mount + refreshed live via
+  // the webhook:pushed WebSocket event so the count stays current
+  // without polling. Modal opens when the card is clicked.
+  const [webhookStats, setWebhookStats] = useState<WebhookLogStats | null>(null)
+  const [webhookModalOpen, setWebhookModalOpen] = useState(false)
+
   const totalPages = Math.max(1, Math.ceil(total / PAGE_SIZE))
 
   const loadData = useCallback(async () => {
@@ -84,6 +92,7 @@ function StatusDashboard() {
 
   useEffect(() => {
     emailsApi.listCampaigns().then(setCampaigns).catch(() => {})
+    webhookLogsApi.getStats('serverchan').then(setWebhookStats).catch(() => {})
   }, [])
 
   // Debounced reload: a burst of WS events (e.g. scheduler dispatching 50
@@ -111,6 +120,19 @@ function StatusDashboard() {
         loadData()
         reloadTimerRef.current = null
       }, 700)
+    } else if (msg.event === 'webhook:pushed') {
+      // Increment the Server酱 stat card in place — cheaper than refetching
+      // /webhook-logs/stats on every push and the modal does its own
+      // per-row prepend independently. Only count rows for the channel
+      // the card represents (serverchan).
+      const data = msg.data as { channel?: string; status?: string }
+      if (data.channel === 'serverchan') {
+        setWebhookStats((prev) => {
+          const total = (prev?.total ?? 0) + 1
+          const success = (prev?.success ?? 0) + (data.status === 'success' ? 1 : 0)
+          return { total, success, failed: total - success }
+        })
+      }
     }
   }, [loadData])
   useWebSocket(WS_URL, handleWs)
@@ -133,21 +155,47 @@ function StatusDashboard() {
   // Used for "opened" because most non-Gmail clients hide remote images,
   // so the displayed open count is a lower bound — flagging that
   // in-place avoids a "why is opens always 0?" support-ticket loop.
-  const statCards = stats ? [
+  // 7th card: Server酱 push counter. `onClick` opens the audit modal;
+  // `failed` triggers a red badge on the card when at least one push
+  // has failed — prevents silent breakage going unnoticed (e.g. an
+  // expired SendKey or sct.ftqq.com 5xx surge).
+  const statCards: Array<{
+    label: string
+    value: number
+    color: string
+    hint?: string
+    onClick?: () => void
+    failed?: number
+  }> = stats ? [
     { label: t('emails.stats.totalSent'),  value: stats.total_sent, color: 'text-gray-900' },
     { label: t('emails.stats.delivered'),  value: stats.delivered,  color: 'text-cyan-600' },
     { label: t('emails.stats.opened'),     value: stats.opened,     color: 'text-yellow-600', hint: t('emails.stats.openedHint') },
     { label: t('emails.stats.replied'),    value: stats.replied,    color: 'text-green-600' },
     { label: t('emails.stats.noReply'),    value: stats.no_reply,   color: 'text-gray-400' },
     { label: t('emails.stats.bounced'),    value: stats.bounced,    color: 'text-red-500' },
+    {
+      label: t('emails.stats.serverchanPush'),
+      value: webhookStats?.total ?? 0,
+      color: 'text-purple-600',
+      onClick: () => setWebhookModalOpen(true),
+      failed: webhookStats?.failed ?? 0,
+    },
   ] : []
 
   return (
     <div>
       {/* Stats cards */}
-      <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
-        {statCards.map(({ label, value, color, hint }) => (
-          <div key={label} className="border border-gray-100 rounded-xl p-4 text-center">
+      <div className="grid grid-cols-3 sm:grid-cols-7 gap-3 mb-6">
+        {statCards.map(({ label, value, color, hint, onClick, failed }) => (
+          <div
+            key={label}
+            onClick={onClick}
+            className={`relative border border-gray-100 rounded-xl p-4 text-center ${
+              onClick
+                ? 'cursor-pointer hover:border-gray-300 hover:shadow-sm transition-all'
+                : ''
+            }`}
+          >
             <div className={`text-2xl font-semibold ${color}`}>{value}</div>
             <div className="text-xs text-gray-400 mt-0.5">
               {label}
@@ -160,9 +208,17 @@ function StatusDashboard() {
                 </span>
               )}
             </div>
+            {failed !== undefined && failed > 0 && (
+              <span
+                className="absolute top-2 right-2 bg-red-500 text-white text-[10px] font-semibold leading-none px-1.5 py-0.5 rounded-full"
+                title={t('emails.stats.serverchanFailedTooltip', { count: failed })}
+              >
+                {failed > 99 ? '99+' : failed}
+              </span>
+            )}
           </div>
         ))}
-        {!stats && Array.from({ length: 6 }).map((_, i) => (
+        {!stats && Array.from({ length: 7 }).map((_, i) => (
           <div key={i} className="border border-gray-100 rounded-xl p-4 text-center animate-pulse">
             <div className="h-8 bg-gray-100 rounded mb-1" />
             <div className="h-3 bg-gray-100 rounded w-2/3 mx-auto" />
@@ -334,6 +390,11 @@ function StatusDashboard() {
           </button>
         </div>
       )}
+
+      <WebhookPushLogsModal
+        open={webhookModalOpen}
+        onClose={() => setWebhookModalOpen(false)}
+      />
     </div>
   )
 }

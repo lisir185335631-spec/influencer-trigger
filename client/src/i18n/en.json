@@ -9,6 +9,7 @@
     "edit": "Edit",
     "create": "Create",
     "close": "Close",
+    "refresh": "Refresh",
     "prev": "Prev",
     "next": "Next",
     "confirm": "Confirm",
@@ -471,7 +472,9 @@
       "openedHint": "Opened = times the tracking pixel was loaded. QQ, Outlook, 163, etc. block remote images by default — recipients must click \"Show images\" for tracking to fire. Real open rate is usually higher.\n\nNote: when a recipient replies, the system back-fills opened-at automatically.",
       "replied": "Replied",
       "noReply": "No Reply",
-      "bounced": "Bounced"
+      "bounced": "Bounced",
+      "serverchanPush": "WeChat Push",
+      "serverchanFailedTooltip": "{{count}} push(es) failed — click for details"
     },
     "filter": {
       "allCampaigns": "All campaigns",
@@ -553,6 +556,23 @@
       "subjectRequired": "Subject cannot be empty",
       "bodyRequired": "Body cannot be empty",
       "sendFailedHint": "Send request failed. Check mailbox configuration and retry."
+    }
+  },
+  "webhookLogs": {
+    "modal": {
+      "title": "WeChat Push Logs (Server酱)",
+      "empty": "No push records yet",
+      "loadFailed": "Failed to load push logs",
+      "footerHint": "Showing {{count}} entries · live"
+    },
+    "col": {
+      "time": "Time",
+      "channel": "Channel",
+      "email": "Email",
+      "content": "Content",
+      "status": "Status",
+      "error": "Error",
+      "duration": "Duration"
     }
   },
   "crm": {

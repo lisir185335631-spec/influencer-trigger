@@ -9,6 +9,7 @@
     "edit": "编辑",
     "create": "创建",
     "close": "关闭",
+    "refresh": "刷新",
     "prev": "上一页",
     "next": "下一页",
     "confirm": "确认",
@@ -471,7 +472,9 @@
       "openedHint": "已打开 = 收件人加载邮件中追踪图片的次数。QQ、Outlook、163 等邮箱默认屏蔽外部图片，需要收件人手动点「显示图片」才会触发追踪。实际打开率通常高于此数字。\n\n注：当收件人回复邮件时，系统会自动反推此邮件已被打开。",
       "replied": "已回复",
       "noReply": "未回复",
-      "bounced": "退信"
+      "bounced": "退信",
+      "serverchanPush": "Server酱推送",
+      "serverchanFailedTooltip": "{{count}} 次推送失败，点击查看详情"
     },
     "filter": {
       "allCampaigns": "全部活动",
@@ -553,6 +556,23 @@
       "subjectRequired": "邮件主题不能为空",
       "bodyRequired": "邮件正文不能为空",
       "sendFailedHint": "发送请求失败，请检查邮箱配置后重试"
+    }
+  },
+  "webhookLogs": {
+    "modal": {
+      "title": "Server酱推送日志",
+      "empty": "暂无推送记录",
+      "loadFailed": "加载推送日志失败",
+      "footerHint": "共显示 {{count}} 条 · 实时更新"
+    },
+    "col": {
+      "time": "时间",
+      "channel": "渠道",
+      "email": "触发邮件",
+      "content": "内容",
+      "status": "状态",
+      "error": "失败原因",
+      "duration": "耗时"
     }
   },
   "crm": {
