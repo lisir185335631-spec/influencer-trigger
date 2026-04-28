@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Pencil, Trash2, Zap, X, CheckCircle, XCircle, Loader2, Eye, EyeOff } from 'lucide-react'
+import { Plus, Pencil, Trash2, Plug, X, CheckCircle, XCircle, Loader2, Eye, EyeOff } from 'lucide-react'
 import { Mailbox, MailboxCreate, MailboxUpdate, mailboxesApi } from '../api/mailboxes'
 import SendPanel from '../components/SendPanel'
 
@@ -525,13 +525,13 @@ function MailboxPoolPanel() {
                         ) : ts.status === 'error' ? (
                           <XCircle size={12} className="text-red-500" />
                         ) : (
-                          <Zap size={12} />
+                          <Plug size={12} />
                         )}
                         {ts.status === 'ok'
                           ? t('common.ok')
                           : ts.status === 'error'
                             ? t('common.fail')
-                            : t('common.test')}
+                            : t('mailboxes.table.clickToTest')}
                       </button>
                       {/* Full status message — wraps freely, no truncation, so
                           long SMTP errors (e.g. "Connection already using TLS")

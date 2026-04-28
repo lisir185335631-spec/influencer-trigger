@@ -746,6 +746,7 @@
       "todayDaily": "Today / Daily",
       "bounceRate": "Bounce Rate",
       "test": "Test",
+      "clickToTest": "Click to Test",
       "actions": "Actions"
     },
     "testTooltip": "Test SMTP connection",
