@@ -420,6 +420,7 @@
       "regenerateFailed": "重生失败",
       "empty": "无草稿",
       "table": {
+        "id": "ID",
         "recipient": "收件人",
         "subject": "主题",
         "preview": "正文摘要",

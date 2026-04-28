@@ -457,6 +457,7 @@ export default function CampaignDraftsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
+              <th className="text-center px-4 py-2 font-medium text-gray-500 w-16">{t('drafts.review.table.id')}</th>
               <th className="text-center px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.recipient')}</th>
               <th className="text-center px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.subject')}</th>
               <th className="text-center px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.preview')}</th>
@@ -466,8 +467,11 @@ export default function CampaignDraftsPage() {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
-            {items.map(item => (
+            {items.map((item, index) => (
               <tr key={item.id} className="hover:bg-gray-50">
+                <td className="px-4 py-3 text-center text-xs font-mono text-gray-500 tabular-nums">
+                  {index + 1}
+                </td>
                 <td className="px-4 py-3 text-center">
                   <div className="font-medium text-gray-900 text-sm">
                     {item.influencer_name || '—'}

@@ -420,6 +420,7 @@
       "regenerateFailed": "Regenerate failed",
       "empty": "No drafts",
       "table": {
+        "id": "ID",
         "recipient": "Recipient",
         "subject": "Subject",
         "preview": "Body preview",
