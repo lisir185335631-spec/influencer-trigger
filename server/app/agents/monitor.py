@@ -13,7 +13,7 @@ import email as stdlib_email
 import json
 import logging
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import aioimaplib
@@ -85,7 +85,22 @@ async def _fetch_unseen(
     mailbox: Mailbox,
     password: str,
 ) -> list[stdlib_email.message.Message]:
-    """Connect via IMAP, search UNSEEN, fetch and return parsed messages."""
+    """Connect via IMAP and fetch recent messages.
+
+    Searches by date (`SINCE`) rather than by UNSEEN flag. The mailbox
+    owner can open Gmail web / Apple Mail / Outlook in parallel and
+    flip the SEEN flag before our 5-minute poll runs — at which point
+    a UNSEEN search silently drops the reply and we'd never detect it.
+    SINCE is independent of SEEN, and the downstream handlers
+    (`_handle_reply` / `_handle_bounce`) already filter on
+    `Email.status != replied/bounced` so re-encountering an already-
+    processed message is a no-op. The 2-day window covers cross-day /
+    cross-timezone edge cases without bloating the per-cycle workload.
+
+    Function name kept as `_fetch_unseen` for API stability across the
+    private call site in `_poll_mailbox`; renaming would touch one
+    extra line for no real benefit.
+    """
     client = await _connect_imap(mailbox, password)
     if client is None:
         return []
@@ -96,7 +111,8 @@ async def _fetch_unseen(
         if status != "OK":
             return messages
 
-        status, lines = await client.search("UNSEEN")
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=2)).strftime("%d-%b-%Y")
+        status, lines = await client.search(f"SINCE {cutoff}")
         if status != "OK" or not lines:
             return messages
 
@@ -105,8 +121,10 @@ async def _fetch_unseen(
             raw_ids = raw_ids.decode(errors="replace")
         uid_list = [u for u in str(raw_ids).strip().split() if u]
 
-        # Cap to 50 messages per poll cycle to avoid overload
-        for uid in uid_list[:50]:
+        # Take the most-recent 50 (uids are monotonic per mailbox in
+        # IMAP, so the tail is the freshest slice). The 50 cap protects
+        # against weird bursts; downstream is idempotent.
+        for uid in uid_list[-50:]:
             try:
                 fetch_status, fetch_data = await client.fetch(uid, "(RFC822)")
                 if fetch_status == "OK" and fetch_data:
