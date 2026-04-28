@@ -55,3 +55,7 @@ scripts/ralph/*.corrupted
 screenshots/
 client/screenshots/
 *.png
+
+# Deploy payload (DB + .env + cookies, never committed)
+_deploy/
+*.deploy.tar.gz
