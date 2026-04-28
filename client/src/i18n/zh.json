@@ -417,6 +417,7 @@
       "sendFailed": "发送失败",
       "deleteConfirm": "确定删除（取消）这个草稿吗？",
       "deleteFailed": "删除失败",
+      "confirmTitle": "确认发送",
       "regenerateFailed": "重生失败",
       "empty": "无草稿",
       "table": {

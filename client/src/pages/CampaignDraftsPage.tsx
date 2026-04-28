@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useMemo } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
+import { X, Loader2 } from 'lucide-react'
 import DOMPurify from 'dompurify'
 import {
   draftsApi,
@@ -263,6 +264,7 @@ export default function CampaignDraftsPage() {
   const [loading, setLoading] = useState(true)
   const [editingItem, setEditingItem] = useState<DraftListItem | null>(null)
   const [sending, setSending] = useState(false)
+  const [confirmOpen, setConfirmOpen] = useState(false)
   const [error, setError] = useState('')
   const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null)
 
@@ -349,9 +351,16 @@ export default function CampaignDraftsPage() {
     }
   }
 
-  const handleSendAll = async () => {
+  // Top "send N" button just opens the confirm modal — actual API call
+  // lives in handleSendConfirmed so the user has a clear cancel/confirm
+  // choice with project-styled UI instead of the OS confirm() dialog.
+  const handleSendAll = () => {
+    if (!cid || totals.ready === 0) return
+    setConfirmOpen(true)
+  }
+
+  const handleSendConfirmed = async () => {
     if (!cid) return
-    if (!confirm(t('drafts.review.sendConfirm', { count: totals.ready }))) return
     setSending(true); setError('')
     try {
       const resp = await draftsApi.send(cid)
@@ -359,6 +368,7 @@ export default function CampaignDraftsPage() {
         sent: resp.sendable_drafts, total: resp.total_drafts,
       }))
       await load()
+      setConfirmOpen(false)
     } catch {
       setError(t('drafts.review.sendFailed'))
     } finally {
@@ -551,6 +561,57 @@ export default function CampaignDraftsPage() {
           onSaved={load}
           angles={angles}
         />
+      )}
+
+      {/* Send-all confirm modal — replaces the browser-native window.confirm
+          so the dialog matches the project's other modals (mailbox add /
+          edit, draft edit). Backdrop click closes when not sending. */}
+      {confirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+          onClick={() => { if (!sending) setConfirmOpen(false) }}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+              <h2 className="text-base font-semibold text-gray-900">
+                {t('drafts.review.confirmTitle')}
+              </h2>
+              <button
+                onClick={() => { if (!sending) setConfirmOpen(false) }}
+                disabled={sending}
+                className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+                aria-label={t('common.cancel')}
+              >
+                <X size={16} />
+              </button>
+            </div>
+            <div className="px-6 py-5 text-sm text-gray-600 whitespace-pre-wrap break-words">
+              {t('drafts.review.sendConfirm', { count: totals.ready })}
+            </div>
+            <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100">
+              <button
+                onClick={() => setConfirmOpen(false)}
+                disabled={sending}
+                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+              >
+                {t('common.cancel')}
+              </button>
+              <button
+                onClick={handleSendConfirmed}
+                disabled={sending}
+                className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+              >
+                {sending && <Loader2 size={13} className="animate-spin" />}
+                {sending
+                  ? t('drafts.review.sending')
+                  : t('drafts.review.sendButton', { count: totals.ready })}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )

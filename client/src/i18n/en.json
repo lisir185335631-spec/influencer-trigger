@@ -417,6 +417,7 @@
       "sendFailed": "Send failed",
       "deleteConfirm": "Cancel this draft?",
       "deleteFailed": "Delete failed",
+      "confirmTitle": "Confirm Send",
       "regenerateFailed": "Regenerate failed",
       "empty": "No drafts",
       "table": {
