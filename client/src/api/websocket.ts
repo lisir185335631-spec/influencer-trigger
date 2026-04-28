@@ -1,16 +1,16 @@
 /**
  * Shared WebSocket connection URL.
  *
- * Direct-connect to backend WS port. The frontend is served by
- * `npx serve -s dist -l 6001` which is a static file server with NO proxy —
- * so `${window.location.host}` (= 6001) would land on `serve` and fail the
- * WebSocket upgrade. Hardcoding 6002 (backend port) works for both
- * `npm run dev` (Vite proxy is then bypassed but harmless) and the
- * `serve` setup.
+ * Same-origin via the page's host — nginx (prod) or Vite dev server (local)
+ * forwards /ws upstream to the FastAPI backend. Works in three setups:
  *
- * For nginx-reverse-proxied production, replace with
- * `${window.location.host}` (the proxy then forwards /ws upstream).
+ *   - Production behind nginx — server block has a `location /ws { ... }`
+ *     reverse-proxy block to 127.0.0.1:6002, including the standard
+ *     Upgrade/Connection headers.
+ *   - `npm run dev` (Vite) — vite.config.ts proxies /ws to localhost:6002.
+ *   - `npx serve -s dist -l 6001` — bare static server, no proxy: the WS
+ *     upgrade will fail. Use `npm run dev` for local dev instead.
  */
 export const WS_URL = `${
   window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-}//${window.location.hostname}:6002/ws`
+}//${window.location.host}/ws`
