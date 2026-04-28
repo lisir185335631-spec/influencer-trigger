@@ -35,30 +35,37 @@ def decrypt_password(encrypted: str) -> str:
 
 
 async def _create_smtp_client(
-    host: str, port: int, use_tls: bool, timeout: int
+    host: str, port: int, use_tls: bool, start_tls: bool, timeout: int
 ) -> aiosmtplib.SMTP:
     """Build an aiosmtplib SMTP client, dialling through SMTP_PROXY when set.
 
-    Without a proxy this returns the same SMTP object the call sites used to
-    build directly — no behavioural change. With SMTP_PROXY set we dial the
-    target host via python-socks first and hand the connected socket to
-    aiosmtplib; aiosmtplib then runs SMTP on top (and wraps TLS for port 465
-    or runs STARTTLS upstream for 587).
+    Pass `start_tls` explicitly so callers don't rely on aiosmtplib's
+    `start_tls=None` auto-mode — that auto-STARTTLS-on-connect bit us in
+    production: connect() upgrades TLS, then a separate `smtp.starttls()`
+    call raises "Connection already using TLS". With explicit start_tls,
+    callers stop calling starttls() themselves and aiosmtplib does it
+    exactly once during connect().
+
+    Without a proxy this returns a vanilla aiosmtplib SMTP. With
+    SMTP_PROXY set we dial via python-socks first and hand the socket to
+    aiosmtplib; aiosmtplib still wraps implicit TLS (port 465 / use_tls)
+    or runs STARTTLS (port 587 / start_tls) on top of the socket.
     """
     proxy_url = get_settings().smtp_proxy
+    common = dict(
+        hostname=host, port=port,
+        use_tls=use_tls, start_tls=start_tls,
+        timeout=timeout,
+    )
     if not proxy_url:
-        return aiosmtplib.SMTP(
-            hostname=host, port=port, use_tls=use_tls, timeout=timeout
-        )
+        return aiosmtplib.SMTP(**common)
     # Lazy import keeps python-socks out of the dependency graph for direct-
     # connect deployments where the package may not be installed.
     from python_socks.async_.asyncio import Proxy
 
     proxy = Proxy.from_url(proxy_url)
     sock = await proxy.connect(dest_host=host, dest_port=port, timeout=timeout)
-    return aiosmtplib.SMTP(
-        hostname=host, port=port, use_tls=use_tls, timeout=timeout, sock=sock
-    )
+    return aiosmtplib.SMTP(sock=sock, **common)
 
 
 async def list_mailboxes(db: AsyncSession) -> list[Mailbox]:
@@ -135,17 +142,21 @@ async def test_smtp_connection(mailbox: Mailbox, test_to: str | None = None) -> 
     ))
 
     try:
-        # Port 465 = implicit TLS; others = STARTTLS
+        # Port 465 = implicit TLS; otherwise STARTTLS upgrade controlled by
+        # smtp_use_tls. start_tls=True tells aiosmtplib to perform STARTTLS
+        # exactly once during connect(); we don't call smtp.starttls()
+        # ourselves anymore (would double-upgrade and raise
+        # "Connection already using TLS").
         use_tls = mailbox.smtp_port == 465
+        start_tls = (not use_tls) and mailbox.smtp_use_tls
         smtp = await _create_smtp_client(
             host=mailbox.smtp_host,
             port=mailbox.smtp_port,
             use_tls=use_tls,
+            start_tls=start_tls,
             timeout=15,
         )
         await smtp.connect()
-        if not use_tls and mailbox.smtp_use_tls:
-            await smtp.starttls()
         await smtp.login(mailbox.email, password)
         await smtp.send_message(msg)
         await smtp.quit()

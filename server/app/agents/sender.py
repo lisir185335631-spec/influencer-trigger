@@ -68,16 +68,19 @@ async def _send_one(
     msg.attach(stdlib_email.mime.text.MIMEText(body_html, "html", "utf-8"))
 
     try:
+        # Same TLS strategy as test_smtp_connection: aiosmtplib does
+        # STARTTLS during connect() when start_tls=True; calling
+        # smtp.starttls() ourselves would double-upgrade.
         use_tls = mailbox.smtp_port == 465
+        start_tls = (not use_tls) and mailbox.smtp_use_tls
         smtp = await _create_smtp_client(
             host=mailbox.smtp_host,
             port=mailbox.smtp_port,
             use_tls=use_tls,
+            start_tls=start_tls,
             timeout=30,
         )
         await smtp.connect()
-        if not use_tls and mailbox.smtp_use_tls:
-            await smtp.starttls()
         await smtp.login(mailbox.email, password)
         await smtp.send_message(msg)
         await smtp.quit()
