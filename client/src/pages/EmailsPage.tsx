@@ -129,10 +129,14 @@ function StatusDashboard() {
   const handleStatusFilter   = (v: string)       => { setStatusFilter(v);   setPage(1) }
   const handleTypeFilter     = (v: string)       => { setTypeFilter(v);     setPage(1) }
 
+  // Optional `hint` becomes a native-tooltip ⓘ next to the label.
+  // Used for "opened" because most non-Gmail clients hide remote images,
+  // so the displayed open count is a lower bound — flagging that
+  // in-place avoids a "why is opens always 0?" support-ticket loop.
   const statCards = stats ? [
     { label: t('emails.stats.totalSent'),  value: stats.total_sent, color: 'text-gray-900' },
     { label: t('emails.stats.delivered'),  value: stats.delivered,  color: 'text-cyan-600' },
-    { label: t('emails.stats.opened'),     value: stats.opened,     color: 'text-yellow-600' },
+    { label: t('emails.stats.opened'),     value: stats.opened,     color: 'text-yellow-600', hint: t('emails.stats.openedHint') },
     { label: t('emails.stats.replied'),    value: stats.replied,    color: 'text-green-600' },
     { label: t('emails.stats.noReply'),    value: stats.no_reply,   color: 'text-gray-400' },
     { label: t('emails.stats.bounced'),    value: stats.bounced,    color: 'text-red-500' },
@@ -142,10 +146,20 @@ function StatusDashboard() {
     <div>
       {/* Stats cards */}
       <div className="grid grid-cols-3 sm:grid-cols-6 gap-3 mb-6">
-        {statCards.map(({ label, value, color }) => (
+        {statCards.map(({ label, value, color, hint }) => (
           <div key={label} className="border border-gray-100 rounded-xl p-4 text-center">
             <div className={`text-2xl font-semibold ${color}`}>{value}</div>
-            <div className="text-xs text-gray-400 mt-0.5">{label}</div>
+            <div className="text-xs text-gray-400 mt-0.5">
+              {label}
+              {hint && (
+                <span
+                  className="ml-1 cursor-help text-gray-300 hover:text-gray-500 transition-colors"
+                  title={hint}
+                >
+                  ⓘ
+                </span>
+              )}
+            </div>
           </div>
         ))}
         {!stats && Array.from({ length: 6 }).map((_, i) => (

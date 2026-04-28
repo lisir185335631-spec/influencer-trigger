@@ -468,6 +468,7 @@
       "totalSent": "Total Sent",
       "delivered": "Delivered",
       "opened": "Opened",
+      "openedHint": "Opened = times the tracking pixel was loaded. QQ, Outlook, 163, etc. block remote images by default — recipients must click \"Show images\" for tracking to fire. Real open rate is usually higher.\n\nNote: when a recipient replies, the system back-fills opened-at automatically.",
       "replied": "Replied",
       "noReply": "No Reply",
       "bounced": "Bounced"
@@ -538,7 +539,7 @@
       "recipientNamePlaceholder": "Defaults to email prefix if blank",
       "subject": "Subject",
       "body": "Body",
-      "bodyPlaceholder": "Type your message here…",
+      "bodyPlaceholder": "Type your message here (press Enter for line breaks; don't type literal \\n)…",
       "bodyHint": "Plain text preserves line breaks. For HTML, use a template instead.",
       "campaignName": "Campaign Name (optional)",
       "campaignNamePlaceholder": "Defaults to \"Direct: <email>\"",

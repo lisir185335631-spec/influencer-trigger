@@ -468,6 +468,7 @@
       "totalSent": "发送总量",
       "delivered": "已送达",
       "opened": "已打开",
+      "openedHint": "已打开 = 收件人加载邮件中追踪图片的次数。QQ、Outlook、163 等邮箱默认屏蔽外部图片，需要收件人手动点「显示图片」才会触发追踪。实际打开率通常高于此数字。\n\n注：当收件人回复邮件时，系统会自动反推此邮件已被打开。",
       "replied": "已回复",
       "noReply": "未回复",
       "bounced": "退信"
@@ -538,7 +539,7 @@
       "recipientNamePlaceholder": "不填则用邮箱前缀",
       "subject": "邮件主题",
       "body": "邮件正文",
-      "bodyPlaceholder": "在这里输入邮件正文…",
+      "bodyPlaceholder": "在这里输入邮件正文（直接按 Enter 换行，不要输入字面 \\n）…",
       "bodyHint": "纯文本会自动保留换行；如需 HTML 请联系管理员或用模板。",
       "campaignName": "任务名（选填）",
       "campaignNamePlaceholder": "默认 \"Direct: <邮箱>\"",

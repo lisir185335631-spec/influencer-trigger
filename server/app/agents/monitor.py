@@ -354,6 +354,25 @@ async def _handle_reply(
         email_record.reply_from = from_email
         email_record.replied_at = now
 
+        # Backfill opened_at when the recipient replied without ever
+        # loading the tracking pixel. Most non-Gmail clients (QQ, Outlook,
+        # 163, Yahoo) hide remote images by default, so a reply often
+        # arrives before any open event — but a reply *implies* the email
+        # was opened. Recording it here removes the puzzling
+        # "1 reply / 0 opens" state from the dashboard. We don't change
+        # `status` (replied is terminal and outranks opened); we only
+        # ensure the time-stamp + audit-trail event get written.
+        if email_record.opened_at is None:
+            email_record.opened_at = now
+            db.add(EmailEvent(
+                email_id=email_record.id,
+                influencer_id=email_record.influencer_id,
+                event_type=EventType.opened,
+                metadata_json=json.dumps({"inferred_from": "reply"}),
+                source="imap-reply-inference",
+                occurred_at=now,
+            ))
+
         # Update influencer status
         influencer = await db.get(Influencer, email_record.influencer_id)
         if influencer:
