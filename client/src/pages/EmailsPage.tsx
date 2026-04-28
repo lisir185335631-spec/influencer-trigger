@@ -291,6 +291,7 @@ function StatusDashboard() {
         <table className="w-full text-sm">
           <thead>
             <tr className="bg-gray-50 border-b border-gray-100">
+              <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide w-16">{t('emails.table.id')}</th>
               <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.influencer')}</th>
               <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.email')}</th>
               <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.emailType')}</th>
@@ -305,7 +306,7 @@ function StatusDashboard() {
             {loading && items.length === 0 && (
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-50">
-                  {Array.from({ length: 8 }).map((_, j) => (
+                  {Array.from({ length: 9 }).map((_, j) => (
                     <td key={j} className="px-4 py-3">
                       <div className="h-4 bg-gray-100 rounded animate-pulse" />
                     </td>
@@ -315,13 +316,20 @@ function StatusDashboard() {
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={8} className="text-center py-12 text-sm text-gray-400">
+                <td colSpan={9} className="text-center py-12 text-sm text-gray-400">
                   {t('emails.noEmails')}
                 </td>
               </tr>
             )}
-            {items.map(item => (
+            {items.map((item, index) => (
               <tr key={item.id} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                <td className="px-4 py-3 text-center text-xs font-mono text-gray-500 tabular-nums">
+                  {/* Display index — recalculated on every render so deletes
+                      reseat the numbering automatically. Cross-page
+                      cumulative: page 2 starts at PAGE_SIZE + 1, never
+                      restarts at 1. */}
+                  {(page - 1) * PAGE_SIZE + index + 1}
+                </td>
                 <td className="px-4 py-3 text-center font-medium text-gray-800">
                   {item.influencer_name || '—'}
                   {item.influencer_platform && (

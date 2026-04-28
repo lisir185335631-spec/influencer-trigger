@@ -490,6 +490,7 @@
     },
     "emailCount": "{{count}} 封邮件",
     "table": {
+      "id": "ID",
       "influencer": "网红",
       "email": "邮箱",
       "emailType": "邮件类型",

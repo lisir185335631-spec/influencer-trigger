@@ -490,6 +490,7 @@
     },
     "emailCount": "{{count}} email(s)",
     "table": {
+      "id": "ID",
       "influencer": "Influencer",
       "email": "Email",
       "emailType": "Type",
