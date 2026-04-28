@@ -42,7 +42,11 @@ const EMPTY_FORM: FormValues = {
   smtp_port: '587',
   smtp_password: '',
   smtp_use_tls: true,
-  imap_host: '',
+  // Default to Gmail's IMAP server. Most users on this tool send via
+  // Gmail; pre-filling saves a step and — more importantly — prevents
+  // the "I forgot to fill IMAP, now reply tracking doesn't work" trap.
+  // Non-Gmail users override in-place (Outlook / QQ / 163 / etc.).
+  imap_host: 'imap.gmail.com',
   imap_port: '993',
   daily_limit: '500',
   hourly_limit: '50',
