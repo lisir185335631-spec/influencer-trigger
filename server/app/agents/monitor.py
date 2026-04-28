@@ -67,12 +67,18 @@ def _parse_email_from_fetch(data: list) -> Optional[stdlib_email.message.Message
     """
     Extract raw bytes from an aioimaplib fetch response and parse as email.
     Scans all items in data looking for something that parses as a valid message.
+
+    aioimaplib delivers the RFC822 payload as `bytearray`, not `bytes` —
+    a bare `isinstance(item, bytes)` silently skipped the message body
+    on every poll, so IMAP-driven reply / bounce detection never
+    actually fired in production. Accept both types and convert to
+    `bytes` for the email parser.
     """
     for item in data:
-        if not isinstance(item, bytes) or len(item) < 80:
+        if not isinstance(item, (bytes, bytearray)) or len(item) < 80:
             continue
         try:
-            msg = stdlib_email.message_from_bytes(item)
+            msg = stdlib_email.message_from_bytes(bytes(item))
             # A real email has at least one of these headers
             if msg.get("From") or msg.get("To") or msg.get("Date"):
                 return msg
