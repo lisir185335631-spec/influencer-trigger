@@ -265,6 +265,10 @@ export default function CampaignDraftsPage() {
   const [editingItem, setEditingItem] = useState<DraftListItem | null>(null)
   const [sending, setSending] = useState(false)
   const [confirmOpen, setConfirmOpen] = useState(false)
+  // Send-flow result kept inside the confirm modal so a single dialog
+  // walks through confirm → sending → success/error without a second popup.
+  const [sendResult, setSendResult] = useState<{ sent: number; total: number } | null>(null)
+  const [sendError, setSendError] = useState('')
   const [error, setError] = useState('')
   const [progress, setProgress] = useState<{ completed: number; total: number } | null>(null)
 
@@ -356,24 +360,38 @@ export default function CampaignDraftsPage() {
   // choice with project-styled UI instead of the OS confirm() dialog.
   const handleSendAll = () => {
     if (!cid || totals.ready === 0) return
+    setSendResult(null)
+    setSendError('')
     setConfirmOpen(true)
   }
 
   const handleSendConfirmed = async () => {
     if (!cid) return
-    setSending(true); setError('')
+    setSending(true)
+    setSendResult(null)
+    setSendError('')
     try {
       const resp = await draftsApi.send(cid)
-      alert(t('drafts.review.sendStarted', {
-        sent: resp.sendable_drafts, total: resp.total_drafts,
-      }))
+      setSendResult({ sent: resp.sendable_drafts, total: resp.total_drafts })
       await load()
-      setConfirmOpen(false)
-    } catch {
-      setError(t('drafts.review.sendFailed'))
+    } catch (e: unknown) {
+      // Surface the backend's actual rejection reason (e.g. 400 "No drafts
+      // in 'ready' or 'edited' state to send") instead of a generic line.
+      // Falls back to the generic hint if no detail is present (network
+      // error, 5xx without body, etc.).
+      const detail = (e as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail
+      setSendError(detail || t('drafts.review.sendFailedHint'))
     } finally {
       setSending(false)
     }
+  }
+
+  const closeConfirm = () => {
+    if (sending) return
+    setConfirmOpen(false)
+    setSendResult(null)
+    setSendError('')
   }
 
   if (!cidValid) {
@@ -563,13 +581,14 @@ export default function CampaignDraftsPage() {
         />
       )}
 
-      {/* Send-all confirm modal — replaces the browser-native window.confirm
-          so the dialog matches the project's other modals (mailbox add /
-          edit, draft edit). Backdrop click closes when not sending. */}
+      {/* Send-all modal — state machine: confirm → sending → success/error.
+          A single dialog walks the entire flow so we never stack a second
+          popup on top (replaces both the OS confirm() and the alert() that
+          previously fired after the API resolved). */}
       {confirmOpen && (
         <div
           className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
-          onClick={() => { if (!sending) setConfirmOpen(false) }}
+          onClick={closeConfirm}
         >
           <div
             className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4"
@@ -577,10 +596,14 @@ export default function CampaignDraftsPage() {
           >
             <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
               <h2 className="text-base font-semibold text-gray-900">
-                {t('drafts.review.confirmTitle')}
+                {sendResult
+                  ? t('drafts.review.sendSuccessTitle')
+                  : sendError
+                    ? t('drafts.review.sendFailed')
+                    : t('drafts.review.confirmTitle')}
               </h2>
               <button
-                onClick={() => { if (!sending) setConfirmOpen(false) }}
+                onClick={closeConfirm}
                 disabled={sending}
                 className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
                 aria-label={t('common.cancel')}
@@ -589,26 +612,49 @@ export default function CampaignDraftsPage() {
               </button>
             </div>
             <div className="px-6 py-5 text-sm text-gray-600 whitespace-pre-wrap break-words">
-              {t('drafts.review.sendConfirm', { count: totals.ready })}
+              {sendResult
+                ? sendResult.sent < sendResult.total
+                  ? t('drafts.review.sendStartedPartial', {
+                      sent: sendResult.sent,
+                      skipped: sendResult.total - sendResult.sent,
+                    })
+                  : t('drafts.review.sendStarted', {
+                      sent: sendResult.sent,
+                      total: sendResult.total,
+                    })
+                : sendError
+                  ? sendError
+                  : t('drafts.review.sendConfirm', { count: totals.ready })}
             </div>
             <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100">
-              <button
-                onClick={() => setConfirmOpen(false)}
-                disabled={sending}
-                className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
-              >
-                {t('common.cancel')}
-              </button>
-              <button
-                onClick={handleSendConfirmed}
-                disabled={sending}
-                className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
-              >
-                {sending && <Loader2 size={13} className="animate-spin" />}
-                {sending
-                  ? t('drafts.review.sending')
-                  : t('drafts.review.sendButton', { count: totals.ready })}
-              </button>
+              {sendResult || sendError ? (
+                <button
+                  onClick={closeConfirm}
+                  className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
+                >
+                  {t('common.close')}
+                </button>
+              ) : (
+                <>
+                  <button
+                    onClick={closeConfirm}
+                    disabled={sending}
+                    className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+                  >
+                    {t('common.cancel')}
+                  </button>
+                  <button
+                    onClick={handleSendConfirmed}
+                    disabled={sending}
+                    className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+                  >
+                    {sending && <Loader2 size={13} className="animate-spin" />}
+                    {sending
+                      ? t('drafts.review.sending')
+                      : t('drafts.review.sendButton', { count: totals.ready })}
+                  </button>
+                </>
+              )}
             </div>
           </div>
         </div>
