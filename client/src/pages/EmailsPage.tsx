@@ -297,6 +297,7 @@ function StatusDashboard() {
               <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.campaign')}</th>
               <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.sentAt')}</th>
               <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.status')}</th>
+              <th className="text-center px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide whitespace-nowrap">{t('emails.table.serverchanStatus')}</th>
               <th className="text-left px-4 py-2.5 text-xs font-medium text-gray-500 uppercase tracking-wide">{t('emails.table.lastUpdated')}</th>
             </tr>
           </thead>
@@ -304,7 +305,7 @@ function StatusDashboard() {
             {loading && items.length === 0 && (
               Array.from({ length: 5 }).map((_, i) => (
                 <tr key={i} className="border-b border-gray-50">
-                  {Array.from({ length: 7 }).map((_, j) => (
+                  {Array.from({ length: 8 }).map((_, j) => (
                     <td key={j} className="px-4 py-3">
                       <div className="h-4 bg-gray-100 rounded animate-pulse" />
                     </td>
@@ -314,7 +315,7 @@ function StatusDashboard() {
             )}
             {!loading && items.length === 0 && (
               <tr>
-                <td colSpan={7} className="text-center py-12 text-sm text-gray-400">
+                <td colSpan={8} className="text-center py-12 text-sm text-gray-400">
                   {t('emails.noEmails')}
                 </td>
               </tr>
@@ -358,6 +359,18 @@ function StatusDashboard() {
                 </td>
                 <td className="px-4 py-3">
                   <StatusBadge status={item.status} />
+                </td>
+                <td className="px-4 py-3 text-center text-base">
+                  {/* Server酱 push status: ✅ / ❌ / —. Detailed timing
+                      and error info live in the dashboard-card modal so
+                      this column stays icon-only for quick scanning. */}
+                  {item.serverchan_status === 'success' ? (
+                    <span title={t('emails.table.serverchanSuccess')}>✅</span>
+                  ) : item.serverchan_status === 'failed' ? (
+                    <span title={t('emails.table.serverchanFailed')}>❌</span>
+                  ) : (
+                    <span className="text-gray-300">—</span>
+                  )}
                 </td>
                 <td className="px-4 py-3 text-gray-400 text-xs">
                   {new Date(item.updated_at).toLocaleString()}

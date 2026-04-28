@@ -88,6 +88,10 @@ class EmailListItem(BaseModel):
     subject: str
     sent_at: Optional[datetime] = None
     updated_at: datetime
+    # Latest Server酱 push status for this email, if any was triggered.
+    # "success" / "failed" / None (= not yet pushed or pushing disabled).
+    # Pulled via a correlated scalar subquery in list_emails().
+    serverchan_status: Optional[str] = None
 
 
 class EmailStats(BaseModel):

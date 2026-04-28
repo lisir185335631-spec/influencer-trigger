@@ -7,6 +7,7 @@ from app.models.campaign import Campaign, CampaignStatus
 from app.models.email import Email, EmailStatus
 from app.models.email_draft import EmailDraft, EmailDraftStatus
 from app.models.influencer import Influencer, InfluencerPlatform
+from app.models.webhook_push_log import WebhookPushLog
 from app.schemas.email import SendBatchRequest
 
 
@@ -183,6 +184,26 @@ async def list_emails(
     page_size: int = 20,
     email_type: str | None = None,
 ) -> tuple[list[dict], int]:
+    # Correlated scalar subquery: most recent Server酱 push status for
+    # this email, or NULL if none was triggered. Per-row cost is one
+    # tiny indexed lookup (channel+email_id+created_at index covers
+    # this perfectly), so even at PAGE_SIZE=20 the extra latency is
+    # negligible. We deliberately scope to channel='serverchan' here
+    # because that's the column the dashboard renders; if Feishu /
+    # Slack columns get added later, replicate this with their own
+    # subqueries rather than ANY-channel-collapse semantics.
+    latest_serverchan_status = (
+        select(WebhookPushLog.status)
+        .where(
+            WebhookPushLog.email_id == Email.id,
+            WebhookPushLog.channel == "serverchan",
+        )
+        .order_by(WebhookPushLog.created_at.desc())
+        .limit(1)
+        .scalar_subquery()
+        .label("serverchan_status")
+    )
+
     base_q = (
         select(
             Email.id,
@@ -198,6 +219,7 @@ async def list_emails(
             Influencer.email.label("influencer_email"),
             Influencer.platform.label("influencer_platform"),
             Campaign.name.label("campaign_name"),
+            latest_serverchan_status,
         )
         .join(Influencer, Email.influencer_id == Influencer.id)
         .outerjoin(Campaign, Email.campaign_id == Campaign.id)

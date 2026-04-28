@@ -496,6 +496,9 @@
       "campaign": "活动",
       "sentAt": "发送时间",
       "status": "状态",
+      "serverchanStatus": "Server酱推送",
+      "serverchanSuccess": "微信推送成功",
+      "serverchanFailed": "微信推送失败",
       "lastUpdated": "最后更新"
     },
     "noEmails": "未找到邮件",

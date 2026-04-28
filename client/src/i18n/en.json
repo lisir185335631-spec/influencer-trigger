@@ -496,6 +496,9 @@
       "campaign": "Campaign",
       "sentAt": "Sent At",
       "status": "Status",
+      "serverchanStatus": "WeChat Push",
+      "serverchanSuccess": "WeChat push delivered",
+      "serverchanFailed": "WeChat push failed",
       "lastUpdated": "Last Updated"
     },
     "noEmails": "No emails found",

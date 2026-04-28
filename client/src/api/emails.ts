@@ -69,6 +69,10 @@ export interface EmailListItem {
   subject: string
   sent_at: string | null
   updated_at: string
+  // Most-recent Server酱 push status for this email row. 'success' /
+  // 'failed' / null (= not pushed yet, or sender disabled). Drives the
+  // ✅/❌/— icon in the email-monitor table.
+  serverchan_status: string | null
 }
 
 export interface EmailStats {
