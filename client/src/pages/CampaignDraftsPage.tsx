@@ -390,7 +390,7 @@ export default function CampaignDraftsPage() {
   }
 
   return (
-    <div className="max-w-7xl mx-auto p-6">
+    <div className="p-6">
       <div className="mb-6 flex items-center justify-between">
         <div>
           <button
@@ -457,18 +457,18 @@ export default function CampaignDraftsPage() {
         <table className="w-full text-sm">
           <thead className="bg-gray-50">
             <tr>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.recipient')}</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.subject')}</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.preview')}</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.angle')}</th>
-              <th className="text-left px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.status')}</th>
-              <th className="text-right px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.actions')}</th>
+              <th className="text-center px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.recipient')}</th>
+              <th className="text-center px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.subject')}</th>
+              <th className="text-center px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.preview')}</th>
+              <th className="text-center px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.angle')}</th>
+              <th className="text-center px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.status')}</th>
+              <th className="text-center px-4 py-2 font-medium text-gray-500">{t('drafts.review.table.actions')}</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-100">
             {items.map(item => (
               <tr key={item.id} className="hover:bg-gray-50">
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 text-center">
                   <div className="font-medium text-gray-900 text-sm">
                     {item.influencer_name || '—'}
                   </div>
@@ -478,14 +478,14 @@ export default function CampaignDraftsPage() {
                     {item.influencer_followers ? ` · ${item.influencer_followers.toLocaleString()}` : ''}
                   </div>
                 </td>
-                <td className="px-4 py-3 max-w-xs truncate text-gray-700">{item.subject}</td>
-                <td className="px-4 py-3 max-w-md truncate text-xs text-gray-500">
+                <td className="px-4 py-3 max-w-xs truncate text-center text-gray-700">{item.subject}</td>
+                <td className="px-4 py-3 max-w-md truncate text-center text-xs text-gray-500">
                   {item.body_html_preview}
                 </td>
-                <td className="px-4 py-3 text-xs font-mono text-gray-500">
+                <td className="px-4 py-3 text-center text-xs font-mono text-gray-500">
                   {item.angle_used || '—'}
                 </td>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 text-center">
                   <StatusBadge status={item.status} />
                   {item.edited_by_user && (
                     <span className="ml-1 text-xs text-emerald-600" title={t('drafts.review.edited')}>✎</span>
@@ -504,7 +504,7 @@ export default function CampaignDraftsPage() {
                     </div>
                   )}
                 </td>
-                <td className="px-4 py-3 text-right space-x-2 whitespace-nowrap">
+                <td className="px-4 py-3 text-center space-x-2 whitespace-nowrap">
                   <button
                     onClick={() => setEditingItem(item)}
                     className="text-xs text-blue-600 hover:text-blue-800"
