@@ -482,8 +482,8 @@ export default function CampaignDraftsPage() {
                     {item.influencer_followers ? ` · ${item.influencer_followers.toLocaleString()}` : ''}
                   </div>
                 </td>
-                <td className="px-4 py-3 max-w-xs truncate text-center text-gray-700">{item.subject}</td>
-                <td className="px-4 py-3 max-w-md truncate text-center text-xs text-gray-500">
+                <td className="px-4 py-3 text-center text-gray-700 whitespace-pre-wrap break-words">{item.subject}</td>
+                <td className="px-4 py-3 text-center text-xs text-gray-500 whitespace-pre-wrap break-words">
                   {item.body_html_preview}
                 </td>
                 <td className="px-4 py-3 text-center text-xs font-mono text-gray-500">
@@ -503,8 +503,8 @@ export default function CampaignDraftsPage() {
                     </span>
                   )}
                   {item.error_message && !item.error_message.includes('static fallback') && (
-                    <div className="text-xs text-red-500 mt-0.5" title={item.error_message}>
-                      ⚠ {item.error_message.slice(0, 40)}…
+                    <div className="text-xs text-red-500 mt-0.5 whitespace-pre-wrap break-words">
+                      ⚠ {item.error_message}
                     </div>
                   )}
                 </td>
