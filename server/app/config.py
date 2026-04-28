@@ -57,6 +57,14 @@ class Settings(BaseSettings):
     #   http://127.0.0.1:7890     (HTTP CONNECT)
     smtp_proxy: str | None = None
 
+    # Public base URL of this backend, used to build absolute tracking
+    # pixel URLs in outbound emails (open-rate tracking). Must be reachable
+    # from the recipient's email client. In production this is the user-
+    # facing HTTPS hostname (e.g. https://trigger.apikeys.info). In dev
+    # leave blank — pixel injection is skipped when this is empty so dev
+    # mails don't carry broken localhost <img> tags.
+    public_base_url: str = ""
+
     # SendGrid
     sendgrid_api_key: str = ""
 

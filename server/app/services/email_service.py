@@ -36,8 +36,21 @@ async def get_email_stats(db: AsyncSession) -> dict:
     result = await db.execute(
         select(
             func.count(case((Email.sent_at.isnot(None), 1))).label("total_sent"),
+            # "Delivered" semantics for SMTP-direct mode: anything that left
+            # the outbox and didn't bounce/fail counts as delivered. SMTP 250
+            # OK is the only delivery signal we get without a webhook
+            # provider (SendGrid/Mailgun); a separate `delivered` event only
+            # ever fires if such a provider is wired up later. Including
+            # `sent` here lets the dashboard reflect reality instead of
+            # showing a permanent 0.
             func.count(case((
-                Email.status.in_([EmailStatus.delivered, EmailStatus.opened, EmailStatus.clicked, EmailStatus.replied]),
+                Email.status.in_([
+                    EmailStatus.sent,
+                    EmailStatus.delivered,
+                    EmailStatus.opened,
+                    EmailStatus.clicked,
+                    EmailStatus.replied,
+                ]),
                 1,
             ))).label("delivered"),
             func.count(case((

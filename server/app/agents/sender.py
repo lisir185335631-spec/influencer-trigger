@@ -49,22 +49,31 @@ async def _send_one(
     to_email: str,
     subject: str,
     body_html: str,
+    message_id: Optional[str] = None,
 ) -> tuple[bool, str, Optional[str]]:
-    """Send a single email. Returns (success, error_msg, message_id)."""
+    """Send a single email. Returns (success, error_msg, message_id).
+
+    If `message_id` is supplied, it's used verbatim as the SMTP
+    Message-ID header — the caller (initial-send loop) pre-binds a
+    tracking token there so the open-pixel URL and the IMAP reply matcher
+    both key off the same value. When omitted (holiday / follow-up
+    paths), a fresh uuid is generated and no pixel tracking is wired up.
+    """
     try:
         password = decrypt_password(mailbox.smtp_password_encrypted)
     except Exception as exc:
         return False, f"Decrypt error: {exc}", None
 
-    domain = mailbox.email.split("@")[-1]
-    msg_id = f"<{uuid.uuid4()}@{domain}>"
+    if message_id is None:
+        domain = mailbox.email.split("@")[-1]
+        message_id = f"<{uuid.uuid4()}@{domain}>"
 
     msg = stdlib_email.mime.multipart.MIMEMultipart("alternative")
     sender_label = mailbox.display_name or mailbox.email
     msg["From"] = f"{sender_label} <{mailbox.email}>"
     msg["To"] = to_email
     msg["Subject"] = subject
-    msg["Message-ID"] = msg_id
+    msg["Message-ID"] = message_id
     msg.attach(stdlib_email.mime.text.MIMEText(body_html, "html", "utf-8"))
 
     try:
@@ -84,7 +93,7 @@ async def _send_one(
         await smtp.login(mailbox.email, password)
         await smtp.send_message(msg)
         await smtp.quit()
-        return True, "", msg_id
+        return True, "", message_id
     except Exception as exc:
         logger.warning("SMTP send failed for %s → %s: %s", mailbox.email, to_email, exc)
         return False, str(exc), None
@@ -192,9 +201,35 @@ async def run_sender_agent(
             mailbox = rotator.next()
             if mailbox is None:
                 logger.warning(
-                    "All mailboxes at daily limit; stopping campaign %d at %d/%d",
+                    "All mailboxes at daily/hourly limit; stopping campaign %d at %d/%d",
                     campaign_id, i, total,
                 )
+                # Persist the skip reason on the remaining ready/edited
+                # drafts so the UI can show *why* they were not sent
+                # (previously they sat in `ready` with no explanation,
+                # making the partial-send look like a silent failure).
+                # Status stays ready so the user can simply re-trigger
+                # send after the rate-limit window resets.
+                remaining_ids = influencer_ids[i:]
+                if use_drafts and remaining_ids:
+                    skip_reason = (
+                        "Skipped: all mailboxes hit hourly/daily quota. "
+                        "Wait for the limit window to reset or add a new mailbox, "
+                        "then re-send."
+                    )
+                    await db.execute(
+                        update(EmailDraft)
+                        .where(
+                            EmailDraft.campaign_id == campaign_id,
+                            EmailDraft.influencer_id.in_(remaining_ids),
+                            EmailDraft.status.in_([
+                                EmailDraftStatus.ready,
+                                EmailDraftStatus.edited,
+                            ]),
+                        )
+                        .values(error_message=skip_reason)
+                    )
+                    await db.commit()
                 remaining = total - i
                 failed_count += remaining
                 break
@@ -268,11 +303,41 @@ async def run_sender_agent(
                     tmpl.body_html, tmpl.subject, influencer,
                 )
 
-            # Send with 1 retry on failure
+            # Pre-bind a tracking token so the SMTP Message-ID header and
+            # the open-pixel URL both reference the same value. The pixel
+            # endpoint resolves it back to this Email row via a prefix
+            # LIKE on Email.message_id (the unique-indexed column). The
+            # email_record stores the *original* body without the pixel —
+            # that way the audit trail / draft preview stays clean and
+            # only the actually-delivered MIME carries the tracking img.
+            token = uuid.uuid4().hex
+            domain = mailbox.email.split("@")[-1]
+            msg_id = f"<{token}@{domain}>"
+
+            from app.config import get_settings as _get_settings_for_pixel
+            base_url = _get_settings_for_pixel().public_base_url.rstrip("/")
+            if base_url:
+                pixel_html = (
+                    f'<img src="{base_url}/api/track/open/{token}.gif" '
+                    f'width="1" height="1" alt="" '
+                    f'style="display:block;border:0;outline:none">'
+                )
+                body_to_send = rendered_body + pixel_html
+            else:
+                # No public URL configured (dev mode) — skip pixel
+                # injection rather than ship a broken localhost <img>.
+                body_to_send = rendered_body
+
+            # Send with 1 retry on failure. Both attempts use the same
+            # message_id so a successful retry still hits the pixel
+            # endpoint correctly.
             success = False
-            msg_id = None
             for attempt in range(2):
-                ok, err, msg_id = await _send_one(mailbox, influencer.email, rendered_subject, rendered_body)
+                ok, err, _ = await _send_one(
+                    mailbox, influencer.email,
+                    rendered_subject, body_to_send,
+                    message_id=msg_id,
+                )
                 if ok:
                     success = True
                     break
