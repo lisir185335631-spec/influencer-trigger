@@ -49,6 +49,14 @@ class Settings(BaseSettings):
     # Business context — determines which <brand>.business.md is loaded for LLM prompts
     active_business: str = "premlogin"
 
+    # Optional SOCKS5 / HTTP proxy URL for outbound SMTP traffic. Leave blank
+    # to connect directly. Set this when the host machine sits behind a proxy
+    # that intercepts DNS but doesn't forward SMTP (e.g. Clash/v2ray fake-ip
+    # mode in mainland China). Examples:
+    #   socks5://127.0.0.1:7890   (Clash default)
+    #   http://127.0.0.1:7890     (HTTP CONNECT)
+    smtp_proxy: str | None = None
+
     # SendGrid
     sendgrid_api_key: str = ""
 

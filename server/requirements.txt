@@ -30,3 +30,4 @@ alembic==1.13.3
 pytest==8.3.4
 pytest-asyncio==0.24.0
 playwright-stealth==1.0.6
+python-socks[asyncio]==2.8.1

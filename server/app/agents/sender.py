@@ -20,7 +20,7 @@ from app.models.email_draft import EmailDraft, EmailDraftStatus
 from app.models.influencer import Influencer, InfluencerStatus
 from app.models.mailbox import Mailbox, MailboxStatus
 from app.models.template import Template
-from app.services.mailbox_service import decrypt_password
+from app.services.mailbox_service import _create_smtp_client, decrypt_password
 from app.services.sender_service import is_blacklisted
 from app.websocket.manager import manager
 
@@ -69,8 +69,8 @@ async def _send_one(
 
     try:
         use_tls = mailbox.smtp_port == 465
-        smtp = aiosmtplib.SMTP(
-            hostname=mailbox.smtp_host,
+        smtp = await _create_smtp_client(
+            host=mailbox.smtp_host,
             port=mailbox.smtp_port,
             use_tls=use_tls,
             timeout=30,

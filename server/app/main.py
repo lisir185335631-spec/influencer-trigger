@@ -85,6 +85,14 @@ async def _reset_today_sent_job() -> None:
         logger.info("Daily reset: cleared today_sent for %d mailboxes", count)
 
 
+async def _reset_this_hour_sent_job() -> None:
+    """APScheduler job: reset this_hour_sent at minute=0 of every hour."""
+    from app.services.mailbox_service import reset_this_hour_sent
+    async with AsyncSessionLocal() as db:
+        count = await reset_this_hour_sent(db)
+        logger.info("Hourly reset: cleared this_hour_sent for %d mailboxes", count)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("Starting up Influencer Trigger service...")
@@ -175,6 +183,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         id="reset_today_sent",
         replace_existing=True,
     )
+
+    scheduler.add_job(
+        _reset_this_hour_sent_job,
+        CronTrigger(minute=0, timezone="UTC"),
+        id="reset_this_hour_sent",
+        replace_existing=True,
+    )
+    logger.info("Hourly reset job registered (minute=0 every hour UTC)")
 
     # Load follow-up settings and schedule monthly follow-up job
     from app.services.follow_up_service import get_or_create_settings, daily_follow_up_check

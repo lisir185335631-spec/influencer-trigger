@@ -14,6 +14,7 @@ from app.schemas.mailbox import (
 )
 from app.services.mailbox_service import (
     create_mailbox,
+    decrypt_password,
     delete_mailbox,
     get_mailbox,
     list_mailboxes,
@@ -77,6 +78,25 @@ async def delete_mailbox_endpoint(
     deleted = await delete_mailbox(db, mailbox_id)
     if not deleted:
         raise HTTPException(status_code=404, detail="Mailbox not found")
+
+
+@router.get("/{mailbox_id}/reveal")
+async def reveal_mailbox_password(
+    mailbox_id: int,
+    db: AsyncSession = Depends(get_db),
+    # Manager+ only — peer with delete (SECURITY-MODEL.md W-4). Not surfaced
+    # on /list so the credential is fetched per-mailbox on demand instead of
+    # being broadcast to every admin opening the page.
+    _: TokenData = Depends(require_manager_or_above),
+) -> dict[str, str]:
+    mailbox = await get_mailbox(db, mailbox_id)
+    if not mailbox:
+        raise HTTPException(status_code=404, detail="Mailbox not found")
+    try:
+        password = decrypt_password(mailbox.smtp_password_encrypted)
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=f"Decryption failed: {exc}")
+    return {"password": password}
 
 
 @router.post("/{mailbox_id}/test")

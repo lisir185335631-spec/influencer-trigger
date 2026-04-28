@@ -34,6 +34,33 @@ def decrypt_password(encrypted: str) -> str:
     return _get_fernet().decrypt(encrypted.encode()).decode()
 
 
+async def _create_smtp_client(
+    host: str, port: int, use_tls: bool, timeout: int
+) -> aiosmtplib.SMTP:
+    """Build an aiosmtplib SMTP client, dialling through SMTP_PROXY when set.
+
+    Without a proxy this returns the same SMTP object the call sites used to
+    build directly — no behavioural change. With SMTP_PROXY set we dial the
+    target host via python-socks first and hand the connected socket to
+    aiosmtplib; aiosmtplib then runs SMTP on top (and wraps TLS for port 465
+    or runs STARTTLS upstream for 587).
+    """
+    proxy_url = get_settings().smtp_proxy
+    if not proxy_url:
+        return aiosmtplib.SMTP(
+            hostname=host, port=port, use_tls=use_tls, timeout=timeout
+        )
+    # Lazy import keeps python-socks out of the dependency graph for direct-
+    # connect deployments where the package may not be installed.
+    from python_socks.async_.asyncio import Proxy
+
+    proxy = Proxy.from_url(proxy_url)
+    sock = await proxy.connect(dest_host=host, dest_port=port, timeout=timeout)
+    return aiosmtplib.SMTP(
+        hostname=host, port=port, use_tls=use_tls, timeout=timeout, sock=sock
+    )
+
+
 async def list_mailboxes(db: AsyncSession) -> list[Mailbox]:
     result = await db.execute(select(Mailbox).order_by(Mailbox.created_at.desc()))
     return list(result.scalars().all())
@@ -110,8 +137,8 @@ async def test_smtp_connection(mailbox: Mailbox, test_to: str | None = None) -> 
     try:
         # Port 465 = implicit TLS; others = STARTTLS
         use_tls = mailbox.smtp_port == 465
-        smtp = aiosmtplib.SMTP(
-            hostname=mailbox.smtp_host,
+        smtp = await _create_smtp_client(
+            host=mailbox.smtp_host,
             port=mailbox.smtp_port,
             use_tls=use_tls,
             timeout=15,
@@ -129,7 +156,12 @@ async def test_smtp_connection(mailbox: Mailbox, test_to: str | None = None) -> 
 
 
 async def reset_today_sent(db: AsyncSession) -> int:
-    """Reset today_sent and this_hour_sent to 0. Called daily at 00:00 UTC."""
+    """Reset today_sent + this_hour_sent. Called daily at 00:00 UTC.
+
+    Daily reset also clears the hourly counter (00:00 is the top of an
+    hour, so the hourly job would fire too — keeping it here as well makes
+    the daily job self-sufficient if the hourly cron is ever disabled).
+    """
     result = await db.execute(
         update(Mailbox).values(
             today_sent=0,
@@ -137,5 +169,17 @@ async def reset_today_sent(db: AsyncSession) -> int:
             last_reset_at=datetime.now(timezone.utc),
         )
     )
+    await db.commit()
+    return result.rowcount
+
+
+async def reset_this_hour_sent(db: AsyncSession) -> int:
+    """Reset this_hour_sent to 0. Called hourly at minute=0.
+
+    Without this job, MailboxRotator gates by `this_hour_sent < hourly_limit`
+    forever after the first hour the limit is hit, freezing the mailbox
+    until the next daily reset 23 hours later.
+    """
+    result = await db.execute(update(Mailbox).values(this_hour_sent=0))
     await db.commit()
     return result.rowcount
