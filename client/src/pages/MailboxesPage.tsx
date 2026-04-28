@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Plus, Pencil, Trash2, Zap, X, CheckCircle, XCircle, Loader2 } from 'lucide-react'
+import { Plus, Pencil, Trash2, Zap, X, CheckCircle, XCircle, Loader2, Eye, EyeOff } from 'lucide-react'
 import { Mailbox, MailboxCreate, MailboxUpdate, mailboxesApi } from '../api/mailboxes'
 import SendPanel from '../components/SendPanel'
 
@@ -76,6 +76,22 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
   const [form, setForm] = useState<FormValues>(editing ? mailboxToForm(editing) : EMPTY_FORM)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState('')
+  const [showPassword, setShowPassword] = useState(false)
+
+  // Pre-fill the password field on edit so the eye toggle has something to
+  // reveal. Pulled per-mailbox via /reveal (manager+ only). On failure we
+  // silently fall back to the original "leave blank to keep current" UX.
+  useEffect(() => {
+    if (!editing) return
+    let cancelled = false
+    mailboxesApi
+      .reveal(editing.id)
+      .then(({ password }) => {
+        if (!cancelled) setForm((prev) => ({ ...prev, smtp_password: password }))
+      })
+      .catch(() => { /* keep blank — fallback to existing keep-current behaviour */ })
+    return () => { cancelled = true }
+  }, [editing])
 
   const set = (field: keyof FormValues) => (e: React.ChangeEvent<HTMLInputElement>) => {
     const value = e.target.type === 'checkbox' ? e.target.checked : e.target.value
@@ -188,18 +204,69 @@ function MailboxModal({ editing, onClose, onSaved }: ModalProps) {
                 />
               </div>
             </div>
+            {/* Gmail App Password walkthrough — shown for both add and edit
+                (same modal). Uses native <details> so the collapse/expand
+                state needs no React state. Defaults open so first-time
+                users see the steps; can be collapsed manually. */}
+            <details open className="mt-3 rounded-lg border border-blue-100 bg-blue-50/50">
+              <summary className="cursor-pointer px-3 py-2 text-xs font-medium text-blue-800 hover:bg-blue-50 select-none">
+                {t('mailboxes.modal.gmailGuide.summary')}
+              </summary>
+              <div className="px-3 pb-3 pt-1 text-xs text-gray-700 space-y-1.5">
+                <p className="text-blue-700">
+                  {t('mailboxes.modal.gmailGuide.warning')}
+                </p>
+                <ol className="list-decimal list-inside space-y-1 marker:text-gray-400">
+                  <li>
+                    {t('mailboxes.modal.gmailGuide.step1Prefix')}{' '}
+                    <a
+                      href="https://myaccount.google.com/security"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      {t('mailboxes.modal.gmailGuide.step1Link')}
+                    </a>
+                  </li>
+                  <li>
+                    {t('mailboxes.modal.gmailGuide.step2Prefix')}{' '}
+                    <a
+                      href="https://myaccount.google.com/apppasswords"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-blue-600 hover:underline"
+                    >
+                      {t('mailboxes.modal.gmailGuide.step2Link')}
+                    </a>
+                  </li>
+                  <li>{t('mailboxes.modal.gmailGuide.step3')}</li>
+                  <li>{t('mailboxes.modal.gmailGuide.step4')}</li>
+                  <li>{t('mailboxes.modal.gmailGuide.step5')}</li>
+                </ol>
+              </div>
+            </details>
             <div className="mt-3">
               <label className="block text-xs text-gray-500 mb-1">
                 {t('mailboxes.modal.passwordLabel')} {editing && <span className="text-gray-400">{t('mailboxes.modal.keepCurrent')}</span>}
               </label>
-              <input
-                type="password"
-                required={!editing}
-                value={form.smtp_password}
-                onChange={set('smtp_password')}
-                autoComplete="new-password"
-                className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
-              />
+              <div className="relative">
+                <input
+                  type={showPassword ? 'text' : 'password'}
+                  required={!editing}
+                  value={form.smtp_password}
+                  onChange={set('smtp_password')}
+                  autoComplete="new-password"
+                  className="w-full pl-3 pr-9 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPassword((v) => !v)}
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-700"
+                  aria-label={t(showPassword ? 'common.hidePassword' : 'common.revealPassword')}
+                >
+                  {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                </button>
+              </div>
             </div>
             <label className="mt-2 flex items-center gap-2 cursor-pointer select-none">
               <input

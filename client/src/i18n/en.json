@@ -759,6 +759,17 @@
       "portLabel": "Port",
       "passwordLabel": "Password",
       "keepCurrent": "(leave blank to keep current)",
+      "gmailGuide": {
+        "summary": "Gmail users: how to get an App Password",
+        "warning": "Gmail SMTP requires a 16-character App Password — your login password won't work.",
+        "step1Prefix": "Enable",
+        "step1Link": "2-Step Verification",
+        "step2Prefix": "Open",
+        "step2Link": "the App Passwords page",
+        "step3": "Re-enter your Gmail login password to confirm identity",
+        "step4": "Pick any app name (e.g. Influencer Trigger), click \"Create\"",
+        "step5": "Copy the 16-character password and paste it into the field below"
+      },
       "starttls": "STARTTLS",
       "imapSection": "IMAP",
       "imapOptional": "(optional)",

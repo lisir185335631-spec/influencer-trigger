@@ -67,4 +67,7 @@ export const mailboxesApi = {
     client
       .post<TestResult>(`/mailboxes/${id}/test`, { test_to: testTo || null })
       .then((r) => r.data),
+
+  reveal: (id: number): Promise<{ password: string }> =>
+    client.get<{ password: string }>(`/mailboxes/${id}/reveal`).then((r) => r.data),
 }

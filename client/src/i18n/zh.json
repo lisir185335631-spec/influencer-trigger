@@ -759,6 +759,17 @@
       "portLabel": "端口",
       "passwordLabel": "密码",
       "keepCurrent": "（留空保持不变）",
+      "gmailGuide": {
+        "summary": "Gmail 用户：如何获取 App Password",
+        "warning": "Gmail SMTP 不能用登录密码，必须用 16 位 App Password。",
+        "step1Prefix": "确认已开启",
+        "step1Link": "两步验证",
+        "step2Prefix": "打开",
+        "step2Link": "App Passwords 设置页",
+        "step3": "重新输入 Gmail 登录密码确认身份",
+        "step4": "应用名随便填（如 Influencer Trigger），点「创建」",
+        "step5": "复制 16 位密码（4 组 × 4 字符），粘贴到下方密码框"
+      },
       "starttls": "STARTTLS",
       "imapSection": "IMAP",
       "imapOptional": "（可选）",
