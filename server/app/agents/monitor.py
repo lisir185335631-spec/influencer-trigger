@@ -523,7 +523,16 @@ async def _classify_and_notify(
                 "level": notification.level.value,
                 "intent": notification.intent,
                 "is_read": False,
-                "created_at": notification.created_at.isoformat() if notification.created_at else None,
+                # Use Python-side `now` instead of `notification.created_at`.
+                # The latter is `server_default=func.now()` so SQLAlchemy
+                # doesn't know its value after a bare flush; reading the
+                # attribute triggers a lazy reload of the row, which in this
+                # async context blows up with a greenlet_spawn error and
+                # silently kills the whole notification + webhook path.
+                # The DB still records the real server timestamp; this is
+                # only the value carried over the WebSocket / webhook
+                # payload, where a few-ms drift from server clock is fine.
+                "created_at": datetime.now(timezone.utc).isoformat(),
             }
 
             await db.commit()
