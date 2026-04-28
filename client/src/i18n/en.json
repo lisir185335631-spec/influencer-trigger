@@ -529,6 +529,29 @@
       "sendingHint": "Sending with 30-60s intervals to avoid rate limits. This may take a while.",
       "sendAnother": "Send Another Batch",
       "loadTemplatesFailed": "Failed to load templates"
+    },
+    "directSend": {
+      "openButton": "Quick Send",
+      "title": "Quick Send",
+      "recipient": "Recipient Email",
+      "recipientName": "Recipient Name (optional)",
+      "recipientNamePlaceholder": "Defaults to email prefix if blank",
+      "subject": "Subject",
+      "body": "Body",
+      "bodyPlaceholder": "Type your message here…",
+      "bodyHint": "Plain text preserves line breaks. For HTML, use a template instead.",
+      "campaignName": "Campaign Name (optional)",
+      "campaignNamePlaceholder": "Defaults to \"Direct: <email>\"",
+      "send": "Send",
+      "sending": "Sending…",
+      "cancel": "Cancel",
+      "close": "Close",
+      "successTitle": "Send queued",
+      "successHint": "Sending to {{email}}; status appears in the Monitoring page.",
+      "invalidEmail": "Invalid email address format",
+      "subjectRequired": "Subject cannot be empty",
+      "bodyRequired": "Body cannot be empty",
+      "sendFailedHint": "Send request failed. Check mailbox configuration and retry."
     }
   },
   "crm": {

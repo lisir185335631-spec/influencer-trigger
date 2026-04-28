@@ -1,11 +1,108 @@
 from datetime import datetime, timezone
 from sqlalchemy import select, func, case
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.campaign import Campaign, CampaignStatus
 from app.models.email import Email, EmailStatus
-from app.models.influencer import Influencer
+from app.models.email_draft import EmailDraft, EmailDraftStatus
+from app.models.influencer import Influencer, InfluencerPlatform
 from app.schemas.email import SendBatchRequest
+
+
+async def find_or_create_manual_influencer(
+    db: AsyncSession,
+    email: str,
+    nickname: str | None,
+) -> Influencer:
+    """Look up an influencer by email; create a manual one if missing.
+
+    Manual records use platform=other (the existing enum bucket for "not
+    one of our 5 platforms") so no schema migration is required and the
+    UI's existing platform filter naturally picks them up. The unique
+    index on `email` is the source of truth — if two send-direct calls
+    race on the same address, the loser falls back to the winner's row.
+    """
+    email_lower = email.strip().lower()
+    existing = (
+        await db.execute(select(Influencer).where(Influencer.email == email_lower))
+    ).scalar_one_or_none()
+    if existing:
+        return existing
+
+    # Use email prefix as a sane fallback nickname so monitor / list
+    # views show *something* meaningful even when the user didn't type
+    # a name on the send-direct form.
+    fallback_nick = (nickname or email_lower.split("@", 1)[0])[:256]
+    influencer = Influencer(
+        email=email_lower,
+        nickname=fallback_nick,
+        platform=InfluencerPlatform.other,
+    )
+    db.add(influencer)
+    try:
+        await db.commit()
+    except IntegrityError:
+        # Another concurrent send-direct beat us to the unique index;
+        # roll back and re-fetch the winner so the caller still gets a
+        # valid row to attach the campaign/draft to.
+        await db.rollback()
+        existing = (
+            await db.execute(
+                select(Influencer).where(Influencer.email == email_lower)
+            )
+        ).scalar_one_or_none()
+        if not existing:
+            # Truly unexpected — raise so the endpoint returns 500
+            # rather than silently dropping the send.
+            raise
+        return existing
+    await db.refresh(influencer)
+    return influencer
+
+
+async def create_direct_send_campaign(
+    db: AsyncSession,
+    *,
+    name: str,
+    subject: str,
+    body_html: str,
+    influencer_id: int,
+    user_id: int | None,
+) -> tuple[Campaign, EmailDraft]:
+    """Build a single-recipient campaign + a ready-to-send draft so the
+    standard Sender Agent draft branch can pick it up unchanged. We
+    deliberately route through the draft pipeline (rather than adding a
+    third sender mode) — every cross-cutting feature added to drafts
+    later (tracking pixel, retry counters, etc.) automatically applies
+    to direct sends without re-implementation.
+    """
+    campaign = Campaign(
+        name=name,
+        template_id=None,
+        status=CampaignStatus.pending,
+        use_drafts=True,
+        total_count=1,
+        created_by=user_id,
+    )
+    db.add(campaign)
+    await db.commit()
+    await db.refresh(campaign)
+
+    draft = EmailDraft(
+        campaign_id=campaign.id,
+        influencer_id=influencer_id,
+        template_id=None,
+        subject=subject,
+        body_html=body_html,
+        status=EmailDraftStatus.ready,
+        edited_by_user=True,  # treat user-typed body as already-edited
+        generated_at=datetime.now(timezone.utc),
+    )
+    db.add(draft)
+    await db.commit()
+    await db.refresh(draft)
+    return campaign, draft
 
 
 async def create_campaign(db: AsyncSession, data: SendBatchRequest, user_id: int | None) -> Campaign:

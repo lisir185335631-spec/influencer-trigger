@@ -17,6 +17,25 @@ class SendBatchResponse(BaseModel):
     message: str
 
 
+class SendDirectRequest(BaseModel):
+    """One-off "send to this email" form. The recipient may not be in the
+    influencer table yet — backend creates a manual record on demand so
+    the row still flows through the standard sender → email_drafts →
+    emails pipeline (and inherits tracking pixel + IMAP reply detection)
+    instead of bypassing them."""
+    to_email: str
+    to_name: Optional[str] = None
+    subject: str
+    body_html: str
+    campaign_name: Optional[str] = None
+
+
+class SendDirectResponse(BaseModel):
+    campaign_id: int
+    influencer_id: int
+    message: str
+
+
 class CampaignOut(BaseModel):
     id: int
     name: str

@@ -6,7 +6,7 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from 'react'
 import { useSearchParams, useNavigate } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ExternalLink } from 'lucide-react'
+import { ExternalLink, Send, X, Loader2 } from 'lucide-react'
 import { templatesApi, Template } from '../api/templates'
 import {
   emailsApi,
@@ -624,6 +624,7 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
   // toggling the picker doesn't lose what the user already chose.
   const [pickedIds, setPickedIds]       = useState<number[]>([])
   const [pickerOpen, setPickerOpen]     = useState(false)
+  const [directSendOpen, setDirectSendOpen] = useState(false)
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null)
 
   // Resolve the active recipient list. Prop > URL > picker state.
@@ -773,7 +774,16 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
       // user explicitly preferred consistent width with the mailbox tab
       // over narrow-form readability.
       <div>
-        <h2 className="text-base font-semibold text-gray-900 mb-2">{t('emails.batch.title')}</h2>
+        <div className="flex items-start justify-between mb-2 gap-3">
+          <h2 className="text-base font-semibold text-gray-900">{t('emails.batch.title')}</h2>
+          <button
+            onClick={() => setDirectSendOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shrink-0"
+          >
+            <Send size={12} />
+            {t('emails.directSend.openButton')}
+          </button>
+        </div>
         <p className="text-sm text-gray-500 mb-6">
           {t('emails.batch.subtitle')}
         </p>
@@ -802,6 +812,9 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
             onConfirm={handlePickerConfirm}
           />
         )}
+        {directSendOpen && (
+          <DirectSendModal onClose={() => setDirectSendOpen(false)} />
+        )}
       </div>
     )
   }
@@ -810,7 +823,16 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
   if (phase === 'setup') {
     return (
       <div>
-        <h2 className="text-base font-semibold text-gray-900 mb-1">{t('emails.batch.title')}</h2>
+        <div className="flex items-start justify-between mb-1 gap-3">
+          <h2 className="text-base font-semibold text-gray-900">{t('emails.batch.title')}</h2>
+          <button
+            onClick={() => setDirectSendOpen(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors shrink-0"
+          >
+            <Send size={12} />
+            {t('emails.directSend.openButton')}
+          </button>
+        </div>
         <p className="text-sm text-gray-500 mb-6">{t('emails.batch.configureHint')}</p>
 
         <SelectedRecipientsTable
@@ -943,6 +965,9 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
             onConfirm={handlePickerConfirm}
           />
         )}
+        {directSendOpen && (
+          <DirectSendModal onClose={() => setDirectSendOpen(false)} />
+        )}
       </div>
     )
   }
@@ -1015,6 +1040,245 @@ export default function SendPanel({ selectedInfluencerIds }: SendPanelProps = {}
           {t('emails.batch.sendAnother')}
         </button>
       )}
+    </div>
+  )
+}
+
+// ── Direct-send modal ─────────────────────────────────────────────────────
+// One-off send to a single email address. Wraps the recipient in a
+// "manual" Influencer + a single-row draft Campaign on the backend so
+// the row inherits all the standard send infrastructure (tracking
+// pixel, IMAP reply detection, monitor page) instead of bypassing it.
+
+const _EMAIL_RE = /^[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}$/
+
+function escapeHtml(s: string): string {
+  return s.replace(/[&<>"']/g, (c) => (
+    { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]!
+  ))
+}
+
+interface DirectSendModalProps {
+  onClose: () => void
+}
+
+function DirectSendModal({ onClose }: DirectSendModalProps) {
+  const { t } = useTranslation()
+  const [toEmail, setToEmail] = useState('')
+  const [toName, setToName] = useState('')
+  const [subject, setSubject] = useState('')
+  const [bodyText, setBodyText] = useState('')
+  const [campaignName, setCampaignName] = useState('')
+  const [sending, setSending] = useState(false)
+  const [result, setResult] = useState<{ email: string } | null>(null)
+  const [errorMsg, setErrorMsg] = useState('')
+
+  const close = () => {
+    if (sending) return
+    onClose()
+  }
+
+  const handleSubmit = async () => {
+    setErrorMsg('')
+    const email = toEmail.trim().toLowerCase()
+    if (!_EMAIL_RE.test(email)) {
+      setErrorMsg(t('emails.directSend.invalidEmail'))
+      return
+    }
+    if (!subject.trim()) {
+      setErrorMsg(t('emails.directSend.subjectRequired'))
+      return
+    }
+    if (!bodyText.trim()) {
+      setErrorMsg(t('emails.directSend.bodyRequired'))
+      return
+    }
+
+    // Plain text -> safe HTML. Escape first so user-typed angle brackets
+    // can't smuggle markup; then preserve line breaks. If the user pasted
+    // pre-formatted HTML they accept the trade-off (it'll show as raw
+    // text). Power-users who need HTML can paste an entire <p>...</p>
+    // tree — the escape will neuter it but the text reads through.
+    const bodyHtml = `<div>${escapeHtml(bodyText).replace(/\n/g, '<br>')}</div>`
+
+    setSending(true)
+    try {
+      await emailsApi.sendDirect({
+        to_email: email,
+        to_name: toName.trim() || undefined,
+        subject: subject.trim(),
+        body_html: bodyHtml,
+        campaign_name: campaignName.trim() || undefined,
+      })
+      setResult({ email })
+    } catch (e: unknown) {
+      const detail = (e as { response?: { data?: { detail?: string } } })
+        ?.response?.data?.detail
+      setErrorMsg(detail || t('emails.directSend.sendFailedHint'))
+    } finally {
+      setSending(false)
+    }
+  }
+
+  // Result / error views collapse the form into a single status block.
+  if (result) {
+    return (
+      <div
+        className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+        onClick={close}
+      >
+        <div
+          className="bg-white rounded-xl shadow-2xl w-full max-w-md mx-4"
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+            <h2 className="text-base font-semibold text-gray-900">
+              {t('emails.directSend.successTitle')}
+            </h2>
+            <button onClick={close} className="text-gray-400 hover:text-gray-600 transition-colors" aria-label="close">
+              <X size={16} />
+            </button>
+          </div>
+          <div className="px-6 py-5 text-sm text-gray-600 whitespace-pre-wrap break-words">
+            {t('emails.directSend.successHint', { email: result.email })}
+          </div>
+          <div className="flex justify-end px-6 py-4 border-t border-gray-100">
+            <button
+              onClick={close}
+              className="px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 transition-colors"
+            >
+              {t('emails.directSend.close')}
+            </button>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+      onClick={close}
+    >
+      <div
+        className="bg-white rounded-xl shadow-2xl w-full max-w-lg mx-4 max-h-[90vh] overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-center justify-between px-6 pt-6 pb-4 border-b border-gray-100">
+          <div className="flex items-center gap-2">
+            <Send size={14} className="text-gray-500" />
+            <h2 className="text-base font-semibold text-gray-900">
+              {t('emails.directSend.title')}
+            </h2>
+          </div>
+          <button
+            onClick={close}
+            disabled={sending}
+            className="text-gray-400 hover:text-gray-600 transition-colors disabled:opacity-50"
+            aria-label="close"
+          >
+            <X size={16} />
+          </button>
+        </div>
+
+        <div className="px-6 py-5 space-y-4">
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              {t('emails.directSend.recipient')} <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="email"
+              value={toEmail}
+              onChange={(e) => setToEmail(e.target.value)}
+              disabled={sending}
+              placeholder="someone@example.com"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:bg-gray-50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              {t('emails.directSend.recipientName')}
+            </label>
+            <input
+              type="text"
+              value={toName}
+              onChange={(e) => setToName(e.target.value)}
+              disabled={sending}
+              placeholder={t('emails.directSend.recipientNamePlaceholder')}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:bg-gray-50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              {t('emails.directSend.subject')} <span className="text-red-400">*</span>
+            </label>
+            <input
+              type="text"
+              value={subject}
+              onChange={(e) => setSubject(e.target.value)}
+              disabled={sending}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:bg-gray-50"
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              {t('emails.directSend.body')} <span className="text-red-400">*</span>
+            </label>
+            <textarea
+              value={bodyText}
+              onChange={(e) => setBodyText(e.target.value)}
+              disabled={sending}
+              rows={8}
+              placeholder={t('emails.directSend.bodyPlaceholder')}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:bg-gray-50 resize-y"
+            />
+            <p className="text-[11px] text-gray-400 mt-1">
+              {t('emails.directSend.bodyHint')}
+            </p>
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              {t('emails.directSend.campaignName')}
+            </label>
+            <input
+              type="text"
+              value={campaignName}
+              onChange={(e) => setCampaignName(e.target.value)}
+              disabled={sending}
+              placeholder={t('emails.directSend.campaignNamePlaceholder')}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400 disabled:bg-gray-50"
+            />
+          </div>
+
+          {errorMsg && (
+            <div className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+              {errorMsg}
+            </div>
+          )}
+        </div>
+
+        <div className="flex justify-end gap-2 px-6 py-4 border-t border-gray-100">
+          <button
+            onClick={close}
+            disabled={sending}
+            className="px-4 py-2 text-sm text-gray-600 hover:text-gray-800 transition-colors disabled:opacity-50"
+          >
+            {t('emails.directSend.cancel')}
+          </button>
+          <button
+            onClick={handleSubmit}
+            disabled={sending}
+            className="flex items-center gap-1.5 px-4 py-2 text-sm bg-gray-900 text-white rounded-lg hover:bg-gray-700 disabled:opacity-50 transition-colors"
+          >
+            {sending && <Loader2 size={13} className="animate-spin" />}
+            {sending ? t('emails.directSend.sending') : t('emails.directSend.send')}
+          </button>
+        </div>
+      </div>
     </div>
   )
 }

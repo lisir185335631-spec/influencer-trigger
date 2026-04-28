@@ -529,6 +529,29 @@
       "sendingHint": "以 30-60 秒间隔发送以避免触发限流，可能需要一些时间。",
       "sendAnother": "发送另一批",
       "loadTemplatesFailed": "加载模板失败"
+    },
+    "directSend": {
+      "openButton": "快速单发",
+      "title": "快速单发",
+      "recipient": "收件人邮箱",
+      "recipientName": "收件人姓名（选填）",
+      "recipientNamePlaceholder": "不填则用邮箱前缀",
+      "subject": "邮件主题",
+      "body": "邮件正文",
+      "bodyPlaceholder": "在这里输入邮件正文…",
+      "bodyHint": "纯文本会自动保留换行；如需 HTML 请联系管理员或用模板。",
+      "campaignName": "任务名（选填）",
+      "campaignNamePlaceholder": "默认 \"Direct: <邮箱>\"",
+      "send": "发送",
+      "sending": "发送中…",
+      "cancel": "取消",
+      "close": "关闭",
+      "successTitle": "已加入发送队列",
+      "successHint": "邮件正在发送至 {{email}}，详情请到「邮件监控」页查看。",
+      "invalidEmail": "邮箱地址格式不正确",
+      "subjectRequired": "邮件主题不能为空",
+      "bodyRequired": "邮件正文不能为空",
+      "sendFailedHint": "发送请求失败，请检查邮箱配置后重试"
     }
   },
   "crm": {

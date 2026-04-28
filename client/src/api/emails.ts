@@ -13,6 +13,20 @@ export interface SendBatchResponse {
   message: string
 }
 
+export interface SendDirectRequest {
+  to_email: string
+  to_name?: string
+  subject: string
+  body_html: string
+  campaign_name?: string
+}
+
+export interface SendDirectResponse {
+  campaign_id: number
+  influencer_id: number
+  message: string
+}
+
 export interface Campaign {
   id: number
   name: string
@@ -86,6 +100,9 @@ export interface EmailListParams {
 export const emailsApi = {
   sendBatch: (data: SendBatchRequest) =>
     apiClient.post<SendBatchResponse>('/emails/send-batch', data).then(r => r.data),
+
+  sendDirect: (data: SendDirectRequest) =>
+    apiClient.post<SendDirectResponse>('/emails/send-direct', data).then(r => r.data),
 
   listCampaigns: () =>
     apiClient.get<Campaign[]>('/emails/campaigns').then(r => r.data),
