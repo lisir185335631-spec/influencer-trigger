@@ -433,12 +433,20 @@ async def _handle_reply(
 # Classifier integration
 # ---------------------------------------------------------------------------
 
-# Notification level per intent (auto_reply is excluded — no notification created)
+# Notification level per intent. auto_reply is `info` (low salience but
+# still surfaced) — earlier code excluded auto_reply entirely on the
+# theory that OOO autoresponders are noise, but at the volumes this
+# tool runs at the operator wants confirmation that *every* reply
+# round-trip actually closed, even the low-value ones. The dashboard
+# bell on a 0.90-confidence "auto_reply" classification on a literal
+# "收到" was the smoking gun: the system was working but the user
+# couldn't tell.
 _INTENT_LEVEL: dict[str, NotificationLevel] = {
     "interested": NotificationLevel.urgent,
     "pricing": NotificationLevel.urgent,
     "declined": NotificationLevel.warning,
     "irrelevant": NotificationLevel.info,
+    "auto_reply": NotificationLevel.info,
 }
 
 
@@ -451,8 +459,8 @@ async def _classify_and_notify(
     """
     Run Classifier Agent on a reply, then:
       - Write reply_intent to influencers table
-      - Update influencer priority using composite score (intent + followers tier); auto_reply skipped
-      - Create a Notification record (skipped for auto_reply)
+      - Update influencer priority using composite score (intent + followers tier)
+      - Create a Notification record so the bell surfaces every reply
       - Broadcast classification result via WebSocket
     """
     from app.agents.classifier import classify_reply  # local import avoids circular
@@ -478,41 +486,45 @@ async def _classify_and_notify(
             except ValueError:
                 influencer.reply_intent = ReplyIntent.irrelevant
 
-            # Update priority using composite score (intent + followers tier); auto_reply skipped
-            if result.intent != "auto_reply":
-                from app.services.influencer_service import compute_priority_score  # local import avoids circular
-                influencer.priority = compute_priority_score(result.intent, influencer.followers)
+            # Update priority using composite score (intent + followers tier).
+            # auto_reply gets 1 intent-point in _INTENT_SCORE so it lands
+            # at low/medium depending on followers — consistent with the
+            # rest of the score table.
+            from app.services.influencer_service import compute_priority_score  # local import avoids circular
+            influencer.priority = compute_priority_score(result.intent, influencer.followers)
 
-            # Create notification for all intents except auto_reply
-            notification_data: dict | None = None
-            if result.intent != "auto_reply":
-                display_name = influencer.nickname or influencer.email
-                platform_str = influencer.platform.value if influencer.platform else "unknown"
-                content = (
-                    f"[{platform_str}] {display_name} · {result.intent}: "
-                    f"{result.summary} — 请前往您的邮箱回复"
-                )
-                notification = Notification(
-                    influencer_id=influencer_id,
-                    email_id=email_id,
-                    title=f"Reply from {display_name}",
-                    content=content,
-                    level=_INTENT_LEVEL.get(result.intent, NotificationLevel.info),
-                    intent=result.intent,
-                )
-                db.add(notification)
-                await db.flush()
-                notification_data = {
-                    "id": notification.id,
-                    "influencer_id": influencer_id,
-                    "influencer_name": display_name,
-                    "title": notification.title,
-                    "content": notification.content,
-                    "level": notification.level.value,
-                    "intent": notification.intent,
-                    "is_read": False,
-                    "created_at": notification.created_at.isoformat() if notification.created_at else None,
-                }
+            # Create notification for every classified intent, including
+            # auto_reply. The bell badge needs to surface *all* reply
+            # round-trips so the operator can confirm the full pipeline
+            # closed. Per-intent salience (urgent/warning/info) is
+            # encoded in `level` for UI sorting / filtering.
+            display_name = influencer.nickname or influencer.email
+            platform_str = influencer.platform.value if influencer.platform else "unknown"
+            content = (
+                f"[{platform_str}] {display_name} · {result.intent}: "
+                f"{result.summary} — 请前往您的邮箱回复"
+            )
+            notification = Notification(
+                influencer_id=influencer_id,
+                email_id=email_id,
+                title=f"Reply from {display_name}",
+                content=content,
+                level=_INTENT_LEVEL.get(result.intent, NotificationLevel.info),
+                intent=result.intent,
+            )
+            db.add(notification)
+            await db.flush()
+            notification_data: dict | None = {
+                "id": notification.id,
+                "influencer_id": influencer_id,
+                "influencer_name": display_name,
+                "title": notification.title,
+                "content": notification.content,
+                "level": notification.level.value,
+                "intent": notification.intent,
+                "is_read": False,
+                "created_at": notification.created_at.isoformat() if notification.created_at else None,
+            }
 
             await db.commit()
 
