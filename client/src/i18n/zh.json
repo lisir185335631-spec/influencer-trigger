@@ -745,6 +745,7 @@
       "status": "状态",
       "todayDaily": "今日 / 日限额",
       "bounceRate": "退信率",
+      "test": "测试",
       "actions": "操作"
     },
     "testTooltip": "测试 SMTP 连接",

@@ -477,7 +477,8 @@ function MailboxPoolPanel() {
                 <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('mailboxes.table.status')}</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('mailboxes.table.todayDaily')}</th>
                 <th className="px-4 py-3 text-right text-xs font-medium text-gray-500">{t('mailboxes.table.bounceRate')}</th>
-                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 w-36">{t('mailboxes.table.actions')}</th>
+                <th className="px-4 py-3 text-left text-xs font-medium text-gray-500">{t('mailboxes.table.test')}</th>
+                <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 w-24">{t('mailboxes.table.actions')}</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -509,28 +510,46 @@ function MailboxPoolPanel() {
                         {(m.bounce_rate * 100).toFixed(1)}%
                       </span>
                     </td>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center justify-end gap-1">
-                        {/* Test button */}
-                        <button
-                          onClick={() => handleTest(m)}
-                          disabled={ts.status === 'loading'}
-                          title={t('mailboxes.testTooltip')}
-                          className="flex items-center gap-1 px-2 py-1.5 text-xs rounded-md text-gray-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-50 transition-colors"
+                    {/* Test column — own field with status + (full) message */}
+                    <td className="px-4 py-3 align-top">
+                      <button
+                        onClick={() => handleTest(m)}
+                        disabled={ts.status === 'loading'}
+                        title={t('mailboxes.testTooltip')}
+                        className="inline-flex items-center gap-1 px-2 py-1 text-xs rounded-md text-gray-500 hover:text-blue-600 hover:bg-blue-50 disabled:opacity-50 transition-colors whitespace-nowrap"
+                      >
+                        {ts.status === 'loading' ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : ts.status === 'ok' ? (
+                          <CheckCircle size={12} className="text-emerald-500" />
+                        ) : ts.status === 'error' ? (
+                          <XCircle size={12} className="text-red-500" />
+                        ) : (
+                          <Zap size={12} />
+                        )}
+                        {ts.status === 'ok'
+                          ? t('common.ok')
+                          : ts.status === 'error'
+                            ? t('common.fail')
+                            : t('common.test')}
+                      </button>
+                      {/* Full status message — wraps freely, no truncation, so
+                          long SMTP errors (e.g. "Connection already using TLS")
+                          are visible end-to-end. */}
+                      {ts.msg && (
+                        <p
+                          className={`text-xs mt-1 break-words whitespace-pre-wrap ${
+                            ts.status === 'error' ? 'text-red-500' : 'text-emerald-600'
+                          }`}
                         >
-                          {ts.status === 'loading' ? (
-                            <Loader2 size={12} className="animate-spin" />
-                          ) : ts.status === 'ok' ? (
-                            <CheckCircle size={12} className="text-emerald-500" />
-                          ) : ts.status === 'error' ? (
-                            <XCircle size={12} className="text-red-500" />
-                          ) : (
-                            <Zap size={12} />
-                          )}
-                          {ts.status === 'ok' ? t('common.ok') : ts.status === 'error' ? t('common.fail') : t('common.test')}
-                        </button>
+                          {ts.msg}
+                        </p>
+                      )}
+                    </td>
 
-                        {/* Edit */}
+                    {/* Actions column — icon-only edit + delete */}
+                    <td className="px-4 py-3 align-top">
+                      <div className="flex items-center justify-end gap-1">
                         <button
                           onClick={() => setModal(m)}
                           title={t('common.edit')}
@@ -538,8 +557,6 @@ function MailboxPoolPanel() {
                         >
                           <Pencil size={13} />
                         </button>
-
-                        {/* Delete */}
                         <button
                           onClick={() => handleDelete(m.id)}
                           disabled={deletingId === m.id}
@@ -553,11 +570,6 @@ function MailboxPoolPanel() {
                           )}
                         </button>
                       </div>
-                      {ts.msg && (
-                        <p className={`text-right text-xs mt-1 truncate max-w-[140px] ${ts.status === 'error' ? 'text-red-400' : 'text-emerald-500'}`}>
-                          {ts.msg}
-                        </p>
-                      )}
                     </td>
                   </tr>
                 )
