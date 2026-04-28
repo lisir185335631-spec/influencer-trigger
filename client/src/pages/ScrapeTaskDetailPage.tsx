@@ -12,6 +12,7 @@ import {
 } from 'lucide-react'
 import { scrapeApi, ScrapeTask, ScrapeInfluencerResult, parsePlatforms } from '../api/scrape'
 import { useWebSocket, WsMessage } from '../hooks/useWebSocket'
+import { WS_URL } from '../api/websocket'
 import { parseWarningList, type Severity } from '../hooks/warningSeverity'
 import AvatarBadge from '../components/AvatarBadge'
 
@@ -241,8 +242,8 @@ export default function ScrapeTaskDetailPage() {
   }, [task, quotaModal, quotaModalDismissed])
 
   // ── WebSocket: subscribe to scrape:progress for this task ──────────────────
-  // See WebSocketContext.tsx for why we hardcode :6002 instead of window.location.host.
-  const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.hostname}:6002/ws`
+  // Reuses the shared WS_URL convention (same-origin via nginx /ws upstream).
+  const wsUrl = WS_URL
   useWebSocket(wsUrl, useCallback((msg: WsMessage) => {
     if (msg.event !== 'scrape:progress') return
     const evt = msg.data as LiveProgress
