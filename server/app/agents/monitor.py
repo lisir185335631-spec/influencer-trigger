@@ -530,12 +530,29 @@ async def _classify_and_notify(
 
         if notification_data:
             await manager.broadcast("notification", notification_data)
-            # Optional: push to Feishu / Slack if configured
+            # Optional: push to Feishu / Slack / Server酱 if configured
             from app.services.webhook_service import send_notification_webhooks  # local import
+
+            # Build a webhook-only content variant with a deep link to the
+            # influencer detail page, so a recipient on WeChat (Server酱)
+            # can tap the message and land directly on the conversation
+            # context. The in-app bell content (saved to Notification.content)
+            # intentionally stays plain — clicking the bell already routes
+            # via influencer_id, so no markdown link is needed there
+            # (and the bell UI doesn't render markdown anyway).
+            from app.config import get_settings as _get_settings_for_link
+            base_url = _get_settings_for_link().public_base_url.rstrip("/")
+            webhook_content = notification_data["content"]
+            if base_url:
+                deep_link = f"{base_url}/crm/{influencer_id}"
+                webhook_content = (
+                    f"{webhook_content}\n\n👉 [点击查看网红详情]({deep_link})"
+                )
+
             asyncio.create_task(
                 send_notification_webhooks(
                     notification_data["title"],
-                    notification_data["content"],
+                    webhook_content,
                 )
             )
 
